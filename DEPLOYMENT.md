@@ -7,10 +7,11 @@ service serves the PWA and API from one HTTPS origin. Use that root URL as the
 The user's existing Hostinger VPS runs Docker Manager and Traefik. The
 `docker-compose.hostinger.yml` file connects POS WAI to its `traefik-proxy`
 network, routes the hostname to port 8000, and stores SQLite on a named volume.
-Before deployment, merge the reviewed PR into `main`, create a Cloudflare DNS
-`A` record named `poswai` pointing to the VPS IP, and set the environment
-secrets in Hostinger Docker Manager. DNS for `zzaxstudio.com` is authoritative
-at Cloudflare, so editing Hostinger DNS alone will not activate the subdomain.
+The Cloudflare DNS `A` record named `poswai` now points to `187.127.109.204`
+with DNS-only proxy mode. Before deploying the app, merge the reviewed PR into
+`main` and set the environment secrets in Hostinger Docker Manager. DNS for
+`zzaxstudio.com` is authoritative at Cloudflare, so editing Hostinger DNS alone
+will not activate the subdomain.
 
 The old `render.yaml` remains an alternative deployment configuration. It is
 not the target for this hostname.
