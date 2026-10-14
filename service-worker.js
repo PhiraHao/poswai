@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-wai-offline-v11';
+const CACHE_NAME = 'pos-wai-offline-v12';
 const ASSETS = ['/', '/index.html', '/line_pos_prototype.html', '/ui.css', '/icons.svg', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', event => {
