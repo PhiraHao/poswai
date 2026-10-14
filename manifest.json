@@ -1,0 +1,8 @@
+{
+  "name": "POS WAI - ระบบจัดการร้านอาหารครบวงจรผ่าน LINE",
+  "short_name": "POS WAI",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#06C755"
+}

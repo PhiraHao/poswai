@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: pos-wai-enterprise
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn line_pos_server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PROMPTPAY_ID
+        value: "0812345678"
+      - key: LINE_LIFF_ID
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
