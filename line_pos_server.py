@@ -14,10 +14,11 @@ POS WAI Enterprise V3 Server (FastAPI + Relational SQLite/PostgreSQL Schema)
 import sqlite3
 import datetime
 import json
+import os
 from typing import List, Optional
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -29,12 +30,20 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-DB_PATH = Path("/tmp/line_pos_enterprise_v3.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./poswai.db")
+PROMPTPAY_ID = os.getenv("PROMPTPAY_ID", "")
+LINE_LIFF_ID = os.getenv("LINE_LIFF_ID", "")
+LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
+if not DATABASE_URL.startswith("sqlite:///"):
+    raise RuntimeError("This deployment supports SQLite only; configure a persistent SQLite DATABASE_URL")
+DB_PATH = Path(DATABASE_URL.removeprefix("sqlite:///"))
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 # =====================================================================
@@ -182,6 +191,25 @@ def init_db() -> None:
         """
     )
 
+    cur.execute("""CREATE TABLE IF NOT EXISTS inventory (
+        branch_id INTEGER NOT NULL, ingredient_id TEXT NOT NULL, stock REAL NOT NULL DEFAULT 0,
+        PRIMARY KEY (branch_id, ingredient_id))""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS order_items (
+        order_no TEXT NOT NULL, item_id TEXT NOT NULL, name TEXT NOT NULL,
+        quantity REAL NOT NULL, unit_price REAL NOT NULL, bom_json TEXT NOT NULL)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS order_events (
+        event_id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, branch_id INTEGER NOT NULL,
+        table_no TEXT NOT NULL, total_amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS payment_events (
+        event_id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, amount REAL NOT NULL,
+        method TEXT NOT NULL, slip_reference TEXT, closed_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS attendance_events (
+        event_id TEXT PRIMARY KEY, staff_id INTEGER NOT NULL, action TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS leave_event_ids (
+        event_id TEXT PRIMARY KEY, leave_id INTEGER NOT NULL)""")
+
     conn.commit()
     conn.close()
 
@@ -189,10 +217,119 @@ def init_db() -> None:
 init_db()
 
 
+class OrderItem(BaseModel):
+    id: str | int
+    name: str
+    price: float
+    qty: float
+    bom: list[dict] = []
+
+
+class OrderCreate(BaseModel):
+    event_id: str
+    order_no: str
+    branch_id: int = 1
+    table_no: str
+    total_amount: float
+    items: list[OrderItem]
+
+
+@app.post("/api/orders")
+def create_order(req: OrderCreate):
+    if req.total_amount < 0 or not req.items or any(i.qty <= 0 or i.price < 0 for i in req.items):
+        raise HTTPException(400, "Invalid order")
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        existing = cur.execute("SELECT order_no FROM order_events WHERE event_id=? OR order_no=?", (req.event_id, req.order_no)).fetchone()
+        if existing:
+            return {"status": "existing", "order_no": existing[0]}
+        cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount) VALUES (?,?,?,?,?)",
+                    (req.event_id, req.order_no, req.branch_id, req.table_no, req.total_amount))
+        for item in req.items:
+            cur.execute("INSERT INTO order_items VALUES (?,?,?,?,?,?)",
+                        (req.order_no, str(item.id), item.name, item.qty, item.price, json.dumps(item.bom)))
+            for part in item.bom:
+                ingredient_id, amount = str(part["ingId"]), float(part["qty"]) * item.qty
+                if amount < 0:
+                    raise HTTPException(400, "Invalid BOM quantity")
+                cur.execute("INSERT INTO inventory (branch_id, ingredient_id, stock) VALUES (?,?,?) "
+                            "ON CONFLICT(branch_id, ingredient_id) DO UPDATE SET stock=stock-excluded.stock",
+                            (req.branch_id, ingredient_id, -amount))
+    return {"status": "open", "order_no": req.order_no}
+
+
+class PaymentCreate(BaseModel):
+    event_id: str
+    order_no: str
+    amount: float
+    method: str
+    slip_reference: Optional[str] = None
+
+
+@app.post("/api/payments/close")
+def close_payment(req: PaymentCreate):
+    if req.amount <= 0:
+        raise HTTPException(400, "Invalid amount")
+    if "QR" in req.method:
+        raise HTTPException(501, "QR slip verification provider is not configured")
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        existing = cur.execute("SELECT order_no FROM payment_events WHERE event_id=?", (req.event_id,)).fetchone()
+        if existing:
+            return {"status": "paid", "order_no": existing[0]}
+        order = cur.execute("SELECT branch_id, status FROM order_events WHERE order_no=?", (req.order_no,)).fetchone()
+        if not order:
+            raise HTTPException(404, "Order not found")
+        if order[1] != "open":
+            raise HTTPException(409, "Order already closed")
+        cur.execute("INSERT INTO payment_events (event_id, order_no, amount, method, slip_reference) VALUES (?,?,?,?,?)",
+                    (req.event_id, req.order_no, req.amount, req.method, req.slip_reference))
+        cur.execute("UPDATE order_events SET status='paid' WHERE order_no=?", (req.order_no,))
+        cur.execute("INSERT INTO pos_orders (branch_id, order_no, total_amount, net_amount, payment_method) VALUES (?,?,?,?,?)",
+                    (order[0], req.order_no, req.amount, req.amount, req.method))
+    return {"status": "paid", "order_no": req.order_no}
+
+
+class AttendanceCreate(BaseModel):
+    event_id: str
+    staff_id: int
+    action: str
+
+
+@app.post("/api/attendance")
+def record_attendance(req: AttendanceCreate):
+    if req.action not in ("clock_in", "clock_out"):
+        raise HTTPException(400, "Invalid attendance action")
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("INSERT OR IGNORE INTO attendance_events (event_id, staff_id, action) VALUES (?,?,?)",
+                    (req.event_id, req.staff_id, req.action))
+        if cur.rowcount:
+            now = datetime.datetime.now().isoformat(timespec="seconds")
+            if req.action == "clock_in":
+                cur.execute("INSERT INTO attendances (staff_id, clock_in) VALUES (?,?)", (req.staff_id, now))
+            else:
+                cur.execute("UPDATE attendances SET clock_out=? WHERE id=(SELECT id FROM attendances "
+                            "WHERE staff_id=? AND clock_out IS NULL ORDER BY id DESC LIMIT 1)",
+                            (now, req.staff_id))
+    return {"status": "recorded"}
+
+
+@app.get("/api/commissions")
+def commissions(work_date: str, branch_id: int = 1):
+    with sqlite3.connect(DB_PATH) as conn:
+        sales = conn.execute("SELECT COALESCE(SUM(net_amount),0) FROM pos_orders WHERE branch_id=? AND DATE(closed_at)=?",
+                             (branch_id, work_date)).fetchone()[0]
+    divisor = calculate_pooled_commission_divisor(work_date)
+    return {"sales": sales, "pool": round(sales * 0.03, 2), "pool_divisor": divisor,
+            "equal_share": round(sales * 0.03 / divisor, 2)}
+
+
 # =====================================================================
 # 2. BUSINESS LOGIC: อนุมัติใบลา -> ล็อก PIN POS -> ตัดตัวหารคอมมิชชันกองกลาง
 # =====================================================================
 class LeaveRequestCreate(BaseModel):
+    event_id: str
     staff_id: int
     leave_type: str  # sick, personal, vacation, swap_shift
     start_date: str
@@ -212,6 +349,10 @@ def submit_leave_request(req: LeaveRequestCreate):
     """1. พนักงานกดยื่นใบลาผ่าน LINE LIFF -> บันทึกเป็น Pending และเตรียมส่ง Flex Message หาผู้จัดการ"""
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
+    existing = cur.execute("SELECT leave_id FROM leave_event_ids WHERE event_id=?", (req.event_id,)).fetchone()
+    if existing:
+        conn.close()
+        return {"status": "pending", "leave_id": existing[0], "line_flex_notification": "not_configured"}
     cur.execute(
         """
         INSERT INTO leave_requests (staff_id, leave_type, start_date, end_date, reason, attachment_url, status)
@@ -220,12 +361,13 @@ def submit_leave_request(req: LeaveRequestCreate):
         (req.staff_id, req.leave_type, req.start_date, req.end_date, req.reason, req.attachment_url),
     )
     leave_id = cur.lastrowid
+    cur.execute("INSERT INTO leave_event_ids VALUES (?,?)", (req.event_id, leave_id))
     conn.commit()
     conn.close()
     return {
         "status": "pending",
         "leave_id": leave_id,
-        "line_flex_notification": "Sent Interactive Approval Card to Branch Manager LINE OA",
+        "line_flex_notification": "not_configured",
     }
 
 
@@ -367,10 +509,43 @@ def get_executive_analytics_dashboard(benchmark: str = "WOW"):
 
 @app.get("/", response_class=HTMLResponse)
 def serve_v3_prototype():
-    html_file = Path(__file__).parent / "line_pos_prototype.html"
+    html_file = Path(__file__).parent / "index.html"
     if html_file.exists():
         return html_file.read_text(encoding="utf-8")
     return "<h3>POS WAI Enterprise V3 Server Running</h3>"
+
+
+@app.get("/index.html")
+def serve_index():
+    return FileResponse(Path(__file__).parent / "index.html")
+
+
+@app.get("/line_pos_prototype.html")
+def serve_prototype():
+    return FileResponse(Path(__file__).parent / "line_pos_prototype.html")
+
+
+@app.get("/manifest.json")
+def serve_manifest():
+    return FileResponse(Path(__file__).parent / "manifest.json", media_type="application/manifest+json")
+
+
+@app.get("/service-worker.js")
+def serve_worker():
+    return FileResponse(Path(__file__).parent / "service-worker.js", media_type="application/javascript",
+                        headers={"Service-Worker-Allowed": "/"})
+
+
+@app.get("/icon-{size}.png")
+def serve_icon(size: int):
+    if size not in (192, 512):
+        raise HTTPException(404, "Icon not found")
+    return FileResponse(Path(__file__).parent / f"icon-{size}.png", media_type="image/png")
+
+
+@app.get("/api/config")
+def public_config():
+    return {"promptpay_id": PROMPTPAY_ID, "line_liff_id": LINE_LIFF_ID}
 
 
 if __name__ == "__main__":

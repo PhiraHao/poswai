@@ -648,6 +648,8 @@
     }
 
   </style>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#06C755">
 </head>
 <body>
 
@@ -2056,7 +2058,7 @@
       deliveryLogs: [
         "🛵 [14:20] GrabFood #GF-882: กะเพราหมูกรอบ x2 (฿169 รวม GP) -> ส่งเข้าครัวและตัดสต็อกแล้ว"
       ],
-      offlineSyncQueue: []
+      offlineSyncQueue: JSON.parse(localStorage.getItem('offlineSyncQueue') || '[]')
     };
 
     /* =========================================================================
@@ -2242,37 +2244,77 @@
       renderAll();
     }
 
+    function persistSyncQueue() {
+      localStorage.setItem("offlineSyncQueue", JSON.stringify(state.offlineSyncQueue));
+      const count = document.getElementById("syncCount");
+      if (count) count.textContent = state.offlineSyncQueue.length;
+    }
+
+    async function apiMutation(path, payload) {
+      const event = { path, payload, id: payload.event_id || crypto.randomUUID() };
+      if (!navigator.onLine || !state.isOnline) {
+        state.offlineSyncQueue.push(event);
+        persistSyncQueue();
+        return { queued: true };
+      }
+      try {
+        const response = await fetch(path, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error((await response.json()).detail || `HTTP ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        // Only transport failures belong in the offline queue; server rejection needs correction.
+        if (navigator.onLine && !/Failed to fetch|NetworkError|Load failed/i.test(String(error))) throw error;
+        state.offlineSyncQueue.push(event);
+        persistSyncQueue();
+        return { queued: true };
+      }
+    }
+
+    async function flushOfflineSyncQueue() {
+      if (!navigator.onLine || !state.isOnline) return;
+      while (state.offlineSyncQueue.length) {
+        const event = state.offlineSyncQueue[0];
+        try {
+          const response = await fetch(event.path, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(event.payload)
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          if (event.path === "/api/line-liff/leave-requests") {
+            const result = await response.json();
+            const leave = state.leaveRequests.find(item => item.id === event.payload.client_leave_id);
+            if (leave) leave.serverLeaveId = result.leave_id;
+          }
+          state.offlineSyncQueue.shift();
+          persistSyncQueue();
+        } catch (error) {
+          showToast(`⚠️ ซิงก์รายการค้างส่งไม่สำเร็จ: ${error.message}`);
+          break;
+        }
+      }
+    }
+
     function toggleNetworkMode() {
       state.isOnline = !state.isOnline;
-      const btn = document.getElementById("netToggleBtn");
-      const dot = document.getElementById("netStatusDot");
-      const txt = document.getElementById("netStatusText");
-      const banner = document.getElementById("offlineBanner");
-
-      if (state.isOnline) {
-        btn.className = "net-toggle-btn online";
-        dot.textContent = "🟢";
-        txt.textContent = "ออนไลน์ (LINE & Cloud)";
-        banner.classList.remove("active");
-        const synced = state.offlineSyncQueue.length;
-        state.offlineSyncQueue = [];
-        addAuditLog(`🔄 อินเทอร์เน็ตกลับมาทำงาน ซิงก์ข้อมูลค้างส่ง ${synced} รายการขึ้น Cloud & LINE`);
-        showToast(`✅ ออนไลน์แล้ว! ซิงก์ข้อมูล ${synced} รายการขึ้นระบบ Cloud สำเร็จ`);
-      } else {
-        btn.className = "net-toggle-btn offline";
-        dot.textContent = "🔴";
-        txt.textContent = "เน็ตหลุด! (Offline Mode)";
-        banner.classList.add("active");
-        addAuditLog(`⚡ สัญญาณเน็ตหลุด ระบบสลับเข้าโหมด Offline LAN อัตโนมัติ`);
-        showToast("⚡ เข้าสู่โหมดเน็ตหลุด: ยังขาย ตัดสต็อก พิมพ์ใบเสร็จ และสร้าง QR ได้ตามปกติ!");
-      }
+      document.getElementById("netToggleBtn").className = `net-toggle-btn ${state.isOnline ? "online" : "offline"}`;
+      document.getElementById("netStatusDot").textContent = state.isOnline ? "🟢" : "🔴";
+      document.getElementById("netStatusText").textContent = state.isOnline ? "ออนไลน์" : "ออฟไลน์";
+      document.getElementById("offlineBanner").classList.toggle("active", !state.isOnline);
+      if (state.isOnline) flushOfflineSyncQueue();
       renderAll();
     }
 
     function addAuditLog(msg) {
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
       state.auditLogs.unshift(`[${now}] ${msg}`);
-      if (!state.isOnline) state.offlineSyncQueue.push(msg);
+    }
+
+    window.addEventListener("online", flushOfflineSyncQueue);
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("/service-worker.js"));
     }
 
     function deductBomInventory(orderItems) {
@@ -3370,7 +3412,7 @@
       `).join("");
     }
 
-    function submitOrderFromCustomer() {
+    async function submitOrderFromCustomer() {
       if (state.cart.length === 0) {
         showToast("⚠️ กรุณาเลือกเมนูอาหารก่อนส่งเข้าครัวครับ");
         return;
@@ -3379,10 +3421,19 @@
       const subtotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
       const discount = getCartDiscount(subtotal);
       const note = document.getElementById("orderNoteInput").value.trim() || "-";
-      const orderId = "ORD-" + Math.floor(1000 + Math.random() * 9000);
+      const orderId = "ORD-" + crypto.randomUUID();
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
-      // Deduct BOM Stock automatically
+      const apiItems = state.cart.map(i => ({
+        id: i.id, name: i.name, price: i.price, qty: i.qty,
+        bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || [])
+      }));
+      try {
+        await apiMutation("/api/orders", {
+          event_id: crypto.randomUUID(), order_no: orderId, branch_id: 1,
+          table_no: table, total_amount: subtotal - discount, items: apiItems
+        });
+      } catch (error) { showToast(`⚠️ ส่งออเดอร์ไม่สำเร็จ: ${error.message}`); return; }
       deductBomInventory(state.cart);
 
       // Award CRM points if phone entered
@@ -3790,13 +3841,26 @@
       printReceiptForTable(tStr, "ใบแจ้งหนี้พร้อม QR ชำระเงิน", false);
     }
 
-    function confirmPaymentAndPrint(method) {
+    async function confirmPaymentAndPrint(method) {
       const tStr = state.selectedCashierTable;
       const calc = getTableGrandTotalWithTax(tStr);
       if (calc.grand <= 0) {
         showToast("⚠️ โต๊ะนี้ไม่มียอดค้างชำระ");
         return;
       }
+      const orders = getTableOrders(tStr);
+      if (method.includes("QR")) {
+        showToast("⚠️ ยังไม่มีระบบตรวจสลิปจริง กรุณาตรวจยืนยันกับธนาคารก่อนปิดบิล");
+        return;
+      }
+      try {
+        for (const order of orders) {
+          await apiMutation("/api/payments/close", {
+            event_id: crypto.randomUUID(), order_no: order.orderId,
+            amount: calc.grand / orders.length, method
+          });
+        }
+      } catch (error) { showToast(`⚠️ ปิดบิลไม่สำเร็จ: ${error.message}`); return; }
       printReceiptForTable(tStr, `ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ (${method})`, false);
 
       if (method.includes("เงินสด")) state.shift.cashSales += calc.grand;
@@ -4101,7 +4165,7 @@
         `📊 โควตาวันลาคงเหลือของ ${st.name}: ลาป่วยเหลือ ${st.quotas.sick} วัน | ลากิจเหลือ ${st.quotas.personal} วัน | พักร้อนเหลือ ${st.quotas.vacation} วัน`;
     }
 
-    function submitLineLeaveRequest() {
+    async function submitLineLeaveRequest() {
       const staffId = document.getElementById("staffSelect").value;
       const st = state.staffStats.find(s => s.id === staffId);
       if (!st) return;
@@ -4113,8 +4177,20 @@
       const lvId = "LV-" + Math.floor(100 + Math.random() * 900);
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
+      const startDate = new Date().toISOString().slice(0, 10);
+      let result;
+      try {
+        result = await apiMutation("/api/line-liff/leave-requests", {
+          event_id: crypto.randomUUID(), client_leave_id: lvId,
+          staff_id: Number(st.id.replace("ST", "")), leave_type: leaveType,
+          start_date: startDate, end_date: startDate, reason,
+          attachment_url: attachment === "-" ? null : attachment
+        });
+      } catch (error) { showToast(`⚠️ ยื่นใบลาไม่สำเร็จ: ${error.message}`); return; }
+      const serverLeaveId = result.leave_id || null;
       state.leaveRequests.unshift({
         id: lvId,
+        serverLeaveId,
         staffId: st.id,
         staffName: st.name,
         leaveType,
@@ -4126,14 +4202,23 @@
         createdAt: now
       });
 
-      addAuditLog(`📨 [LINE LIFF Leave] ${st.name} ยื่นใบลา #${lvId} (${leaveTypeLabel} - ${duration}) สถานะ Pending ส่ง Flex Message หาผู้จัดการแล้ว`);
+      addAuditLog(`📨 [LINE LIFF Leave] ${st.name} ยื่นใบลา #${lvId} (${leaveTypeLabel} - ${duration}) สถานะ Pending`);
       renderAll();
-      showToast(`📨 ส่งใบลา #${lvId} ของ ${st.name} เข้า LINE ผู้จัดการเรียบร้อย! กดปุ่ม [อนุมัติ] ด้านล่างได้เลย`);
+      showToast(`📨 บันทึกใบลา #${lvId} ของ ${st.name} แล้ว`);
     }
 
-    function reviewLeaveRequest(lvId, decision) {
+    async function reviewLeaveRequest(lvId, decision) {
       const req = state.leaveRequests.find(r => r.id === lvId);
       if (!req) return;
+      if (!req.serverLeaveId) {
+        showToast("⚠️ ใบลานี้ยังไม่ซิงก์กับเซิร์ฟเวอร์ กรุณารอเชื่อมต่อก่อนอนุมัติ");
+        return;
+      }
+      try {
+        await apiMutation("/api/line-webhook/approve-leave", {
+          leave_id: req.serverLeaveId, manager_staff_id: 1, decision
+        });
+      } catch (error) { showToast(`⚠️ อนุมัติไม่สำเร็จ: ${error.message}`); return; }
       req.status = decision; // 'approved' or 'rejected'
       const st = state.staffStats.find(s => s.id === req.staffId);
 
@@ -4144,15 +4229,15 @@
         if (req.leaveType === "personal" && st.quotas.personal > 0) st.quotas.personal -= 1;
         if (req.leaveType === "vacation" && st.quotas.vacation > 0) st.quotas.vacation -= 1;
 
-        addAuditLog(`✅ [Manager Approve #${lvId}] อนุมัติใบลาของ ${st.name} -> 1) อัปเดตกะเป็น on_leave 2) ล็อกรหัส PIN (${st.pin}) หน้าเครื่อง POS ชั่วคราว 3) ตัดชื่อออกจากตัวหารคอมมิชชันวันนี้`);
+        addAuditLog(`✅ [Manager Approve #${lvId}] อนุมัติใบลาของ ${st.name} -> อัปเดตกะเป็น on_leave ล็อก PIN และตัดชื่อออกจากตัวหารคอมมิชชัน`);
         showToast(`✅ อนุมัติใบลาของ ${st.name} แล้ว: ล็อก PIN เครื่อง POS และปรับตัวหารค่าคอมมิชชันอัตโนมัติ!`);
       } else {
         if (st) {
           st.shiftStatus = "completed";
           st.posLocked = false;
         }
-        addAuditLog(`❌ [Manager Reject #${lvId}] ปฏิเสธคำขอลาของ ${req.staffName} แจ้งผลกลับทาง LINE แล้ว`);
-        showToast(`❌ ปฏิเสธคำขอลา #${lvId} และส่งข้อความแจ้งพนักงานทาง LINE แล้ว`);
+        addAuditLog(`❌ [Manager Reject #${lvId}] ปฏิเสธคำขอลาของ ${req.staffName}`);
+        showToast(`❌ ปฏิเสธคำขอลา #${lvId} แล้ว`);
       }
       onStaffSelectChange();
       renderAll();
@@ -4298,10 +4383,16 @@
       document.getElementById("kpiNetProfit").textContent = `฿${netProfit.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`;
     }
 
-    function recordAttendance(action) {
+    async function recordAttendance(action) {
       const staffId = document.getElementById("staffSelect").value;
       const st = state.staffStats.find(s => s.id === staffId);
       if (!st) return;
+      try {
+        await apiMutation("/api/attendance", {
+          event_id: crypto.randomUUID(), staff_id: Number(st.id.replace("ST", "")),
+          action: action.includes("เข้างาน") ? "clock_in" : "clock_out"
+        });
+      } catch (error) { showToast(`⚠️ ลงเวลาไม่สำเร็จ: ${error.message}`); return; }
       if (action.includes("เข้างาน")) {
         st.shiftStatus = "completed";
         st.posLocked = false;
@@ -4633,7 +4724,11 @@
       showToast("🎬 สาธิต: สั่งอาหาร + ใช้คูปอง Happy Hour + ตัดสต็อก BOM + สะสมแต้มสมาชิกเรียบร้อย!");
     }
 
+    fetch("/api/config").then(r => r.json()).then(config => {
+      if (config.promptpay_id) state.promptPayId = config.promptpay_id;
+    }).catch(() => {});
     renderAll();
+    flushOfflineSyncQueue();
   </script>
 </body>
 </html>
