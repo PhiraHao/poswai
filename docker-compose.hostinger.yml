@@ -1,10 +1,11 @@
 services:
   poswai:
     build:
-      context: https://github.com/PhiraHao/poswai.git#main
+      context: https://github.com/PhiraHao/poswai.git#codex/pwa-api-offline-deploy
     restart: unless-stopped
     environment:
       DATABASE_URL: sqlite:////data/poswai.db
+      POSWAI_PREVIEW_ONLY: "1"
       PROMPTPAY_ID: ${PROMPTPAY_ID:-}
       LINE_LIFF_ID: ${LINE_LIFF_ID:-}
       LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}

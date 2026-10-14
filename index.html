@@ -1969,6 +1969,7 @@
 
     let state = {
       isOnline: true,
+      previewOnly: false,
       branch: "สาขา 1: เชียงใหม่ (นิมมาน)",
       shopName: "POS WAI - สาขาเชียงใหม่ (นิมมาน)",
       promptPayId: "0812345678",
@@ -2251,6 +2252,7 @@
     }
 
     async function apiMutation(path, payload) {
+      if (state.previewOnly) throw new Error("โหมดตัวอย่างยังไม่เปิดให้บันทึกข้อมูล");
       const event = { path, payload, id: payload.event_id || crypto.randomUUID() };
       if (!navigator.onLine || !state.isOnline) {
         state.offlineSyncQueue.push(event);
@@ -2274,7 +2276,7 @@
     }
 
     async function flushOfflineSyncQueue() {
-      if (!navigator.onLine || !state.isOnline) return;
+      if (state.previewOnly || !navigator.onLine || !state.isOnline) return;
       while (state.offlineSyncQueue.length) {
         const event = state.offlineSyncQueue[0];
         try {
@@ -4726,9 +4728,16 @@
 
     fetch("/api/config").then(r => r.json()).then(config => {
       if (config.promptpay_id) state.promptPayId = config.promptpay_id;
+      if (config.preview_only) {
+        state.previewOnly = true;
+        const notice = document.createElement("div");
+        notice.textContent = "ตัวอย่าง POS WAI — การขาย การชำระเงิน และการแก้ข้อมูลบนเซิร์ฟเวอร์ยังปิดอยู่";
+        notice.style.cssText = "position:sticky;top:0;z-index:9999;background:#fef3c7;color:#78350f;text-align:center;padding:10px;font-weight:700";
+        document.body.prepend(notice);
+      }
+      if (!config.preview_only) flushOfflineSyncQueue();
     }).catch(() => {});
     renderAll();
-    flushOfflineSyncQueue();
   </script>
 </body>
 </html>

@@ -17,7 +17,8 @@ import json
 import os
 from typing import List, Optional
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -40,6 +41,7 @@ PROMPTPAY_ID = os.getenv("PROMPTPAY_ID", "")
 LINE_LIFF_ID = os.getenv("LINE_LIFF_ID", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
+PREVIEW_ONLY = os.getenv("POSWAI_PREVIEW_ONLY", "0") == "1"
 if not DATABASE_URL.startswith("sqlite:///"):
     raise RuntimeError("This deployment supports SQLite only; configure a persistent SQLite DATABASE_URL")
 DB_PATH = Path(DATABASE_URL.removeprefix("sqlite:///"))
@@ -215,6 +217,13 @@ def init_db() -> None:
 
 
 init_db()
+
+
+@app.middleware("http")
+async def protect_preview(request: Request, call_next):
+    if PREVIEW_ONLY and request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD"):
+        return JSONResponse({"detail": "Preview mode: transactions are disabled"}, status_code=403)
+    return await call_next(request)
 
 
 class OrderItem(BaseModel):
@@ -545,7 +554,7 @@ def serve_icon(size: int):
 
 @app.get("/api/config")
 def public_config():
-    return {"promptpay_id": PROMPTPAY_ID, "line_liff_id": LINE_LIFF_ID}
+    return {"promptpay_id": PROMPTPAY_ID, "line_liff_id": LINE_LIFF_ID, "preview_only": PREVIEW_ONLY}
 
 
 if __name__ == "__main__":
