@@ -1,0 +1,28 @@
+services:
+  poswai:
+    build:
+      context: https://github.com/PhiraHao/poswai.git#main
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////data/poswai.db
+      PROMPTPAY_ID: ${PROMPTPAY_ID:-}
+      LINE_LIFF_ID: ${LINE_LIFF_ID:-}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET:-}
+    volumes:
+      - poswai_data:/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.poswai.rule=Host(`poswai.zzaxstudio.com`)
+      - traefik.http.routers.poswai.entrypoints=websecure
+      - traefik.http.routers.poswai.tls.certresolver=letsencrypt
+      - traefik.http.services.poswai.loadbalancer.server.port=8000
+    networks:
+      - traefik-proxy
+
+volumes:
+  poswai_data:
+
+networks:
+  traefik-proxy:
+    external: true

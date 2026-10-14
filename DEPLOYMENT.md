@@ -1,8 +1,19 @@
 # POS WAI deployment notes
 
-The FastAPI service serves the PWA and API from one HTTPS origin. After deploying the
-Render service and confirming the URL works, use its root URL (`https://<your-service>.onrender.com/`)
-as the **Endpoint URL** in LINE LIFF Console.
+The intended live hostname is `https://poswai.zzaxstudio.com/`. The FastAPI
+service serves the PWA and API from one HTTPS origin. Use that root URL as the
+**Endpoint URL** in LINE LIFF Console after HTTPS and the app have been verified.
+
+The user's existing Hostinger VPS runs Docker Manager and Traefik. The
+`docker-compose.hostinger.yml` file connects POS WAI to its `traefik-proxy`
+network, routes the hostname to port 8000, and stores SQLite on a named volume.
+Before deployment, merge the reviewed PR into `main`, create a Cloudflare DNS
+`A` record named `poswai` pointing to the VPS IP, and set the environment
+secrets in Hostinger Docker Manager. DNS for `zzaxstudio.com` is authoritative
+at Cloudflare, so editing Hostinger DNS alone will not activate the subdomain.
+
+The old `render.yaml` remains an alternative deployment configuration. It is
+not the target for this hostname.
 
 Set `DATABASE_URL` to a persistent SQLite file, for example
 `sqlite:////var/data/poswai.db` on a mounted persistent disk. The default
