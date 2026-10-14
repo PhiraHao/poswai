@@ -5,8 +5,8 @@ service serves the PWA and API from one HTTPS origin. Use that root URL as the
 **Endpoint URL** in LINE LIFF Console after HTTPS and the app have been verified.
 
 The user's existing Hostinger VPS runs Docker Manager and Traefik. The
-`docker-compose.hostinger.yml` file connects POS WAI to its `traefik-proxy`
-network, routes the hostname to port 8000, and stores SQLite on a named volume.
+`docker-compose.hostinger.yml` file uses its own Compose network, lets Traefik
+route the hostname to port 8000, and stores SQLite on a named volume.
 It currently builds the PR branch and sets `POSWAI_PREVIEW_ONLY=1`. This mode
 shows the interface but rejects API writes. Keep it enabled while the
 production gaps below are unresolved. After the PR is merged, change the

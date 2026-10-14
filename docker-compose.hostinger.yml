@@ -16,14 +16,10 @@ services:
       - traefik.enable=true
       - traefik.http.routers.poswai.rule=Host(`poswai.zzaxstudio.com`)
       - traefik.http.routers.poswai.entrypoints=websecure
+      - traefik.http.routers.poswai.tls=true
       - traefik.http.routers.poswai.tls.certresolver=letsencrypt
       - traefik.http.services.poswai.loadbalancer.server.port=8000
-    networks:
-      - traefik-proxy
 
 volumes:
   poswai_data:
 
-networks:
-  traefik-proxy:
-    external: true
