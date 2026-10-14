@@ -650,7 +650,7 @@
   </style>
   <link rel="stylesheet" href="/ui.css">
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#06C755">
+  <meta name="theme-color" content="#FFC928">
 </head>
 <body data-active-tab="customer">
 
@@ -667,7 +667,7 @@
       </div>
       <div class="net-controls">
         <div style="display:flex; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:2px;">
-          <button class="btn btn-sm" id="topLangBtnTH" style="background:#06C755; color:#fff; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
+          <button class="btn btn-sm" id="topLangBtnTH" style="background:#FFC928; color:#141B24; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
           <button class="btn btn-sm" id="topLangBtnEN" style="background:transparent; color:#cbd5e1; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('EN')">🇬🇧 EN</button>
           <button class="btn btn-sm" id="topLangBtnCN" style="background:transparent; color:#cbd5e1; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('CN')">🇨🇳 中文</button>
         </div>
@@ -743,9 +743,9 @@
         <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
           <!-- Multi-language switcher -->
           <div style="display:flex; background:rgba(0,0,0,0.2); border-radius:8px; padding:2px;">
-            <button class="btn btn-sm" id="langBtnTH" style="background:#fff; color:#0f172a; padding:4px 8px;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
-            <button class="btn btn-sm" id="langBtnEN" style="background:transparent; color:#fff; padding:4px 8px;" onclick="setMenuLanguage('EN')">🇬🇧 EN</button>
-            <button class="btn btn-sm" id="langBtnCN" style="background:transparent; color:#fff; padding:4px 8px;" onclick="setMenuLanguage('CN')">🇨🇳 中文</button>
+            <button class="btn btn-sm" id="langBtnTH" style="background:#FFC928; color:#141B24; padding:4px 8px;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
+            <button class="btn btn-sm" id="langBtnEN" style="background:transparent; color:#141B24; padding:4px 8px;" onclick="setMenuLanguage('EN')">🇬🇧 EN</button>
+            <button class="btn btn-sm" id="langBtnCN" style="background:transparent; color:#141B24; padding:4px 8px;" onclick="setMenuLanguage('CN')">🇨🇳 中文</button>
           </div>
           <button class="btn btn-sm btn-warning" onclick="issueSmartQueue()">ทดลองรับบัตรคิว</button>
           <select id="customerTableSelect" class="table-selector" onchange="onCustomerTableChange()">
@@ -2857,13 +2857,13 @@
       ["TH", "EN", "CN"].forEach(l => {
         const b = document.getElementById("langBtn" + l);
         if (b) {
-          b.style.background = l === lang ? "#fff" : "transparent";
-          b.style.color = l === lang ? "#0f172a" : "#fff";
+          b.style.background = l === lang ? "#FFC928" : "transparent";
+          b.style.color = "#141B24";
         }
         const tb = document.getElementById("topLangBtn" + l);
         if (tb) {
-          tb.style.background = l === lang ? "#06C755" : "transparent";
-          tb.style.color = l === lang ? "#fff" : "#cbd5e1";
+          tb.style.background = l === lang ? "#FFC928" : "transparent";
+          tb.style.color = l === lang ? "#141B24" : "#596573";
         }
       });
       renderAll();
