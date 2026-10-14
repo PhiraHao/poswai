@@ -2,8 +2,8 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>POS WAI - ระบบ POS ร้านอาหารครบวงจรผ่าน LINE (Offline-First, BOM, CRM, BI)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS WAI — ระบบจัดการร้านอาหาร</title>
   <style>
     :root {
       --line-green: #06C755;
@@ -648,16 +648,17 @@
     }
 
   </style>
+  <link rel="stylesheet" href="/ui.css">
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#06C755">
 </head>
-<body>
+<body data-active-tab="customer">
 
   <!-- Top Control Bar -->
   <header class="sim-topbar">
     <div class="sim-topbar-row">
       <div class="brand-title">
-        <span class="line-badge">⚡ POS WAI</span>
+        <span class="line-badge"><span class="brand-symbol" aria-hidden="true">W</span><span>POS WAI</span></span>
         <select id="branchSelect" class="branch-select" onchange="switchBranch()">
           <option value="สาขา 1: เชียงใหม่ (นิมมาน)">📍 สาขา 1: เชียงใหม่ (นิมมาน)</option>
           <option value="สาขา 2: เชียงใหม่ (แม่ริม)">📍 สาขา 2: เชียงใหม่ (แม่ริม)</option>
@@ -687,40 +688,44 @@
   </div>
 
   <!-- 7 Complete Modules Navigation -->
-  <nav class="role-tabs-wrap">
+  <nav class="role-tabs-wrap" aria-label="เมนูหลัก">
+    <div class="nav-brand"><span class="nav-brand-mark" aria-hidden="true">W</span><span><strong>POS WAI</strong><small>Restaurant workspace</small></span></div>
+    <div class="nav-section-label">พื้นที่ทำงาน</div>
     <div class="role-tabs">
-      <button class="role-tab active" onclick="switchTab('customer', this)">
-        <span>📱 1. ลูกค้าสั่งอาหาร/คิว</span>
-        <small>QR Order & สมาชิก</small>
+      <button class="role-tab active" onclick="switchTab('customer', this)" aria-current="page" title="สั่งอาหาร">
+        <svg aria-hidden="true"><use href="/icons.svg#menu"></use></svg><span>สั่งอาหาร</span>
+        <small>เมนูและตะกร้า</small>
       </button>
-      <button class="role-tab" onclick="switchTab('kitchen', this)">
-        <span>👨‍🍳 2. จอครัว KDS</span>
-        <small>ส่งครัว & พิมพ์ใบครัว</small>
+      <button class="role-tab" onclick="switchTab('kitchen', this)" title="จอครัว">
+        <svg aria-hidden="true"><use href="/icons.svg#chef"></use></svg><span>จอครัว</span>
+        <small>รายการและสถานะ</small>
         <span id="kitchenBadge" class="tab-badge" style="display:none;">0</span>
       </button>
-      <button class="role-tab" onclick="switchTab('cashier', this)">
-        <span>💰 3. แคชเชียร์ & กะ</span>
-        <small>แยกบิล/ย้ายโต๊ะ/VAT</small>
+      <button class="role-tab" onclick="switchTab('cashier', this)" title="แคชเชียร์">
+        <svg aria-hidden="true"><use href="/icons.svg#cashier"></use></svg><span>แคชเชียร์</span>
+        <small>โต๊ะและการชำระเงิน</small>
         <span id="cashierBadge" class="tab-badge" style="display:none;">0</span>
       </button>
-      <button class="role-tab" onclick="switchTab('inventory', this)">
-        <span>📦 4. สต็อก & สูตร BOM</span>
-        <small>ตัดวัตถุดิบ/PO/ของเสีย</small>
+      <button class="role-tab" onclick="switchTab('inventory', this)" title="สต็อก">
+        <svg aria-hidden="true"><use href="/icons.svg#inventory"></use></svg><span>สต็อก</span>
+        <small>วัตถุดิบและสูตร</small>
         <span id="stockBadge" class="tab-badge" style="display:none;">0</span>
       </button>
-      <button class="role-tab" onclick="switchTab('crm', this)">
-        <span>🎁 5. สมาชิก & เดลิเวอรี</span>
-        <small>แต้ม/คูปอง/Grab/LINE MAN</small>
+      <button class="role-tab" onclick="switchTab('crm', this)" title="สมาชิก">
+        <svg aria-hidden="true"><use href="/icons.svg#users"></use></svg><span>สมาชิก</span>
+        <small>CRM และเดลิเวอรี</small>
       </button>
-      <button class="role-tab" onclick="switchTab('staff', this)">
-        <span>⏰ 6. พนักงาน & สิทธิ์</span>
-        <small>ลงเวลา/คอมมิชชัน/PIN</small>
+      <button class="role-tab" onclick="switchTab('staff', this)" title="พนักงาน">
+        <svg aria-hidden="true"><use href="/icons.svg#staff"></use></svg><span>พนักงาน</span>
+        <small>กะ ใบลา คอมมิชชัน</small>
       </button>
-      <button class="role-tab" onclick="switchTab('analytics', this)">
-        <span>📊 7. รายงาน & กำไร</span>
-        <small>Star Matrix & Peak Hour</small>
+      <button class="role-tab" onclick="switchTab('analytics', this)" title="รายงาน">
+        <svg aria-hidden="true"><use href="/icons.svg#chart"></use></svg><span>รายงาน</span>
+        <small>ยอดขายและข้อมูลเชิงลึก</small>
       </button>
     </div>
+    <button class="mobile-more" type="button" onclick="toggleMobileNavigation()" aria-expanded="false" aria-label="ดูเมนูเพิ่มเติม"><svg aria-hidden="true"><use href="/icons.svg#more"></use></svg><span>เพิ่มเติม</span></button>
+    <div class="nav-footer"><span class="nav-status-dot" aria-hidden="true"></span><span>ระบบตัวอย่าง</span></div>
   </nav>
 
   <main class="container">
@@ -729,6 +734,7 @@
          TAB 1: ลูกค้าสแกนสั่งอาหาร + ชุดเซตโปรโมชัน + ตัวเลือกท็อปปิ้ง/แยกคอร์ส + โหมดจัดการเมนูด่วนหน้าร้าน
          ================================================================= -->
     <section id="view-customer" class="view-section active">
+      <div class="module-intro"><div><h1>สั่งอาหาร</h1><p>เลือกเมนู จัดการตะกร้า และติดตามบิลของโต๊ะ</p></div><span class="module-state">หน้าลูกค้า</span></div>
       <div class="liff-header">
         <div>
           <div style="font-size:0.75rem; opacity:0.92;">POS WAI • ระบบจัดการร้านอาหารอัจฉริยะผ่าน LINE OA & Offline-First</div>
@@ -741,7 +747,7 @@
             <button class="btn btn-sm" id="langBtnEN" style="background:transparent; color:#fff; padding:4px 8px;" onclick="setMenuLanguage('EN')">🇬🇧 EN</button>
             <button class="btn btn-sm" id="langBtnCN" style="background:transparent; color:#fff; padding:4px 8px;" onclick="setMenuLanguage('CN')">🇨🇳 中文</button>
           </div>
-          <button class="btn btn-sm btn-warning" onclick="issueSmartQueue()">🎫 รับบัตรคิว LINE</button>
+          <button class="btn btn-sm btn-warning" onclick="issueSmartQueue()">ทดลองรับบัตรคิว</button>
           <select id="customerTableSelect" class="table-selector" onchange="onCustomerTableChange()">
             <option value="1">โต๊ะ 1 (หน้าร้าน)</option>
             <option value="2">โต๊ะ 2 (ริมหน้าต่าง)</option>
@@ -754,17 +760,18 @@
       </div>
 
       <!-- Quick Service Call Bar via Table QR -->
-      <div class="card" style="padding:10px 14px; margin-bottom:12px; background:#fff; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-        <div style="font-size:0.8rem; font-weight:700; color:var(--text-main);">
-          🔔 บริการด่วนผ่าน QR โต๊ะ (แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟ):
-        </div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <details id="serviceActions" class="card service-actions" open>
+        <summary>บริการที่โต๊ะ <span>เรียกพนักงาน • ขออุปกรณ์ • เช็กบิล</span></summary>
+        <div class="service-actions-content">
+        <div class="service-actions-label">บริการที่โต๊ะ</div>
+        <div class="service-actions-buttons">
           <button class="btn btn-sm btn-outline" onclick="sendTableServiceCall('ขอน้ำแข็ง/น้ำเปล่าเพิ่ม')">🧊 ขอน้ำแข็งเพิ่ม</button>
           <button class="btn btn-sm btn-outline" onclick="sendTableServiceCall('ขอน้ำซุป/ถ้วยแบ่ง/ช้อนส้อม')">🥣 ขอน้ำซุป/จานชาม</button>
           <button class="btn btn-sm btn-outline" onclick="sendTableServiceCall('เรียกพนักงานที่โต๊ะ')">🙋‍♂️ เรียกพนักงาน</button>
           <button class="btn btn-sm btn-primary" onclick="sendTableServiceCall('ลูกค้ากดเรียกเช็กบิล')">🧾 เรียกเช็กบิล</button>
         </div>
-      </div>
+        </div>
+      </details>
 
       <div class="grid-2">
         <!-- Left Column: Search, Category Pills, Quick Edit Mode & Menu Grid -->
@@ -772,12 +779,9 @@
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-title" id="menuSectionTitle">🍽️ เลือกเมนูอาหาร & ชุดเซตสุดคุ้ม (แตะเมนูเพื่อเลือกความเผ็ด/ท็อปปิ้ง/แยกคอร์ส)</div>
-                <div style="font-size:0.74rem; color:var(--text-muted);">ระบบตัดสต็อกวัตถุดิบ (BOM) ตามเมนูและท็อปปิ้งที่เลือกจริง พร้อมแยกปรินต์ตามสเตชันครัวอัตโนมัติ</div>
+                <div class="card-title" id="menuSectionTitle">เมนูอาหาร</div>
+                <div style="font-size:0.74rem; color:var(--text-muted);">เลือกเมนูและตัวเลือกก่อนเพิ่มลงตะกร้า</div>
               </div>
-              <button id="toggleQuickEditBtn" class="btn btn-sm btn-outline" style="border-color:var(--info); color:var(--info);" onclick="toggleManagerQuickEditMode()">
-                ⚙️ จัดการเมนู / ของหมด (Manager PIN)
-              </button>
             </div>
 
             <!-- Search Bar -->
@@ -799,7 +803,7 @@
             <!-- Manager Quick Edit Panel (Hidden until toggled by Manager PIN) -->
             <div id="managerQuickEditPanel" style="display:none; background:#eff6ff; border:2px solid #60a5fa; border-radius:12px; padding:12px; margin-bottom:12px;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <strong style="color:#1e3a8a; font-size:0.86rem;">🔓 โหมดจัดการเมนูด่วนหน้าร้าน (Quick Edit & 86 List - สิทธิ์ผู้จัดการ PIN: 1234)</strong>
+                <strong style="color:#1e3a8a; font-size:0.86rem;">โหมดจัดการเมนูด่วนหน้าร้าน (ตัวอย่างสิทธิ์ผู้จัดการ)</strong>
                 <span class="badge badge-cooking">แตะปุ่มบนการ์ดเมนูด้านล่างเพื่อปิด "ของหมด" / แก้ราคา / ปักหมุด ได้ทันที</span>
               </div>
               <div style="display:grid; grid-template-columns:1.2fr 0.9fr 0.7fr 0.9fr auto; gap:6px; align-items:end; flex-wrap:wrap;">
@@ -833,7 +837,9 @@
           </div>
 
           <!-- Back-office No-Code Promotion Rules Engine -->
-          <div class="card">
+          <details class="card settings-panel">
+            <summary>จัดการเมนูและโปรโมชัน <span>ส่วนจัดการตัวอย่าง</span></summary>
+            <button id="toggleQuickEditBtn" class="btn btn-sm btn-outline" style="margin:0 18px 12px; border-color:var(--info); color:var(--info);" onclick="toggleManagerQuickEditMode()">⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)</button>
             <div class="card-header">
               <div>
                 <div class="card-title">🎯 ตั้งกติกาโปรโมชันอัตโนมัติ (No-Code Promotion & Combo Rules Engine)</div>
@@ -865,12 +871,12 @@
               <button class="btn btn-purple" onclick="addCustomPromoRule()">✨ เปิดใช้งานกติกา</button>
             </div>
             <div id="activePromoRulesList" style="margin-top:8px; font-size:0.76rem; display:flex; flex-direction:column; gap:4px;"></div>
-          </div>
+          </details>
         </div>
 
         <!-- Right Column: Smart Cart Validation + Spend Threshold Banner + Active Bill -->
         <div>
-          <div class="card">
+          <div class="card" id="customerCartPanel">
             <div class="card-header">
               <div class="card-title">🛒 ตะกร้าสั่งอาหารอัจฉริยะ (<span id="cartCountLabel">0</span> รายการ)</div>
               <button class="btn btn-sm btn-outline" onclick="clearCart()">ล้างตะกร้า</button>
@@ -889,7 +895,7 @@
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
               <div>
                 <label class="label">เบอร์โทรสมาชิก (สะสมแต้ม CRM):</label>
-                <input type="text" id="custMemberPhone" class="input" value="0891112222" />
+                <input type="tel" id="custMemberPhone" class="input" placeholder="กรอกเบอร์สมาชิก (ถ้ามี)" autocomplete="tel" />
               </div>
               <div>
                 <label class="label">คูปองเสริม / แลกแต้ม:</label>
@@ -932,7 +938,7 @@
                   <div class="promptpay-body">
                     <canvas id="qrCanvas" width="190" height="190"></canvas>
                     <div style="font-weight:800; font-size:1.1rem; color:var(--promptpay-blue);" id="qrAmountText">฿0.00</div>
-                    <div style="font-size:0.72rem; color:var(--text-muted);">พร้อมเพย์ร้าน: <span id="qrTargetAccountText">0812345678</span></div>
+                    <div style="font-size:0.72rem; color:var(--text-muted);">พร้อมเพย์ร้าน: <span id="qrTargetAccountText">—</span></div>
                   </div>
                 </div>
                 <button class="btn btn-line btn-block" onclick="simulateCustomerSendSlip('slip_promptpay_verified.jpg')">
@@ -949,6 +955,7 @@
          TAB 2: จอครัวอัตโนมัติ (KDS - แยกครัวร้อน/บาร์น้ำ & รับออเดอร์ Delivery)
          ================================================================= -->
     <section id="view-kitchen" class="view-section">
+      <div class="module-intro"><div><h1>จอครัว</h1><p>ติดตามรายการที่รอทำ กำลังทำ และพร้อมเสิร์ฟ</p></div><span class="module-state">Kitchen display</span></div>
       <div class="card">
         <div class="card-header">
           <div>
@@ -975,6 +982,7 @@
          TAB 3: แคชเชียร์ POS ครบวงจร (Shift, ย้าย/รวมโต๊ะ, Split Bill, VAT/ใบกำกับภาษี, สแกนบาร์โค้ด)
          ================================================================= -->
     <section id="view-cashier" class="view-section">
+      <div class="module-intro"><div><h1>แคชเชียร์</h1><p>ดูสถานะโต๊ะ ตรวจบิล และจัดการกะ</p></div><span class="module-state">จุดชำระเงิน</span></div>
       <!-- Shift & Cash Drawer Bar -->
       <div class="card" style="background:#f8fafc; border-left:5px solid var(--info);">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -985,9 +993,9 @@
             </div>
           </div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn btn-sm btn-outline" onclick="recordDrawerCash('IN')">➕ นำเงินทอนเข้าลิ้นชัก</button>
-            <button class="btn btn-sm btn-outline" onclick="recordDrawerCash('OUT')">➖ นำเงินสดออก (ซื้อของสด/น้ำแข็ง)</button>
-            <button class="btn btn-sm btn-primary" onclick="closeShiftReport()">📊 ปิดกะ & กระทบยอดลิ้นชัก</button>
+            <button class="btn btn-sm btn-outline" disabled title="ต้องมีฟอร์มจำนวนเงินและผู้ทำรายการ">นำเงินเข้าลิ้นชัก (ยังไม่พร้อม)</button>
+            <button class="btn btn-sm btn-outline" disabled title="ต้องมีฟอร์มจำนวนเงินและผู้ทำรายการ">นำเงินออกลิ้นชัก (ยังไม่พร้อม)</button>
+            <button class="btn btn-sm btn-primary" disabled title="ต้องนับเงินสดจริงก่อนกระทบยอด">ปิดกะ (ยังไม่พร้อม)</button>
           </div>
         </div>
       </div>
@@ -999,8 +1007,8 @@
             <div class="card-header">
               <div class="card-title">🪑 ผังโต๊ะอาหาร (เพิ่ม-ลดโต๊ะเองได้ / ย้ายโต๊ะ / รวมโต๊ะ)</div>
               <div style="display:flex; gap:5px; flex-wrap:wrap;">
-                <button class="btn btn-sm btn-outline" onclick="moveOrMergeTable('MOVE')">🔄 ย้ายโต๊ะ</button>
-                <button class="btn btn-sm btn-outline" onclick="moveOrMergeTable('MERGE')">🔗 รวมโต๊ะ</button>
+                <button class="btn btn-sm btn-outline" disabled title="ต้องเลือกโต๊ะต้นทางและปลายทางก่อน">ย้ายโต๊ะ (ยังไม่พร้อม)</button>
+                <button class="btn btn-sm btn-outline" disabled title="ต้องเลือกโต๊ะต้นทางและปลายทางก่อน">รวมโต๊ะ (ยังไม่พร้อม)</button>
                 <button class="btn btn-sm btn-purple" onclick="toggleReserveTable()">📅 จองโต๊ะ</button>
               </div>
             </div>
@@ -1035,7 +1043,7 @@
               <div class="card-title">💰 คิดเงิน & ออกใบเสร็จ: <span id="selectedTableHeader">โต๊ะ 1</span></div>
               <div style="display:flex; gap:6px;">
                 <span id="selectedTableStatusBadge" class="badge badge-empty">ว่าง</span>
-                <button class="btn btn-sm btn-danger" onclick="voidTableWithManagerPin()">🔒 ยกเลิกบิล (ต้องใช้ PIN ผู้จัดการ)</button>
+                <button class="btn btn-sm btn-danger" disabled title="ต้องมีระบบยืนยันสิทธิ์ผู้จัดการก่อน">ยกเลิกบิล (ยังไม่พร้อม)</button>
               </div>
             </div>
 
@@ -1059,8 +1067,8 @@
                   <input type="number" id="splitBillCount" class="input" value="1" min="1" max="20" style="width:60px;" onchange="renderSelectedTableBill()" />
                   <span id="splitBillPerPersonLabel" style="font-weight:700; color:var(--purple);">คนละ ฿0.00</span>
                 </div>
-                <button class="btn btn-sm btn-outline" onclick="splitBillBySelectedItems()">🧾 แยกบิลตามเมนูที่เลือกทาน</button>
-                <button class="btn btn-sm btn-line" onclick="sendDigitalEReceiptToLine()">📲 ส่ง E-Receipt เข้า LINE ลูกค้า</button>
+                <button class="btn btn-sm btn-outline" disabled title="ยังไม่มีหน้าจอเลือกรายการที่จะแยก">แยกบิลตามเมนู (ยังไม่พร้อม)</button>
+                <button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE ลูกค้า">ส่งใบเสร็จเข้า LINE (ยังไม่พร้อม)</button>
               </div>
               <div style="margin-top:8px;">
                 <input type="text" id="taxInvoiceCustomerInfo" class="input" placeholder="ชื่อบริษัท / เลขผู้เสียภาษี 13 หลัก (กรณีขอใบกำกับภาษีเต็มรูป)" />
@@ -1119,15 +1127,16 @@
          TAB 4: ระบบจัดการสินค้าคงคลัง สูตรอาหาร (BOM) ใบสั่งซื้อ (PO) & ของเสีย (Waste)
          ================================================================= -->
     <section id="view-inventory" class="view-section">
+      <div class="module-intro"><div><h1>สต็อกและสูตรอาหาร</h1><p>ตรวจวัตถุดิบ สูตร BOM และรายการเคลื่อนไหว</p></div><span class="module-state">คลังสินค้า</span></div>
       <div class="grid-2">
         <div>
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-title">📦 สต็อกวัตถุดิบ Real-time & จุดสั่งซื้อซ้ำ (Reorder Point)</div>
+                <div class="card-title">สต็อกวัตถุดิบและจุดสั่งซื้อซ้ำ</div>
                 <div style="font-size:0.76rem; color:var(--text-muted);">ตัดสต็อกอัตโนมัติตามสูตรอาหาร (BOM) ทันทีที่ขายหน้าร้านหรือเดลิเวอรี</div>
               </div>
-              <div style="display:flex; gap:6px;"><button class="btn btn-sm btn-primary" onclick="generatePurchaseOrder()">📝 ออกใบสั่งซื้อ (PO)</button><button class="btn btn-sm btn-line" onclick="sendPoViaLineToSupplier()">📲 ส่งใบ PO เข้า LINE ซัพพลายเออร์</button></div>
+              <div style="display:flex; gap:6px;"><button class="btn btn-sm btn-primary" onclick="generatePurchaseOrder()">📝 ดูใบสั่งซื้อจำลอง</button><button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE ซัพพลายเออร์">ส่งใบ PO เข้า LINE (ยังไม่พร้อม)</button></div>
             </div>
             <table class="data-table">
               <thead>
@@ -1152,7 +1161,7 @@
                 <div class="card-title">🧪 สูตรตัดวัตถุดิบอัตโนมัติ (Hybrid BOM: ระบบตั้งให้อัตโนมัติ + ร้านค้าแก้ไขต่อได้)</div>
                 <div style="font-size:0.74rem; color:var(--text-muted);">มีสูตรมาตรฐานเริ่มต้นให้ทุกเมนู และร้านค้าสามารถปรับปริมาณกรัม/มล. ตามช้อนตวงจริงของร้านได้ทันที</div>
               </div>
-              <button class="btn btn-sm btn-purple" onclick="resetBomToStandardTemplate()">✨ ดึงค่าสูตรมาตรฐานอัตโนมัติ</button>
+              <button class="btn btn-sm btn-purple" disabled title="ยังไม่มีระบบรีเซ็ตสูตรจริง">คืนค่าสูตรมาตรฐาน (ยังไม่พร้อม)</button>
             </div>
 
             <div style="background:#f8fafc; padding:10px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:8px;">
@@ -1222,13 +1231,14 @@
          TAB 5: ระบบสมาชิก CRM & โปรโมชัน + เชื่อมต่อ E-Commerce / Delivery
          ================================================================= -->
     <section id="view-crm" class="view-section">
+      <div class="module-intro"><div><h1>สมาชิกและเดลิเวอรี</h1><p>ดูสมาชิก สิทธิประโยชน์ และช่องทางรับออเดอร์</p></div><span class="module-state">ความสัมพันธ์ลูกค้า</span></div>
       <div class="grid-2">
         <!-- CRM & Loyalty Tier Membership -->
         <div>
           <div class="card">
             <div class="card-header">
               <div class="card-title">🎁 ระบบสะสมแต้มและระดับสมาชิก (CRM & Tier Membership)</div>
-              <button class="btn btn-sm btn-line" onclick="sendTargetedLineBroadcast()">📢 ส่งบรอดแคสต์โปรโมชันเข้า LINE เฉพาะกลุ่ม</button>
+              <button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE และการยินยอมรับข้อความ">บรอดแคสต์ LINE (ยังไม่พร้อม)</button>
             </div>
             <table class="data-table">
               <thead>
@@ -1253,11 +1263,11 @@
               <span class="badge badge-verify">โหมดจำลองทดสอบ + รองรับ API Key จริง</span>
             </div>
             <div style="padding:8px 10px; background:var(--info-light); border-radius:8px; font-size:0.76rem; color:var(--info); margin-bottom:10px;">
-              ℹ️ <strong>สถานะการเชื่อมต่อ:</strong> ปุ่มด้านล่างเป็น <strong>โหมดจำลองรับออเดอร์ (Webhook Simulator)</strong> เพื่อให้ทดสอบการตัดสต็อกและส่งเข้าครัวได้ทันที ส่วนการใช้งานจริงกับแอป Grab / LINE MAN / Shopee ต้องนำ <strong>Partner API Token / Webhook URL</strong> จากแพลตฟอร์มมาใส่ในช่องตั้งค่าด้านล่างเพื่อเปิดรับออเดอร์จริงครับ
+              ℹ️ <strong>สถานะการเชื่อมต่อ:</strong> ปุ่มด้านล่างจำลองออเดอร์เพื่อทดลองหน้าจอเท่านั้น การเชื่อมต่อ Grab, LINE MAN, Shopee และ TikTok จริงต้องตั้งค่า API อย่างปลอดภัยบนเซิร์ฟเวอร์ก่อน
             </div>
             <div style="display:grid; grid-template-columns:1fr auto; gap:6px; margin-bottom:10px;">
-              <input type="text" id="deliveryApiKeyInput" class="input" placeholder="ใส่ Grab / LINE MAN (Wongnai) Partner API Token หรือ Webhook Secret..." />
-              <button class="btn btn-sm btn-outline" onclick="saveDeliveryWebhookConfig()">🔗 บันทึก API Token</button>
+              <input type="password" id="deliveryApiKeyInput" class="input" placeholder="การเชื่อมต่อจริงตั้งค่าผ่านเซิร์ฟเวอร์" disabled />
+              <button class="btn btn-sm btn-outline" disabled title="ยังไม่ได้เชื่อมต่อ API ของผู้ให้บริการ">เชื่อมต่อช่องทาง (ยังไม่พร้อม)</button>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
               <button class="btn btn-line" onclick="simulateDeliveryOrder('GrabFood', 30)">🛵 รับออเดอร์ GrabFood (GP 30%)</button>
@@ -1275,6 +1285,7 @@
          TAB 6: ระบบพนักงาน ลางานผ่าน LINE, อนุมัติ Flex Message, ตรวจขาดงาน, ล็อกสิทธิ์ POS & คอมมิชชันหารคนทำงานจริง
          ================================================================= -->
     <section id="view-staff" class="view-section">
+      <div class="module-intro"><div><h1>พนักงาน</h1><p>ลงเวลา ใบลา ตารางกะ และคอมมิชชัน</p></div><span class="module-state">ทีมงาน</span></div>
       <div class="grid-2">
         <!-- Left Column: Step 1 (LINE LIFF Leave & Attendance) + Step 2 (Manager LINE Flex Approval) -->
         <div>
@@ -1290,10 +1301,10 @@
 
             <label class="label" style="margin-top:0;">เลือกพนักงาน (ดึงจาก LINE User ID อัตโนมัติ):</label>
             <select id="staffSelect" class="input" onchange="onStaffSelectChange()">
-              <option value="ST01">สมชาย (ผู้จัดการสาขา - PIN: 1234)</option>
-              <option value="ST02">กานดา (แคชเชียร์ - PIN: 2222)</option>
-              <option value="ST03" selected>วิภา (พนักงานเสิร์ฟ - PIN: 3333)</option>
-              <option value="ST04">นนท์ (บาริสต้า/บาร์น้ำ - PIN: 4444)</option>
+              <option value="ST01">สมชาย (ผู้จัดการสาขา)</option>
+              <option value="ST02">กานดา (แคชเชียร์)</option>
+              <option value="ST03" selected>วิภา (พนักงานเสิร์ฟ)</option>
+              <option value="ST04">นนท์ (บาริสต้า/บาร์น้ำ)</option>
             </select>
 
             <div id="staffQuotaBanner" style="margin-top:6px; padding:7px 10px; background:var(--line-green-light); border-radius:8px; font-size:0.76rem; color:var(--line-green-dark); font-weight:700;">
@@ -1328,26 +1339,31 @@
                   </select>
                 </div>
               </div>
+              <div class="leave-date-range">
+                <div><label class="label" for="leaveStartDate">วันที่เริ่มลา</label><input type="date" id="leaveStartDate" class="input" /></div>
+                <div><label class="label" for="leaveEndDate">วันที่สิ้นสุด</label><input type="date" id="leaveEndDate" class="input" /></div>
+              </div>
               <div style="margin-top:6px;">
                 <label class="label" style="margin-top:0;">เหตุผลการลา:</label>
-                <input type="text" id="leaveReasonInput" class="input" value="มีไข้สูง มีใบรับรองแพทย์ รพ.มหาราช" placeholder="ระบุเหตุผลการลา..." />
+                <input type="text" id="leaveReasonInput" class="input" placeholder="ระบุเหตุผลการลา..." />
               </div>
               <div style="margin-top:8px;">
-                <label class="label" style="margin-top:0;">📎 แนบรูปใบรับรองแพทย์ / เอกสารประกอบ (คลิกเพื่ออัปโหลดรูปภาพจริงจากมือถือหรือคอมพิวเตอร์):</label>
+                <label class="label" style="margin-top:0;">ตัวอย่างเอกสารประกอบ (เลือกไฟล์เพื่อดูบนเครื่อง):</label>
                 <label for="leaveAttachmentFileInput" class="file-upload-box" style="display:block; margin-top:4px;">
-                  📷 คลิกที่นี่เพื่อเลือกรูปใบรับรองแพทย์ หรือถ่ายภาพจากกล้อง (<span id="leaveAttachmentFileNameLabel">medical_cert_wipa.jpg</span>)
+                  📷 เลือกรูปใบรับรองแพทย์หรือถ่ายภาพจากกล้อง (<span id="leaveAttachmentFileNameLabel">ยังไม่ได้เลือกไฟล์</span>)
                 </label>
                 <input type="file" id="leaveAttachmentFileInput" accept="image/*,.pdf" style="display:none;" onchange="handleLeaveAttachmentUpload(event)" />
-                <input type="hidden" id="leaveAttachmentInput" value="medical_cert_wipa.jpg" />
+                <input type="hidden" id="leaveAttachmentInput" value="" />
                 <div id="leaveAttachmentPreviewBox" style="display:flex; align-items:center; gap:10px; margin-top:6px; padding:6px 10px; background:#f8fafc; border:1px solid var(--border-color); border-radius:8px;">
                   <img id="leaveAttachmentPreviewImg" src="" alt="Preview" style="display:none; width:54px; height:54px; object-fit:cover; border-radius:6px; border:1px solid #cbd5e1;" />
                   <div style="font-size:0.75rem; color:var(--text-muted);" id="leaveAttachmentPreviewText">
-                    📄 ไฟล์ที่แนบพร้อมส่ง: <strong>medical_cert_wipa.jpg</strong> (คลิกปุ่มด้านบนเพื่อเปลี่ยนเป็นรูปภาพจริงจากเครื่องของคุณได้ทันที)
+                    ยังไม่ได้แนบเอกสาร
                   </div>
                 </div>
+                <div class="form-note">ไฟล์ที่เลือกแสดงตัวอย่างบนเครื่องเท่านั้น ระบบส่งไฟล์จริงยังไม่เปิดใช้งาน</div>
               </div>
               <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="submitLineLeaveRequest()">
-                📨 ส่งคำขอลาเข้า LINE ผู้จัดการ (สร้าง Flex Message)
+                ส่งคำขอลา
               </button>
             </div>
           </div>
@@ -1440,24 +1456,25 @@
          TAB 7: ยกระดับรายงานวิเคราะห์ข้อมูลระดับผู้บริหาร (Executive Analytics & Predictive BI)
          ================================================================= -->
     <section id="view-analytics" class="view-section">
+      <div class="module-intro"><div><h1>รายงาน</h1><p>ภาพรวมยอดขาย ต้นทุน และประสิทธิภาพการบริการ</p></div><span class="module-state">ข้อมูลตัวอย่าง</span></div>
 
       <!-- HEADER BAR: Benchmark Selector & LINE Push Executive Summary -->
       <div class="card" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color:#fff; border:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
           <div>
-            <div style="font-size:0.75rem; color:#38bdf8; font-weight:700;">EXECUTIVE BI & PREDICTIVE ANALYTICS DASHBOARD</div>
-            <div style="font-size:1.1rem; font-weight:800;">📊 รายงานวิเคราะห์ข้อมูลเชิงลึกแบบ Real-time (เทียบเป้าหมาย, BCG Matrix, KDS Speed & Food Cost)</div>
+            <div style="font-size:0.75rem; color:#38bdf8; font-weight:700;">ตัวอย่างรูปแบบรายงานผู้บริหาร</div>
+            <div style="font-size:1.1rem; font-weight:800;">ภาพรวมยอดขาย ต้นทุน เมนู และประสิทธิภาพครัว</div>
           </div>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <select id="benchmarkModeSelect" class="input" style="width:auto; background:#334155; color:#fff; border-color:#475569; font-weight:700;" onchange="updateBenchmarkDisplay()">
               <option value="WOW" selected>📅 เทียบวันพุธสัปดาห์ก่อน (WoW Benchmark)</option>
               <option value="DOD">📆 เทียบช่วงเวลาเดียวกันของเมื่อวาน (DoD Benchmark)</option>
             </select>
-            <button class="btn btn-line btn-sm" onclick="sendExecutiveLineReport('HOURLY')">
-              📲 ส่งสรุปยอดชั่วโมงเร่งด่วนเข้า LINE
+            <button class="btn btn-line btn-sm" disabled title="รายงานนี้ยังเป็นข้อมูลตัวอย่าง">
+              ส่งรายงานเข้า LINE (ยังไม่พร้อม)
             </button>
-            <button class="btn btn-warning btn-sm" onclick="sendExecutiveLineReport('EOD')">
-              🌙 ส่งสรุปปิดร้านสิ้นวัน (End-of-Day LINE Push)
+            <button class="btn btn-warning btn-sm" disabled title="รายงานนี้ยังเป็นข้อมูลตัวอย่าง">
+              ส่งสรุปปิดร้าน (ยังไม่พร้อม)
             </button>
           </div>
         </div>
@@ -1467,7 +1484,7 @@
       <div class="grid-3" style="margin-bottom:14px;">
         <div class="stat-card" style="background:#fff; border-left:4px solid var(--line-green);">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:0.76rem; color:var(--text-muted); font-weight:700;">1. ยอดขายรวม Real-time (เทียบเป้า ฿6,000)</span>
+            <span style="font-size:0.76rem; color:var(--text-muted); font-weight:700;">ยอดขายรวมตัวอย่าง (เป้า ฿6,000)</span>
             <span class="badge badge-occupied" id="benchmarkDiffBadge">+14.2% vs พุธที่แล้ว</span>
           </div>
           <div class="stat-val" style="color:var(--line-green-dark);" id="kpiTotalSales">฿4,850.00</div>
@@ -1504,7 +1521,7 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">🍽️ แยกยอดขายตามช่องทาง (Channel Split: หน้าร้าน vs เดลิเวอรีรายค่าย)</div>
-            <span class="badge badge-occupied">อัปเดต Real-time</span>
+            <span class="badge badge-verify">ข้อมูลตัวอย่าง</span>
           </div>
           <div style="font-size:0.79rem;">
             <div class="bar-row">
@@ -1736,6 +1753,7 @@
 
     </section>
   </main>
+  <div class="mobile-cart-dock"><button type="button" onclick="document.getElementById('customerCartPanel').scrollIntoView({behavior:'smooth',block:'start'})"><span>ดูตะกร้า <strong id="mobileCartCount">0</strong> รายการ</span><strong id="mobileCartTotal">฿0.00</strong></button></div>
 
 
   <!-- MODAL 1: Modifiers, Add-ons (Toppings) & Hold/Fire Course Ordering -->
@@ -1972,7 +1990,7 @@
       previewOnly: false,
       branch: "สาขา 1: เชียงใหม่ (นิมมาน)",
       shopName: "POS WAI - สาขาเชียงใหม่ (นิมมาน)",
-      promptPayId: "0812345678",
+      promptPayId: "",
       currentCategory: "ทั้งหมด",
       customerTable: "1",
       selectedCashierTable: "1",
@@ -2021,10 +2039,10 @@
       ],
       storeMode: "SINGLE",
       staffStats: [
-        { id: "ST01", name: "สมชาย (ผู้จัดการสาขา)", role: "Manager", pin: "1234", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 5, personal: 3, vacation: 6 }, bills: 8, sales: 1450 },
-        { id: "ST02", name: "กานดา (แคชเชียร์)", role: "Cashier", pin: "2222", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 4, personal: 3, vacation: 5 }, bills: 14, sales: 1800 },
-        { id: "ST03", name: "วิภา (พนักงานเสิร์ฟ)", role: "Staff", pin: "3333", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 3, personal: 2, vacation: 5 }, bills: 11, sales: 1600 },
-        { id: "ST04", name: "นนท์ (บาริสต้า/บาร์น้ำ)", role: "Barista", pin: "4444", shift: "กะเช้า (08:00-17:00)", shiftStatus: "scheduled", posLocked: false, quotas: { sick: 3, personal: 3, vacation: 4 }, bills: 6, sales: 950 }
+        { id: "ST01", name: "สมชาย (ผู้จัดการสาขา)", role: "Manager", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 5, personal: 3, vacation: 6 }, bills: 8, sales: 1450 },
+        { id: "ST02", name: "กานดา (แคชเชียร์)", role: "Cashier", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 4, personal: 3, vacation: 5 }, bills: 14, sales: 1800 },
+        { id: "ST03", name: "วิภา (พนักงานเสิร์ฟ)", role: "Staff", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 3, personal: 2, vacation: 5 }, bills: 11, sales: 1600 },
+        { id: "ST04", name: "นนท์ (บาริสต้า/บาร์น้ำ)", role: "Barista", shift: "กะเช้า (08:00-17:00)", shiftStatus: "scheduled", posLocked: false, quotas: { sick: 3, personal: 3, vacation: 4 }, bills: 6, sales: 950 }
       ],
       leaveRequests: [
         {
@@ -2081,7 +2099,8 @@
     }
 
     function generatePromptPayPayload(targetId, amount) {
-      const cleanId = (targetId || "0812345678").replace(/[^0-9]/g, "");
+      const cleanId = String(targetId || "").replace(/[^0-9]/g, "");
+      if (![10, 13].includes(cleanId.length)) throw new Error("ต้องตั้งค่าเบอร์หรือเลขพร้อมเพย์ของร้านก่อน");
       const subTag = cleanId.length >= 13
         ? fTag("02", cleanId.slice(0, 13))
         : fTag("01", cleanId.startsWith("0") ? "0066" + cleanId.slice(1) : cleanId);
@@ -2232,9 +2251,21 @@
     function switchTab(tabId, btnEl) {
       document.querySelectorAll(".view-section").forEach(s => s.classList.remove("active"));
       document.getElementById("view-" + tabId).classList.add("active");
-      document.querySelectorAll(".role-tab").forEach(b => b.classList.remove("active"));
-      if (btnEl) btnEl.classList.add("active");
+      document.querySelectorAll(".role-tab").forEach(b => { b.classList.remove("active"); b.removeAttribute("aria-current"); });
+      if (btnEl) { btnEl.classList.add("active"); btnEl.setAttribute("aria-current", "page"); }
+      document.body.dataset.activeTab = tabId;
+      const nav = document.querySelector(".role-tabs-wrap");
+      nav.classList.remove("mobile-open");
+      nav.querySelector(".mobile-more").setAttribute("aria-expanded", "false");
+      nav.querySelector(".mobile-more span").textContent = ["crm", "staff", "analytics"].includes(tabId) ? btnEl.querySelector("span:not(.tab-badge)").textContent : "เพิ่มเติม";
+      window.scrollTo({ top: 0, behavior: "auto" });
       renderAll();
+    }
+
+    function toggleMobileNavigation() {
+      const nav = document.querySelector(".role-tabs-wrap");
+      const open = nav.classList.toggle("mobile-open");
+      nav.querySelector(".mobile-more").setAttribute("aria-expanded", String(open));
     }
 
     function switchBranch() {
@@ -2337,8 +2368,8 @@
       state.queueCounter += 1;
       const qCode = "Q-0" + state.queueCounter;
       document.getElementById("queueStatusBadge").textContent = "คิวหน้าร้านปัจจุบัน: " + qCode;
-      addAuditLog(`🎫 ออกบัตรคิวอัจฉริยะผ่าน LINE OA หมายเลข ${qCode}`);
-      showToast(`🎫 ออกบัตรคิว ${qCode} ส่งเข้า LINE ลูกค้าเรียบร้อย!`);
+      addAuditLog(`🎫 จำลองบัตรคิวหน้าร้าน ${qCode}`);
+      showToast(`ตัวอย่างบัตรคิว ${qCode} — ยังไม่ได้ส่งเข้า LINE`);
     }
 
     /* Customer Ordering & Promo Codes */
@@ -2350,6 +2381,11 @@
     }
 
     function onCustomerTableChange() {
+      if (state.cart.length && document.getElementById("customerTableSelect").value !== state.customerTable) {
+        document.getElementById("customerTableSelect").value = state.customerTable;
+        showToast("กรุณาส่งหรือล้างตะกร้าก่อนเปลี่ยนโต๊ะ");
+        return;
+      }
       state.customerTable = document.getElementById("customerTableSelect").value;
       renderAll();
     }
@@ -2398,15 +2434,15 @@
 
         // Tab 1: Customer Ordering & Quick Edit & Combos
         ["POS WAI - สาขาเชียงใหม่ (นิมมาน)", "POS WAI Smart Restaurant (Chiang Mai)"],
-        ["🎫 รับบัตรคิว LINE", "🎫 Get LINE Queue"],
+        ["ทดลองรับบัตรคิว", "Try queue ticket"],
         ["🔔 บริการด่วนผ่าน QR โต๊ะ (แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟ):", "🔔 Instant Table Service via QR (Alerts Cashier & Staff Smartwatch):"],
         ["🧊 ขอน้ำแข็งเพิ่ม", "🧊 Refill Ice/Water"],
         ["🥣 ขอน้ำซุป/จานชาม", "🥣 Soup / Utensils"],
         ["🙋‍♂️ เรียกพนักงาน", "🙋‍♂️ Call Staff"],
         ["🧾 เรียกเช็กบิล", "🧾 Request Bill"],
-        ["🍽️ เลือกเมนูอาหาร & ชุดเซตสุดคุ้ม (แตะเมนูเพื่อเลือกความเผ็ด/ท็อปปิ้ง/แยกคอร์ส)", "🍽️ Select Menu & Value Sets (Tap to customize spice, toppings & course)"],
-        ["ระบบตัดสต็อกวัตถุดิบ (BOM) ตามเมนูและท็อปปิ้งที่เลือกจริง พร้อมแยกปรินต์ตามสเตชันครัวอัตโนมัติ", "Real-time BOM stock deduction & automatic kitchen station routing"],
-        ["⚙️ จัดการเมนู / ของหมด (Manager PIN)", "⚙️ Quick Menu / 86 List (Manager PIN)"],
+        ["เมนูอาหาร", "Menu"],
+        ["เลือกเมนูและตัวเลือกก่อนเพิ่มลงตะกร้า", "Choose a dish and options before adding to cart"],
+        ["⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)", "⚙️ Manage menu / sold out (demo)"],
         ["✅ ปิดโหมดจัดการเมนู (บันทึกแล้ว)", "✅ Exit Quick Edit Mode (Saved)"],
         ["🔥 ชุดเซต & โปรโมชัน", "🔥 Value Sets & Promos"],
         ["⭐ เมนูแนะนำ/ขายดี", "⭐ Recommended / Best Sellers"],
@@ -2416,7 +2452,7 @@
         ["กับข้าว", "Main Courses"],
         ["เครื่องดื่ม", "Beverages"],
         ["ของหวาน", "Desserts"],
-        ["🔓 โหมดจัดการเมนูด่วนหน้าร้าน (Quick Edit & 86 List - สิทธิ์ผู้จัดการ PIN: 1234)", "🔓 Manager Quick Menu Edit & 86 List Mode (PIN: 1234)"],
+        ["โหมดจัดการเมนูด่วนหน้าร้าน (ตัวอย่างสิทธิ์ผู้จัดการ)", "Manager Quick Menu Edit & Sold Out Mode (Demo)"],
         ["แตะปุ่มบนการ์ดเมนูด้านล่างเพื่อปิด \"ของหมด\" / แก้ราคา / ปักหมุด ได้ทันที", "Tap any menu card below to toggle Sold Out, adjust price, or pin to top"],
         ["เพิ่มเมนูใหม่ด่วน (ชื่อเมนู):", "Quick Add Menu Name:"],
         ["หมวดหมู่ / สเตชันครัว:", "Category / Kitchen Station:"],
@@ -2587,15 +2623,15 @@
 
         // Tab 1: Customer Ordering & Quick Edit & Combos
         ["POS WAI - สาขาเชียงใหม่ (นิมมาน)", "POS WAI 智慧餐饮系统 (清迈店)"],
-        ["🎫 รับบัตรคิว LINE", "🎫 LINE 排号取号"],
+        ["ทดลองรับบัตรคิว", "体验排队取号"],
         ["🔔 บริการด่วนผ่าน QR โต๊ะ (แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟ):", "🔔 餐桌扫码快捷服务 (实时推送至收银台与服务员智能手表):"],
         ["🧊 ขอน้ำแข็งเพิ่ม", "🧊 加冰块/加水"],
         ["🥣 ขอน้ำซุป/จานชาม", "🥣 加汤/要餐具"],
         ["🙋‍♂️ เรียกพนักงาน", "🙋‍♂️ 呼叫服务员"],
         ["🧾 เรียกเช็กบิล", "🧾 呼叫买单"],
-        ["🍽️ เลือกเมนูอาหาร & ชุดเซตสุดคุ้ม (แตะเมนูเพื่อเลือกความเผ็ด/ท็อปปิ้ง/แยกคอร์ส)", "🍽️ 选择菜品与超值套餐 (点击菜品可选辣度/甜度/加料/叫起上菜)"],
-        ["ระบบตัดสต็อกวัตถุดิบ (BOM) ตามเมนูและท็อปปิ้งที่เลือกจริง พร้อมแยกปรินต์ตามสเตชันครัวอัตโนมัติ", "系统根据所选菜品与加料自动扣减BOM原材料，并按后厨档口自动分单打印"],
-        ["⚙️ จัดการเมนู / ของหมด (Manager PIN)", "⚙️ 菜品快编 / 沽清管理 (店长PIN)"],
+        ["เมนูอาหาร", "菜单"],
+        ["เลือกเมนูและตัวเลือกก่อนเพิ่มลงตะกร้า", "选择菜品和选项后加入购物车"],
+        ["⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)", "⚙️ 管理菜单 / 沽清（演示）"],
         ["✅ ปิดโหมดจัดการเมนู (บันทึกแล้ว)", "✅ 退出菜品管理模式 (已保存)"],
         ["🔥 ชุดเซต & โปรโมชัน", "🔥 超值套餐与促销"],
         ["⭐ เมนูแนะนำ/ขายดี", "⭐ 招牌必点/热销"],
@@ -2605,7 +2641,7 @@
         ["กับข้าว", "精选主菜"],
         ["เครื่องดื่ม", "特色饮品"],
         ["ของหวาน", "泰式甜品"],
-        ["🔓 โหมดจัดการเมนูด่วนหน้าร้าน (Quick Edit & 86 List - สิทธิ์ผู้จัดการ PIN: 1234)", "🔓 前台菜品快捷管理与沽清模式 (店长权限 PIN: 1234)"],
+        ["โหมดจัดการเมนูด่วนหน้าร้าน (ตัวอย่างสิทธิ์ผู้จัดการ)", "前台菜品快捷管理与沽清模式（演示）"],
         ["แตะปุ่มบนการ์ดเมนูด้านล่างเพื่อปิด \"ของหมด\" / แก้ราคา / ปักหมุด ได้ทันที", "点击下方菜品卡片即可一键设置“售罄”、临时改价或置顶菜品"],
         ["เพิ่มเมนูใหม่ด่วน (ชื่อเมนู):", "快速新增菜品名称:"],
         ["หมวดหมู่ / สเตชันครัว:", "菜品分类 / 出餐档口:"],
@@ -2841,8 +2877,8 @@
 
     function sendTableServiceCall(callType) {
       const tStr = state.customerTable;
-      addAuditLog(`🔔 [Service Call โต๊ะ ${tStr}] ลูกค้ากดปุ่ม "${callType}" ผ่าน QR -> แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟแล้ว`);
-      showToast(`🔔 ส่งแจ้งเตือน "${callType}" จากโต๊ะ ${tStr} ไปยังพนักงานเสิร์ฟแล้ว!`);
+      addAuditLog(`🔔 [ตัวอย่าง Service Call โต๊ะ ${tStr}] ${callType}`);
+      showToast(`ตัวอย่างคำขอ "${callType}" — ยังไม่ได้แจ้งพนักงานจริง`);
     }
 
     function toggleManagerQuickEditMode() {
@@ -2853,11 +2889,12 @@
         panel.style.display = "block";
         btn.className = "btn btn-sm btn-primary"; btn.style.color = "#fff";
         btn.textContent = "✅ ปิดโหมดจัดการเมนู (บันทึกแล้ว)";
-        showToast("🔓 เปิดโหมดจัดการเมนูด่วน (สิทธิ์ผู้จัดการ PIN: 1234) กดสลับของหมด/แก้ราคาบนการ์ดได้เลย!");
+        showToast("เปิดโหมดจัดการเมนูตัวอย่างแล้ว");
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
       } else {
         panel.style.display = "none";
         btn.className = "btn btn-sm btn-outline"; btn.style.color = "var(--info)";
-        btn.textContent = "⚙️ จัดการเมนู / ของหมด (Manager PIN)";
+        btn.textContent = "⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)";
       }
       renderCustomerMenu();
     }
@@ -3248,6 +3285,10 @@
     function confirmAddWithModifiers() {
       const menu = DEFAULT_MENU.find(m => m.id === state.pendingModMenuId);
       if (!menu) return;
+      if (typeof menu.quota === "number" && state.cart.filter(i => i.id === menu.id).reduce((n, i) => n + i.qty, 0) >= menu.quota) {
+        showToast("เมนูนี้ครบจำนวนที่เหลือแล้ว");
+        return;
+      }
       ensureMenuCustomOptions(menu);
       let extraPrice = 0;
       const addons = [state.selectedModLevel];
@@ -3268,11 +3309,6 @@
       });
 
       const courseMode = document.getElementById("modCourseSelect").value; // FIRE or HOLD
-      if (typeof menu.quota === "number" && menu.quota > 0) {
-        menu.quota -= 1;
-        if (menu.quota === 0) menu.soldOut = true;
-      }
-
       state.cart.push({
         id: menu.id,
         name: `${menu.name} (${addons.join(", ")})`,
@@ -3322,9 +3358,9 @@
     function addToCart(menuId) {
       const menu = DEFAULT_MENU.find(m => m.id === menuId);
       if (!menu) return;
-      if (typeof menu.quota === "number" && menu.quota > 0) {
-        menu.quota -= 1;
-        if (menu.quota === 0) menu.soldOut = true;
+      if (typeof menu.quota === "number" && state.cart.filter(i => i.id === menu.id).reduce((n, i) => n + i.qty, 0) >= menu.quota) {
+        showToast("เมนูนี้ครบจำนวนที่เหลือแล้ว");
+        return;
       }
       const ex = state.cart.find(c => c.id === menuId && !c.courseMode);
       if (ex) ex.qty += 1;
@@ -3396,6 +3432,8 @@
 
       document.getElementById("cartCountLabel").textContent = state.cart.reduce((s, i) => s + i.qty, 0);
       document.getElementById("cartTotalLabel").textContent = `฿${net.toFixed(2)}` + (discount > 0 ? ` (ลดรวม -฿${discount})` : "");
+      document.getElementById("mobileCartCount").textContent = state.cart.reduce((s, i) => s + i.qty, 0);
+      document.getElementById("mobileCartTotal").textContent = `฿${net.toFixed(2)}`;
 
       if (state.cart.length === 0) {
         container.innerHTML = `<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:8px 0;">ยังไม่ได้เลือกรายการอาหาร</p>`;
@@ -3417,6 +3455,10 @@
     async function submitOrderFromCustomer() {
       if (state.cart.length === 0) {
         showToast("⚠️ กรุณาเลือกเมนูอาหารก่อนส่งเข้าครัวครับ");
+        return;
+      }
+      if (state.cart.some(i => { const m = DEFAULT_MENU.find(x => x.id === i.id); return m && typeof m.quota === "number" && state.cart.filter(x => x.id === i.id).reduce((n, x) => n + x.qty, 0) > m.quota; })) {
+        showToast("มีเมนูเกินจำนวนที่เหลือ กรุณาตรวจตะกร้าอีกครั้ง");
         return;
       }
       const table = state.customerTable;
@@ -3458,6 +3500,13 @@
         source: `LINE LIFF (โต๊ะ ${table})`
       };
       state.orders.unshift(newOrder);
+      state.cart.forEach(i => {
+        const menu = DEFAULT_MENU.find(m => m.id === i.id);
+        if (menu && typeof menu.quota === "number") {
+          menu.quota = Math.max(0, menu.quota - i.qty);
+          menu.soldOut = menu.quota === 0;
+        }
+      });
       state.cart = [];
       document.getElementById("orderNoteInput").value = "";
 
@@ -3490,8 +3539,8 @@
       const tStr = state.customerTable;
       document.getElementById("activeBillTableTitle").textContent = "โต๊ะ " + tStr;
       const orders = getTableOrders(tStr);
-      const sub = getTableSubtotal(tStr);
-      document.getElementById("activeTableGrandTotal").textContent = "฿" + sub.toFixed(2);
+      const total = getTableGrandTotalWithTax(tStr).grand;
+      document.getElementById("activeTableGrandTotal").textContent = "฿" + total.toFixed(2);
       const listEl = document.getElementById("customerActiveOrdersList");
       const checkoutSec = document.getElementById("customerCheckoutSection");
 
@@ -3514,10 +3563,11 @@
     }
 
     function toggleCustomerPromptPay() {
+      if (!state.promptPayId) { showToast("ยังไม่ได้ตั้งค่าบัญชีพร้อมเพย์ของร้าน"); return; }
       const modal = document.getElementById("customerQrModal");
       modal.style.display = modal.style.display === "none" ? "block" : "none";
       if (modal.style.display === "block") {
-        const total = getTableSubtotal(state.customerTable);
+        const total = getTableGrandTotalWithTax(state.customerTable).grand;
         const payload = generatePromptPayPayload(state.promptPayId, total);
         drawQrCodeOnCanvas("qrCanvas", payload);
         document.getElementById("qrAmountText").textContent = "฿" + total.toFixed(2);
@@ -3538,68 +3588,74 @@
     /* =========================================================================
        4. KITCHEN DISPLAY SYSTEM (KDS)
        ========================================================================= */
-    function fireHeldCourseOrder(orderId) {
-      const ord = state.orders.find(o => o.orderId === orderId);
-      if (!ord) return;
-      ord.items.forEach(i => { i.courseMode = "FIRE"; });
-      ord.status = "cooking";
-      addAuditLog(`🔥 [Course Fire] สั่งปล่อยคิวทำอาหารคอร์สที่พักไว้ของออเดอร์ #${orderId} เข้าเตาครัวทันที`);
+    const KDS_STATIONS = ["ครัวร้อน", "ครัวเย็น/ยำ", "บาร์น้ำ"];
+    const KDS_STATION_NAMES = { "ครัวร้อน": "ครัวร้อน", "ครัวเย็น/ยำ": "ครัวเย็น", "บาร์น้ำ": "บาร์น้ำ" };
+    function escapeUi(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+    }
+    function itemMatchesStation(item, station) {
+      return (item.station || "ครัวร้อน").includes(station);
+    }
+    function stationTicketReady(order, station) {
+      const items = order.items.filter(item => itemMatchesStation(item, station));
+      return items.length > 0 && (order.status === "ready" || items.every(item => (item.kdsReadyStations || []).includes(station)));
+    }
+    function refreshKdsOrderStatus(order) {
+      order.status = order.items.every(item => KDS_STATIONS.filter(station => itemMatchesStation(item, station))
+        .every(station => (item.kdsReadyStations || []).includes(station))) ? "ready" : "cooking";
+    }
+    function fireHeldCourseOrder(orderId, station) {
+      const order = state.orders.find(o => o.orderId === orderId);
+      if (!order) return;
+      order.items.filter(item => itemMatchesStation(item, station) && item.courseMode === "HOLD")
+        .forEach(item => { item.courseMode = "FIRE"; });
+      addAuditLog(`🔥 เริ่มทำคอร์สที่พักไว้ #${orderId} ที่${KDS_STATION_NAMES[station]}`);
       renderAll();
-      showToast(`🔥 สั่งทำคอร์สอาหารของ #${orderId} ทันที!`);
+      showToast(`เริ่มทำคอร์ส #${orderId} ที่${KDS_STATION_NAMES[station]}`);
     }
 
     function renderKitchenView() {
       const container = document.getElementById("kdsContainer");
-      const activeCount = state.orders.filter(o => o.status !== "ready").length;
+      const filter = document.getElementById("kdsStationFilter").value;
+      const stations = filter === "ALL" ? KDS_STATIONS : [filter];
+      const activeCount = state.orders.reduce((count, order) => count + KDS_STATIONS.filter(station =>
+        order.items.some(item => itemMatchesStation(item, station)) && !stationTicketReady(order, station)).length, 0);
       const badge = document.getElementById("kitchenBadge");
-      badge.style.display = activeCount > 0 ? "inline-block" : "none";
+      badge.style.display = activeCount ? "inline-block" : "none";
       badge.textContent = activeCount;
 
-      const stationFilter = document.getElementById("kdsStationFilter") ? document.getElementById("kdsStationFilter").value : "ALL";
-      const filteredOrders = state.orders.filter(o => {
-        if (stationFilter === "ALL") return true;
-        return o.items.some(i => (i.station || "ครัวร้อน").includes(stationFilter));
-      });
-
-      if (filteredOrders.length === 0) {
-        container.innerHTML = `<p style="color:var(--text-muted);">ไม่มีออเดอร์ในสเตชันนี้</p>`;
-        return;
-      }
-      container.innerHTML = filteredOrders.map(o => {
-        const hasHold = o.items.some(i => i.courseMode === "HOLD");
-        return `
-          <div class="card" style="margin-bottom:0; border-left:5px solid ${o.status === 'ready' ? 'var(--line-green)' : (hasHold ? 'var(--purple)' : 'var(--warning)')};">
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-              <strong>โต๊ะ/ช่องทาง: ${o.table} (#${o.orderId})</strong>
-              <span class="badge ${o.status === 'ready' ? 'badge-occupied' : (hasHold ? 'badge-purple' : 'badge-verify')}">
-                ${hasHold ? '⏸️ พักรอเสิร์ฟ (Hold Course)' : o.status}
-              </span>
-            </div>
-            <div style="font-size:0.74rem; color:var(--text-muted); margin-bottom:6px;">เวลา: ${o.time} | ${o.source}</div>
-            <div style="font-size:0.82rem; margin-bottom:8px;">
-              ${o.items.map(i => `
-                <div style="margin-bottom:3px;">
-                  <strong>[x${i.qty}]</strong> ${i.name}
-                  <span class="badge badge-empty">${i.station || 'ครัวร้อน'}</span>
-                  ${i.courseMode === 'HOLD' ? '<span class="badge badge-purple">⏸️ Hold</span>' : ''}
-                </div>
-              `).join("")}
-              ${o.note && o.note !== "-" ? `<div style="color:var(--danger); font-size:0.75rem;">📌 หมายเหตุ: ${o.note}</div>` : ""}
-            </div>
-            <div style="display:flex; gap:6px;">
-              ${hasHold ? `<button class="btn btn-sm btn-purple" style="flex:1;" onclick="fireHeldCourseOrder('${o.orderId}')">🔥 สั่งทำคอร์สนี้ทันที (Fire)</button>` : ""}
-              <button class="btn btn-sm btn-line" style="flex:1;" onclick="setOrderReady('${o.orderId}')">✅ ปรุงเสร็จ/เสิร์ฟ</button>
-            </div>
-          </div>
-        `;
-      }).join("");
+      container.innerHTML = stations.map(station => {
+        const tickets = state.orders.map(order => ({ order, items: order.items.filter(item => itemMatchesStation(item, station)) }))
+          .filter(ticket => ticket.items.length);
+        const pending = tickets.filter(ticket => !stationTicketReady(ticket.order, station)).length;
+        return `<section class="kds-lane" aria-label="${KDS_STATION_NAMES[station]}">
+          <header class="kds-lane-header"><div><span class="kds-lane-dot"></span><strong>${KDS_STATION_NAMES[station]}</strong></div><span>${pending} รอทำ</span></header>
+          <div class="kds-lane-body">${tickets.length ? tickets.map(({ order, items }) => {
+            const ready = stationTicketReady(order, station);
+            const held = !ready && items.some(item => item.courseMode === "HOLD");
+            return `<article class="kds-ticket ${ready ? 'is-ready' : held ? 'is-held' : 'is-cooking'}">
+              <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(order.table)}</strong><span class="badge ${ready ? 'badge-occupied' : held ? 'badge-purple' : 'badge-verify'}">${ready ? 'พร้อมเสิร์ฟ' : held ? 'พักคอร์ส' : 'กำลังทำ'}</span></div>
+              <div class="kds-ticket-meta">#${escapeUi(order.orderId)} · ${escapeUi(order.time)} · ${escapeUi(order.source)}</div>
+              <div class="kds-ticket-items">${items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}</span>${item.courseMode === 'HOLD' && !ready ? '<em>พักไว้</em>' : ''}</div>`).join('')}</div>
+              ${order.note && order.note !== '-' ? `<div class="kds-ticket-note">หมายเหตุ: ${escapeUi(order.note)}</div>` : ''}
+              ${!ready ? `<div class="kds-ticket-actions">${held ? `<button class="btn btn-sm btn-purple" onclick="fireHeldCourseOrder('${order.orderId}','${station}')">เริ่มทำคอร์ส</button>` : ''}<button class="btn btn-sm btn-line" ${held ? 'disabled title="เริ่มทำคอร์สที่พักไว้ก่อน"' : ''} onclick="setOrderReady('${order.orderId}','${station}')">พร้อมเสิร์ฟ</button></div>` : ''}
+            </article>`;
+          }).join('') : '<div class="kds-empty">ยังไม่มีรายการในสเตชันนี้</div>'}</div>
+        </section>`;
+      }).join('');
     }
 
-    function setOrderReady(orderId) {
-      const ord = state.orders.find(o => o.orderId === orderId);
-      if (ord) ord.status = "ready";
+    function setOrderReady(orderId, station) {
+      const order = state.orders.find(o => o.orderId === orderId);
+      if (!order) return;
+      const items = order.items.filter(item => itemMatchesStation(item, station));
+      if (items.some(item => item.courseMode === "HOLD")) { showToast("กรุณาเริ่มทำคอร์สที่พักไว้ก่อน"); return; }
+      items.forEach(item => {
+        item.kdsReadyStations = [...new Set([...(item.kdsReadyStations || []), station])];
+      });
+      refreshKdsOrderStatus(order);
       renderAll();
-      showToast(`✅ ออเดอร์ #${orderId} พร้อมเสิร์ฟแล้ว`);
+      showToast(`${KDS_STATION_NAMES[station]}: #${orderId} พร้อมเสิร์ฟแล้ว`);
     }
 
     /* =========================================================================
@@ -3693,8 +3749,10 @@
     }
 
     function scanBarcodeItem() {
-      const code = document.getElementById("barcodeInput").value.trim() || "8850001";
-      const menu = DEFAULT_MENU.find(m => m.barcode === code || m.name.includes(code)) || DEFAULT_MENU[0];
+      const code = document.getElementById("barcodeInput").value.trim();
+      if (!code) { showToast("กรุณากรอกรหัสบาร์โค้ดก่อน"); return; }
+      const menu = DEFAULT_MENU.find(m => m.barcode === code || m.name.includes(code));
+      if (!menu) { showToast(`ไม่พบสินค้าในรหัส ${code}`); return; }
       const tStr = state.selectedCashierTable;
       const ordId = "BAR-" + Math.floor(1000 + Math.random() * 9000);
       const itemObj = [{ id: menu.id, name: menu.name, price: menu.price, cost: menu.cost, qty: 1 }];
@@ -3712,7 +3770,7 @@
       document.getElementById("barcodeInput").value = "";
       addAuditLog(`📷 สแกนบาร์โค้ด ${menu.barcode} (${menu.name}) เข้าโต๊ะ ${tStr}`);
       renderAll();
-      showToast(`📷 สแกนบาร์โค้ด "${menu.name}" เข้าโต๊ะ ${tStr} สำเร็จ!`);
+      showToast(`ตัวอย่าง: เพิ่ม "${menu.name}" เข้าโต๊ะ ${tStr} ในเครื่องนี้แล้ว`);
     }
 
     function cashierAddQuickItem() {
@@ -3788,7 +3846,7 @@
       // Simulate Manager PIN verification (1234)
       state.orders = state.orders.filter(o => o.table !== tStr);
       delete state.slips[tStr];
-      addAuditLog(`🚨 [SECURITY VOID] ยกเลิกบิลโต๊ะ ${tStr} โดยใช้รหัส PIN ผู้จัดการ (สมชาย PIN: 1234)`);
+      addAuditLog(`🚨 [SECURITY VOID] ยกเลิกบิลโต๊ะ ${tStr} ในโหมดตัวอย่าง`);
       renderAll();
       showToast(`🔒 อนุมัติยกเลิกบิลโต๊ะ ${tStr} ด้วยรหัส PIN ผู้จัดการ (บันทึกเข้า Audit Log แล้ว)`);
     }
@@ -3829,6 +3887,7 @@
     }
 
     function showCashierPromptPayModal() {
+      if (!state.promptPayId) { showToast("ยังไม่ได้ตั้งค่าบัญชีพร้อมเพย์ของร้าน"); return; }
       const tStr = state.selectedCashierTable;
       const calc = getTableGrandTotalWithTax(tStr);
       if (calc.grand <= 0) {
@@ -4152,12 +4211,6 @@
       }
     }
 
-    function saveDeliveryWebhookConfig() {
-      const token = document.getElementById("deliveryApiKeyInput").value.trim() || "WONGNAI_LIVE_TOKEN_9981";
-      addAuditLog(`🔗 บันทึกคีย์เชื่อมต่อ Delivery Partner Webhook (${token.slice(0, 12)}...)`);
-      showToast("🔗 บันทึก Partner API Token สำหรับเชื่อม Grab / LINE MAN จริงเรียบร้อย!");
-    }
-
     /* Staff Leave Request via LINE LIFF + Manager Flex Approval + Auto-Absence + Pooled Commission Divisor (Question 5) */
     function onStaffSelectChange() {
       const staffId = document.getElementById("staffSelect").value;
@@ -4174,18 +4227,22 @@
       const leaveType = document.getElementById("leaveTypeSelect").value;
       const leaveTypeLabel = document.getElementById("leaveTypeSelect").options[document.getElementById("leaveTypeSelect").selectedIndex].text;
       const duration = document.getElementById("leaveDurationSelect").value;
-      const reason = document.getElementById("leaveReasonInput").value.trim() || "ธุระจำเป็น";
+      const reason = document.getElementById("leaveReasonInput").value.trim();
       const attachment = document.getElementById("leaveAttachmentInput").value.trim() || "-";
+      const startDate = document.getElementById("leaveStartDate").value;
+      const endDate = document.getElementById("leaveEndDate").value;
+      if (!startDate || !endDate || endDate < startDate) { showToast("กรุณาระบุช่วงวันลาให้ถูกต้อง"); return; }
+      if (!reason) { showToast("กรุณาระบุเหตุผลการลา"); return; }
+      if (attachment !== "-") { showToast("การส่งไฟล์แนบยังไม่เปิดใช้งาน กรุณาส่งคำขอโดยไม่แนบไฟล์ก่อน"); return; }
       const lvId = "LV-" + Math.floor(100 + Math.random() * 900);
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
-      const startDate = new Date().toISOString().slice(0, 10);
       let result;
       try {
         result = await apiMutation("/api/line-liff/leave-requests", {
           event_id: crypto.randomUUID(), client_leave_id: lvId,
           staff_id: Number(st.id.replace("ST", "")), leave_type: leaveType,
-          start_date: startDate, end_date: startDate, reason,
+          start_date: startDate, end_date: endDate, reason,
           attachment_url: attachment === "-" ? null : attachment
         });
       } catch (error) { showToast(`⚠️ ยื่นใบลาไม่สำเร็จ: ${error.message}`); return; }
@@ -4258,7 +4315,7 @@
     function testPosPinLoginModal() {
       const lockedStaff = state.staffStats.filter(s => s.posLocked);
       if (lockedStaff.length > 0) {
-        const names = lockedStaff.map(s => `${s.name} (PIN: ${s.pin})`).join(", ");
+        const names = lockedStaff.map(s => s.name).join(", ");
         addAuditLog(`🔒 [POS Security Block] ป้องกันการสวมสิทธิ์: บล็อกการล็อกอิน POS ของ ${names} เนื่องจากอยู่ในสถานะลา/ขาดงาน`);
         showToast(`🔒 ระบบบล็อกรหัส PIN ของ ${names} สำเร็จ! (ไม่อนุญาตให้เพื่อนสวมสิทธิ์เปิดบิลแทนคนลา/ขาดงาน)`);
       } else {
@@ -4315,8 +4372,8 @@
           if (s.shiftStatus === "absent") statusBadge = `<span class="badge badge-danger">🔴 ขาดงานอัตโนมัติ (absent)</span>`;
 
           const pinBadge = s.posLocked
-            ? `<span class="badge badge-danger">🔒 ระงับรหัส PIN (${s.pin}) ชั่วคราว</span>`
-            : `<span class="badge badge-occupied">🔓 ใช้งาน POS ได้ปกติ (PIN: ${s.pin})</span>`;
+            ? `<span class="badge badge-danger">🔒 ระงับสิทธิ์ POS ชั่วคราว</span>`
+            : `<span class="badge badge-occupied">🔓 ใช้งาน POS ได้</span>`;
 
           return `
             <tr>
@@ -4726,14 +4783,22 @@
       showToast("🎬 สาธิต: สั่งอาหาร + ใช้คูปอง Happy Hour + ตัดสต็อก BOM + สะสมแต้มสมาชิกเรียบร้อย!");
     }
 
+    const serviceActions = document.getElementById("serviceActions");
+    let compactService = window.matchMedia("(max-width: 768px)").matches;
+    serviceActions.open = !compactService;
+    window.addEventListener("resize", () => {
+      const compact = window.matchMedia("(max-width: 768px)").matches;
+      if (compact !== compactService) { compactService = compact; serviceActions.open = !compact; }
+    });
+
     fetch("/api/config").then(r => r.json()).then(config => {
       if (config.promptpay_id) state.promptPayId = config.promptpay_id;
       if (config.preview_only) {
         state.previewOnly = true;
         const notice = document.createElement("div");
         notice.textContent = "ตัวอย่าง POS WAI — การขาย การชำระเงิน และการแก้ข้อมูลบนเซิร์ฟเวอร์ยังปิดอยู่";
-        notice.style.cssText = "position:sticky;top:0;z-index:9999;background:#fef3c7;color:#78350f;text-align:center;padding:10px;font-weight:700";
-        document.body.prepend(notice);
+        notice.className = "preview-notice";
+        document.querySelector(".sim-topbar").prepend(notice);
       }
       if (!config.preview_only) flushOfflineSyncQueue();
     }).catch(() => {});

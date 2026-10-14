@@ -1,5 +1,5 @@
-const CACHE_NAME = 'pos-wai-offline-v9';
-const ASSETS = ['/', '/index.html', '/line_pos_prototype.html', '/manifest.json', '/icon-192.png', '/icon-512.png'];
+const CACHE_NAME = 'pos-wai-offline-v10';
+const ASSETS = ['/', '/index.html', '/line_pos_prototype.html', '/ui.css', '/icons.svg', '/manifest.json', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));

@@ -539,6 +539,16 @@ def serve_manifest():
     return FileResponse(Path(__file__).parent / "manifest.json", media_type="application/manifest+json")
 
 
+@app.get("/ui.css")
+def serve_ui_styles():
+    return FileResponse(Path(__file__).parent / "ui.css", media_type="text/css")
+
+
+@app.get("/icons.svg")
+def serve_ui_icons():
+    return FileResponse(Path(__file__).parent / "icons.svg", media_type="image/svg+xml")
+
+
 @app.get("/service-worker.js")
 def serve_worker():
     return FileResponse(Path(__file__).parent / "service-worker.js", media_type="application/javascript",
