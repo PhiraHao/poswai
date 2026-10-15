@@ -655,7 +655,10 @@
   <link rel="stylesheet" href="/ops-redesign.css?v=19">
   <link rel="stylesheet" href="/people-redesign.css?v=19">
   <link rel="stylesheet" href="/reports-restore.css?v=19">
+  <link rel="stylesheet" href="/reports-live.css?v=20">
   <link rel="stylesheet" href="/service-call.css?v=19">
+  <link rel="stylesheet" href="/auth-ui.css?v=20">
+  <link rel="stylesheet" href="/payment-ui.css?v=21">
   <link rel="icon" href="/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/icon-192.png">
   <link rel="manifest" href="/manifest.json">
@@ -1373,6 +1376,9 @@
               </div>
               <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="submitLineLeaveRequest()">
                 ส่งคำขอลา
+              </button>
+              <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="linkLineAccount()">
+                เชื่อมบัญชีพนักงานกับ LINE
               </button>
             </div>
           </div>
@@ -2291,9 +2297,51 @@
       if (count) count.textContent = state.offlineSyncQueue.length;
     }
 
+    let lineLiffId = "";
+    let liffReady;
+    async function getLineIdToken() {
+      if (!lineLiffId) throw new Error("ยังไม่ได้ตั้งค่า LINE LIFF สำหรับร้านนี้");
+      if (!liffReady) {
+        liffReady = new Promise((resolve, reject) => {
+          if (window.liff) { resolve(); return; }
+          const script = document.createElement("script");
+          script.src = "https://static.line-scdn.net/liff/edge/2/sdk.js";
+          script.onload = resolve;
+          script.onerror = () => reject(new Error("โหลด LINE LIFF ไม่สำเร็จ"));
+          document.head.appendChild(script);
+        }).then(() => window.liff.init({ liffId: lineLiffId }));
+      }
+      try { await liffReady; }
+      catch (error) { liffReady = undefined; throw error; }
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login({ redirectUri: location.href });
+        throw new Error("กำลังเข้าสู่ระบบ LINE กรุณาลองยื่นใบลาอีกครั้ง");
+      }
+      const token = window.liff.getIDToken();
+      if (!token) throw new Error("ไม่ได้รับข้อมูลยืนยันตัวตนจาก LINE");
+      return token;
+    }
+
+    async function linkLineAccount() {
+      try {
+        const lineToken = await getLineIdToken();
+        const response = await fetch("/api/line-liff/link", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ line_id_token: lineToken })
+        });
+        if (!response.ok) throw new Error((await response.json()).detail || `HTTP ${response.status}`);
+        showToast("เชื่อมบัญชี LINE กับพนักงานที่เข้าสู่ระบบแล้ว");
+      } catch (error) { showToast(`เชื่อม LINE ไม่สำเร็จ: ${error.message}`); }
+    }
+
     async function apiMutation(path, payload) {
       if (state.previewOnly) throw new Error("โหมดตัวอย่างยังไม่เปิดให้บันทึกข้อมูล");
-      const event = { path, payload, id: payload.event_id || crypto.randomUUID() };
+      if (path.startsWith("/api/payments/") && (!navigator.onLine || !state.isOnline)) {
+        throw new Error("การปิดบิลต้องเชื่อมต่อเซิร์ฟเวอร์ กรุณาลองเมื่อออนไลน์");
+      }
+      // A LINE identity token expires and must never be persisted in localStorage.
+      const queuedPayload = path === "/api/line-liff/leave-requests" ? { ...payload, line_id_token: undefined } : payload;
+      const event = { path, payload: queuedPayload, id: payload.event_id || crypto.randomUUID() };
       if (!navigator.onLine || !state.isOnline) {
         state.offlineSyncQueue.push(event);
         persistSyncQueue();
@@ -2301,12 +2349,13 @@
       }
       try {
         const response = await fetch(path, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", headers: mutationHeaders(path),
           body: JSON.stringify(payload)
         });
         if (!response.ok) throw new Error((await response.json()).detail || `HTTP ${response.status}`);
         return await response.json();
       } catch (error) {
+        if (path.startsWith("/api/payments/")) throw error;
         // Only transport failures belong in the offline queue; server rejection needs correction.
         if (navigator.onLine && !/Failed to fetch|NetworkError|Load failed/i.test(String(error))) throw error;
         state.offlineSyncQueue.push(event);
@@ -2315,14 +2364,25 @@
       }
     }
 
+    function mutationHeaders(path) {
+      const headers = { "Content-Type": "application/json" };
+      if (path === "/api/orders" || path === "/api/service-calls") {
+        const tableToken = new URLSearchParams(location.search).get("table_token");
+        if (tableToken) headers["X-Table-Token"] = tableToken;
+      }
+      return headers;
+    }
+
     async function flushOfflineSyncQueue() {
       if (state.previewOnly || !navigator.onLine || !state.isOnline) return;
       while (state.offlineSyncQueue.length) {
         const event = state.offlineSyncQueue[0];
         try {
+          const payload = event.path === "/api/line-liff/leave-requests"
+            ? { ...event.payload, line_id_token: await getLineIdToken() } : event.payload;
           const response = await fetch(event.path, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(event.payload)
+            method: "POST", headers: mutationHeaders(event.path),
+            body: JSON.stringify(payload)
           });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           if (event.path === "/api/line-liff/leave-requests") {
@@ -3098,7 +3158,7 @@
                 : `<div class="menu-emoji">${m.emoji}</div>`
               }
               ${isOut ? `<div class="sold-out-overlay">❌ สินค้าหมด (Sold Out)</div>` : ""}
-              <div class="menu-name">${m.pinned ? '📌 ' : ''}${displayName}</div>
+              <div class="menu-name">${m.pinned ? '📌 ' : ''}${escapeUi(displayName)}</div>
               <div class="menu-sub">
                 สเตชัน: <strong>${m.station || 'ครัวร้อน'}</strong> | โควตาเหลือ: <strong>${m.quota ?? 20} ที่</strong>
               </div>
@@ -3373,7 +3433,7 @@
       }
       const ex = state.cart.find(c => c.id === menuId && !c.courseMode);
       if (ex) ex.qty += 1;
-      else state.cart.push({ id: menu.id, name: menu.name, baseCategory: menu.category, station: menu.station || "ครัวร้อน", courseMode: "FIRE", price: menu.price, cost: menu.cost, qty: 1 });
+      else state.cart.push({ id: menu.id, serverId: menu.serverId, name: menu.name, baseCategory: menu.category, station: menu.station || "ครัวร้อน", courseMode: "FIRE", price: menu.price, cost: menu.cost, qty: 1 });
       renderCustomerMenu();
       renderCart();
     }
@@ -3384,6 +3444,7 @@
     }
 
     function getCartDiscount(subtotal) {
+      if (state.productionMode) return 0;
       let autoDiscount = 0;
       const autoReasons = [];
 
@@ -3451,7 +3512,7 @@
       container.innerHTML = state.cart.map(i => `
         <div style="display:flex; justify-content:space-between; font-size:0.8rem; padding:5px 0; border-bottom:1px dashed var(--border-color);">
           <div>
-            <span>${(() => { const m = DEFAULT_MENU.find(x => x.id === i.id); if (!m) return i.name; return state.lang === "EN" ? (m.nameEn || i.name) : state.lang === "CN" ? (m.nameCn || i.name) : i.name; })()} <strong>x${i.qty}</strong></span>
+            <span>${escapeUi((() => { const m = DEFAULT_MENU.find(x => x.id === i.id); if (!m) return i.name; return state.lang === "EN" ? (m.nameEn || i.name) : state.lang === "CN" ? (m.nameCn || i.name) : i.name; })())} <strong>x${i.qty}</strong></span>
             <div style="font-size:0.7rem; color:var(--text-muted);">
               [${i.station || 'ครัวร้อน'}] • ${i.courseMode === 'HOLD' ? '<span style="color:#b45309; font-weight:700;">⏸️ พักไว้ก่อน (Hold)</span>' : '<span style="color:#15803d;">🔥 ทำทันที (Fire)</span>'}
             </div>
@@ -3478,15 +3539,22 @@
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
       const apiItems = state.cart.map(i => ({
-        id: i.id, name: i.name, price: i.price, qty: i.qty,
-        bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || [])
+        id: state.productionMode ? i.serverId : i.id, name: i.name, price: i.price, qty: i.qty,
+        course_mode: i.courseMode || "FIRE", bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || [])
       }));
       try {
         await apiMutation("/api/orders", {
-          event_id: crypto.randomUUID(), order_no: orderId, branch_id: 1,
+          event_id: crypto.randomUUID(), order_no: orderId, branch_id: state.productionMode ? (window.poswaiAuth?.branchId || 1) : 1,
           table_no: table, total_amount: subtotal - discount, items: apiItems
         });
       } catch (error) { showToast(`⚠️ ส่งออเดอร์ไม่สำเร็จ: ${error.message}`); return; }
+      if (state.productionMode) {
+        state.cart = [];
+        document.getElementById("orderNoteInput").value = "";
+        if (window.poswaiLiveData) await window.poswaiLiveData.refresh();
+        showToast(`ส่งออเดอร์ #${orderId} สำเร็จ`);
+        return;
+      }
       deductBomInventory(state.cart);
 
       // Award CRM points if phone entered
@@ -3565,7 +3633,7 @@
             <strong>#${o.orderId} (${o.source})</strong>
             <span class="badge ${o.status === 'ready' ? 'badge-occupied' : 'badge-cooking'}">${o.status === 'ready' ? 'เสิร์ฟแล้ว' : 'กำลังปรุง'}</span>
           </div>
-          ${o.items.map(i => `<div>• ${i.name} x${i.qty} (฿${i.price * i.qty})</div>`).join("")}
+          ${o.items.map(i => `<div>• ${escapeUi(i.name)} x${i.qty} (฿${i.price * i.qty})</div>`).join("")}
           ${o.discount > 0 ? `<div style="color:var(--danger); font-size:0.75rem;">ส่วนลดโปรโมชัน: -฿${o.discount}</div>` : ""}
         </div>
       `).join("");
@@ -3613,7 +3681,52 @@
       order.status = order.items.every(item => KDS_STATIONS.filter(station => itemMatchesStation(item, station))
         .every(station => (item.kdsReadyStations || []).includes(station))) ? "ready" : "cooking";
     }
-    function fireHeldCourseOrder(orderId, station) {
+    function renderLiveKitchenView() {
+      const container = document.getElementById("kdsContainer");
+      const filter = document.getElementById("kdsStationFilter").value;
+      const tickets = window.poswaiKdsTickets || [];
+      const stations = filter === "ALL" ? KDS_STATIONS : [filter];
+      const pendingCount = tickets.filter(ticket => ticket.status !== "ready").length;
+      const badge = document.getElementById("kitchenBadge");
+      badge.style.display = pendingCount ? "inline-block" : "none";
+      badge.textContent = pendingCount;
+      container.innerHTML = stations.map(station => {
+        const lane = tickets.filter(ticket => ticket.station === station);
+        const pending = lane.filter(ticket => ticket.status !== "ready").length;
+        return `<section class="kds-lane" aria-label="${escapeUi(KDS_STATION_NAMES[station])}">
+          <header class="kds-lane-header"><div><span class="kds-lane-dot"></span><strong>${escapeUi(KDS_STATION_NAMES[station])}</strong></div><span>${pending} รอทำ</span></header>
+          <div class="kds-lane-body">${lane.length ? lane.map(ticket => {
+            const ready = ticket.status === "ready";
+            const held = ticket.status === "held";
+            const time = ticket.created_at ? new Date(ticket.created_at.replace(" ", "T") + "Z").toLocaleTimeString("th-TH", {hour:"2-digit",minute:"2-digit"}) : "";
+            return `<article class="kds-ticket ${ready ? "is-ready" : held ? "is-held" : "is-cooking"}">
+              <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(ticket.table_no)}</strong><span class="badge ${ready ? "badge-occupied" : held ? "badge-purple" : "badge-verify"}">${ready ? "พร้อมเสิร์ฟ" : held ? "พักคอร์ส" : "กำลังทำ"}</span></div>
+              <div class="kds-ticket-meta">#${escapeUi(ticket.order_no)} · ${escapeUi(time)}</div>
+              <div class="kds-ticket-items">${ticket.items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}</span>${held && item.course_mode === "HOLD" ? "<em>พักไว้</em>" : ""}</div>`).join("")}</div>
+              ${!ready ? `<div class="kds-ticket-actions">${held ? `<button class="btn btn-sm btn-purple" data-kds-action="fire" data-kds-order="${escapeUi(ticket.order_no)}" data-kds-station="${escapeUi(station)}">เริ่มทำคอร์ส</button>` : ""}<button class="btn btn-sm btn-line" ${held ? "disabled" : ""} data-kds-action="ready" data-kds-order="${escapeUi(ticket.order_no)}" data-kds-station="${escapeUi(station)}">พร้อมเสิร์ฟ</button></div>` : ""}
+            </article>`;
+          }).join("") : `<div class="kds-empty">ยังไม่มีรายการในสเตชันนี้</div>`}</div>
+        </section>`;
+      }).join("");
+    }
+    document.getElementById("kdsContainer").addEventListener("click", event => {
+      const button = event.target.closest("[data-kds-action]");
+      if (!button) return;
+      if (button.dataset.kdsAction === "fire") fireHeldCourseOrder(button.dataset.kdsOrder, button.dataset.kdsStation);
+      else setOrderReady(button.dataset.kdsOrder, button.dataset.kdsStation);
+    });
+    async function fireHeldCourseOrder(orderId, station) {
+      if (state.productionMode) {
+        try {
+          const result = await apiMutation(`/api/kds/${encodeURIComponent(orderId)}/${encodeURIComponent(station)}/fire`, {});
+          if (result.queued) {
+            const ticket = (window.poswaiKdsTickets || []).find(t => t.order_no === orderId && t.station === station);
+            if (ticket) ticket.status = "queued";
+            renderKitchenView(); showToast("บันทึกไว้แล้ว รอซิงก์เมื่อออนไลน์");
+          } else { await window.poswaiLiveData?.refresh(); showToast("เริ่มทำคอร์สแล้ว"); }
+        } catch (error) { showToast(`เริ่มทำคอร์สไม่สำเร็จ: ${error.message}`); }
+        return;
+      }
       const order = state.orders.find(o => o.orderId === orderId);
       if (!order) return;
       order.items.filter(item => itemMatchesStation(item, station) && item.courseMode === "HOLD")
@@ -3624,6 +3737,7 @@
     }
 
     function renderKitchenView() {
+      if (state.productionMode) { renderLiveKitchenView(); return; }
       const container = document.getElementById("kdsContainer");
       const filter = document.getElementById("kdsStationFilter").value;
       const stations = filter === "ALL" ? KDS_STATIONS : [filter];
@@ -3654,7 +3768,18 @@
       }).join('');
     }
 
-    function setOrderReady(orderId, station) {
+    async function setOrderReady(orderId, station) {
+      if (state.productionMode) {
+        try {
+          const result = await apiMutation(`/api/kds/${encodeURIComponent(orderId)}/${encodeURIComponent(station)}/ready`, {});
+          if (result.queued) {
+            const ticket = (window.poswaiKdsTickets || []).find(t => t.order_no === orderId && t.station === station);
+            if (ticket) ticket.status = "ready";
+            renderKitchenView(); showToast("บันทึกไว้แล้ว รอซิงก์เมื่อออนไลน์");
+          } else { await window.poswaiLiveData?.refresh(); showToast("พร้อมเสิร์ฟแล้ว"); }
+        } catch (error) { showToast(`อัปเดตจอครัวไม่สำเร็จ: ${error.message}`); }
+        return;
+      }
       const order = state.orders.find(o => o.orderId === orderId);
       if (!order) return;
       const items = order.items.filter(item => itemMatchesStation(item, station));
@@ -3820,7 +3945,7 @@
         detailsEl.innerHTML = `
           ${orders.map(o => o.items.map(i => `
             <div style="display:flex; justify-content:space-between; padding:2px 0;">
-              <span>• ${i.name} x${i.qty}</span>
+              <span>• ${escapeUi(i.name)} x${i.qty}</span>
               <span>฿${(i.price * i.qty).toFixed(2)}</span>
             </div>
           `).join("")).join("")}
@@ -3923,20 +4048,34 @@
         showToast("⚠️ ยังไม่มีระบบตรวจสลิปจริง กรุณาตรวจยืนยันกับธนาคารก่อนปิดบิล");
         return;
       }
+      if (method !== "เงินสด (Cash)") {
+        showToast("ช่องทางนี้ยังไม่ได้เชื่อมผู้ให้บริการรับชำระเงินจริง");
+        return;
+      }
+      if (calc.sc > 0 || calc.vat > 0) {
+        showToast("⚠️ ยังไม่รองรับการปิดบิลที่บวก VAT หรือค่าบริการ กรุณาปิดรายการนี้และตรวจยอดก่อน");
+        return;
+      }
       try {
         for (const order of orders) {
+          const orderAmount = Math.max(0, order.items.reduce((sum, item) => sum + item.price * item.qty, 0) - (order.discount || 0));
           await apiMutation("/api/payments/close", {
-            event_id: crypto.randomUUID(), order_no: order.orderId,
-            amount: calc.grand / orders.length, method
+            event_id: `cash-${order.orderId}`, order_no: order.orderId,
+            amount: Number(orderAmount.toFixed(2)), method
           });
         }
-      } catch (error) { showToast(`⚠️ ปิดบิลไม่สำเร็จ: ${error.message}`); return; }
+      } catch (error) {
+        if (state.productionMode && window.poswaiLiveData) await window.poswaiLiveData.refresh().catch(() => {});
+        showToast(`⚠️ ปิดบิลไม่สำเร็จ: ${error.message}`); return;
+      }
       printReceiptForTable(tStr, `ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ (${method})`, false);
 
       if (method.includes("เงินสด")) state.shift.cashSales += calc.grand;
       state.shift.totalSalesToday += calc.grand;
-      state.staffStats[1].bills += 1;
-      state.staffStats[1].sales += calc.grand;
+      if (state.staffStats[1]) {
+        state.staffStats[1].bills += 1;
+        state.staffStats[1].sales += calc.grand;
+      }
 
       state.orders = state.orders.filter(o => o.table !== tStr);
       delete state.slips[tStr];
@@ -3944,6 +4083,7 @@
 
       addAuditLog(`💰 ปิดบิลโต๊ะ ${tStr} ยอดสุทธิ ฿${calc.grand.toFixed(2)} ชำระโดย ${method}`);
       renderAll();
+      if (state.productionMode && window.poswaiLiveData) await window.poswaiLiveData.refresh().catch(() => {});
       showToast(`🎉 ปิดบิลโต๊ะ ${tStr} (฿${calc.grand.toFixed(2)}) เรียบร้อย!`);
     }
 
@@ -4165,6 +4305,7 @@
       if (!container) return;
       const selectedMenuId = Number(document.getElementById("bomMenuSelect").value || 1);
       const menu = DEFAULT_MENU.find(m => m.id === selectedMenuId) || DEFAULT_MENU[0];
+      if (!menu) { container.textContent = "ยังไม่มีเมนูในสาขานี้"; return; }
 
       const allMenusHtml = DEFAULT_MENU.slice(0, 5).map(m => {
         const isCurrent = m.id === menu.id;
@@ -4225,8 +4366,9 @@
       const staffId = document.getElementById("staffSelect").value;
       const st = state.staffStats.find(s => s.id === staffId);
       if (!st) return;
-      document.getElementById("staffQuotaBanner").textContent =
-        `📊 โควตาวันลาคงเหลือของ ${st.name}: ลาป่วยเหลือ ${st.quotas.sick} วัน | ลากิจเหลือ ${st.quotas.personal} วัน | พักร้อนเหลือ ${st.quotas.vacation} วัน`;
+      document.getElementById("staffQuotaBanner").textContent = st.quotas
+        ? `โควตาวันลาคงเหลือของ ${st.name}: ลาป่วย ${st.quotas.sick} วัน · ลากิจ ${st.quotas.personal} วัน · พักร้อน ${st.quotas.vacation} วัน`
+        : "ยังไม่ได้กำหนดโควตาวันลาในระบบ";
     }
 
     async function submitLineLeaveRequest() {
@@ -4248,11 +4390,13 @@
 
       let result;
       try {
+        const lineToken = navigator.onLine && state.isOnline ? await getLineIdToken() : undefined;
         result = await apiMutation("/api/line-liff/leave-requests", {
           event_id: crypto.randomUUID(), client_leave_id: lvId,
           staff_id: Number(st.id.replace("ST", "")), leave_type: leaveType,
           start_date: startDate, end_date: endDate, reason,
-          attachment_url: attachment === "-" ? null : attachment
+          attachment_url: attachment === "-" ? null : attachment,
+          line_id_token: lineToken
         });
       } catch (error) { showToast(`⚠️ ยื่นใบลาไม่สำเร็จ: ${error.message}`); return; }
       const serverLeaveId = result.leave_id || null;
@@ -4272,6 +4416,7 @@
 
       addAuditLog(`📨 [LINE LIFF Leave] ${st.name} ยื่นใบลา #${lvId} (${leaveTypeLabel} - ${duration}) สถานะ Pending`);
       renderAll();
+      window.dispatchEvent(new Event("poswai:staff-refresh"));
       showToast(`📨 บันทึกใบลา #${lvId} ของ ${st.name} แล้ว`);
     }
 
@@ -4284,7 +4429,7 @@
       }
       try {
         await apiMutation("/api/line-webhook/approve-leave", {
-          leave_id: req.serverLeaveId, manager_staff_id: 1, decision
+          leave_id: req.serverLeaveId, decision
         });
       } catch (error) { showToast(`⚠️ อนุมัติไม่สำเร็จ: ${error.message}`); return; }
       req.status = decision; // 'approved' or 'rejected'
@@ -4293,9 +4438,9 @@
       if (decision === "approved" && st) {
         st.shiftStatus = "on_leave";
         st.posLocked = true;
-        if (req.leaveType === "sick" && st.quotas.sick > 0) st.quotas.sick -= 1;
-        if (req.leaveType === "personal" && st.quotas.personal > 0) st.quotas.personal -= 1;
-        if (req.leaveType === "vacation" && st.quotas.vacation > 0) st.quotas.vacation -= 1;
+        if (st.quotas && req.leaveType === "sick" && st.quotas.sick > 0) st.quotas.sick -= 1;
+        if (st.quotas && req.leaveType === "personal" && st.quotas.personal > 0) st.quotas.personal -= 1;
+        if (st.quotas && req.leaveType === "vacation" && st.quotas.vacation > 0) st.quotas.vacation -= 1;
 
         addAuditLog(`✅ [Manager Approve #${lvId}] อนุมัติใบลาของ ${st.name} -> อัปเดตกะเป็น on_leave ล็อก PIN และตัดชื่อออกจากตัวหารคอมมิชชัน`);
         showToast(`✅ อนุมัติใบลาของ ${st.name} แล้ว: ล็อก PIN เครื่อง POS และปรับตัวหารค่าคอมมิชชันอัตโนมัติ!`);
@@ -4309,6 +4454,7 @@
       }
       onStaffSelectChange();
       renderAll();
+      window.dispatchEvent(new Event("poswai:staff-refresh"));
     }
 
     function triggerAutoAbsenceDetection() {
@@ -4332,6 +4478,10 @@
       }
     }
 
+    function safeStaffText(value) {
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+    }
+
     function renderStaffAndAnalyticsView() {
       // 1. Render Manager LINE Flex Approval Cards
       const flexContainer = document.getElementById("managerLeaveFlexContainer");
@@ -4346,13 +4496,13 @@
           return `
             <div style="border:2px solid ${req.status === 'pending' ? 'var(--line-green)' : 'var(--border-color)'}; border-radius:12px; padding:10px 12px; background:#fff;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <strong style="font-size:0.84rem; color:var(--line-green-dark);">💬 LINE Flex Message: คำขอลา #${req.id}</strong>
+                <strong style="font-size:0.84rem; color:var(--line-green-dark);">คำขอลา #${safeStaffText(req.id)}</strong>
                 ${badgeHtml}
               </div>
               <div style="font-size:0.79rem; color:var(--text-main);">
-                <div>• <strong>พนักงาน:</strong> ${req.staffName} | <strong>ประเภท:</strong> ${req.leaveTypeLabel}</div>
-                <div>• <strong>ช่วงเวลาที่ลา:</strong> ${req.duration}</div>
-                <div>• <strong>เหตุผล:</strong> ${req.reason} | <strong>หลักฐานแนบ:</strong> <code>${req.attachment}</code></div>
+                <div>• <strong>พนักงาน:</strong> ${safeStaffText(req.staffName)} | <strong>ประเภท:</strong> ${safeStaffText(req.leaveTypeLabel)}</div>
+                <div>• <strong>ช่วงเวลาที่ลา:</strong> ${safeStaffText(req.duration)}</div>
+                <div>• <strong>เหตุผล:</strong> ${safeStaffText(req.reason)} | <strong>หลักฐานแนบ:</strong> <code>${safeStaffText(req.attachment)}</code></div>
               </div>
               ${req.status === "pending" ? `
                 <div style="display:flex; gap:8px; margin-top:8px;">
@@ -4386,8 +4536,8 @@
 
           return `
             <tr>
-              <td><strong>${s.name}</strong><br/><small style="color:var(--text-muted);">${s.role}</small></td>
-              <td>${s.shift}</td>
+              <td><strong>${safeStaffText(s.name)}</strong><br/><small style="color:var(--text-muted);">${safeStaffText(s.role)}</small></td>
+              <td>${safeStaffText(s.shift)}</td>
               <td>${statusBadge}</td>
               <td>${pinBadge}</td>
             </tr>
@@ -4397,14 +4547,16 @@
 
       // 3. Render Commission Engine (Pooled Equal with Active Worker Divisor vs Individual)
       const ruleMode = document.getElementById("commissionRuleSelect") ? document.getElementById("commissionRuleSelect").value : "POOLED";
-      const totalStoreSales = state.shift.totalSalesToday;
+      const totalStoreSales = state.staffLiveOverview ? 0 : state.shift.totalSalesToday;
       const totalCommissionPool = totalStoreSales * 0.03; // 3% Pool
       const divisor = Math.max(1, activeWorkers.length);
       const equalShare = totalCommissionPool / divisor;
 
       const formulaBox = document.getElementById("commissionPoolFormulaBox");
       if (formulaBox) {
-        if (ruleMode === "POOLED") {
+        if (state.staffLiveOverview) {
+          formulaBox.textContent = "แสดงคอมมิชชันที่บันทึกจริงวันนี้ ส่วนแบ่งตามกติกาที่ตั้งไว้ในระบบ";
+        } else if (ruleMode === "POOLED") {
           formulaBox.innerHTML = `
             🧮 <strong>สูตรคำนวณกองกลางวันนี้ (Pooled Equal Sharing 3%):</strong><br/>
             ยอดขายรวมทั้งร้าน <strong>฿${totalStoreSales.toLocaleString()}</strong> × 3% = กองกลาง <strong>฿${totalCommissionPool.toFixed(2)}</strong>
@@ -4423,16 +4575,16 @@
       if (commBody) {
         commBody.innerHTML = state.staffStats.map(s => {
           const isEligible = s.shiftStatus !== "on_leave" && s.shiftStatus !== "absent";
-          const commAmount = !isEligible
+          const commAmount = state.staffLiveOverview ? Number(s.commissionToday || 0) : !isEligible
             ? 0
             : (ruleMode === "POOLED" ? equalShare : s.sales * 0.03);
 
           return `
             <tr style="${!isEligible ? 'opacity:0.55; background:#fef2f2;' : ''}">
-              <td><strong>${s.name}</strong></td>
+              <td><strong>${safeStaffText(s.name)}</strong></td>
               <td>${isEligible ? '✅ มาปฏิบัติงานจริง' : (s.shiftStatus === 'on_leave' ? '🟡 ลางาน (on_leave)' : '🔴 ขาดงาน (absent)')}</td>
               <td>${isEligible ? `<span class="badge badge-occupied">ได้สิทธิ์ (ตัวหาร 1/${divisor})</span>` : `<span class="badge badge-danger">ตัดออกจากการหารยอด</span>`}</td>
-              <td>${ruleMode === "POOLED" ? `กองกลาง ฿${totalStoreSales.toLocaleString()}` : `฿${s.sales.toLocaleString()} (${s.bills} บิล)`}</td>
+              <td>${state.staffLiveOverview ? "บันทึกในระบบ" : ruleMode === "POOLED" ? `กองกลาง ฿${totalStoreSales.toLocaleString()}` : `฿${s.sales.toLocaleString()} (${s.bills} บิล)`}</td>
               <td style="font-weight:800; color:${isEligible ? 'var(--line-green-dark)' : 'var(--danger)'};">
                 ฿${commAmount.toFixed(2)}
               </td>
@@ -4442,7 +4594,7 @@
       }
 
       document.getElementById("securityAuditLogContainer").innerHTML = state.auditLogs.map(a => `
-        <div style="padding:6px 8px; border-bottom:1px solid var(--border-color);">${a}</div>
+        <div style="padding:6px 8px; border-bottom:1px solid var(--border-color);">${safeStaffText(a)}</div>
       `).join("");
 
       const netProfit = state.shift.totalSalesToday - state.shift.totalCostToday;
@@ -4467,6 +4619,7 @@
       }
       addAuditLog(`⏰ พนักงาน "${st.name}" กด ${action} ผ่าน LINE LIFF (ตรวจสอบพิกัด GPS ภายในรัศมี 50 เมตร)`);
       renderAll();
+      window.dispatchEvent(new Event("poswai:staff-refresh"));
       showToast(`⏰ บันทึก ${action} ของ ${st.name} เรียบร้อย!`);
     }
 
@@ -4802,6 +4955,7 @@
 
     fetch("/api/config").then(r => r.json()).then(config => {
       if (config.promptpay_id) state.promptPayId = config.promptpay_id;
+      lineLiffId = config.line_liff_id || "";
       if (config.preview_only) {
         state.previewOnly = true;
         const notice = document.createElement("div");
@@ -4810,6 +4964,7 @@
         document.querySelector(".sim-topbar").prepend(notice);
       }
       if (!config.preview_only) flushOfflineSyncQueue();
+      window.dispatchEvent(new Event("poswai:config-ready"));
     }).catch(() => {});
     renderAll();
   </script>
@@ -4818,6 +4973,11 @@
   <script src="/ops-redesign.js?v=19"></script>
   <script src="/people-redesign.js?v=19"></script>
   <script src="/reports-restore.js?v=19"></script>
+  <script src="/reports-live.js?v=20"></script>
   <script src="/service-call.js?v=19"></script>
+  <script src="/auth-ui.js?v=20"></script>
+  <script src="/payment-ui.js?v=21"></script>
+  <script src="/live-data.js?v=22"></script>
+  <script src="/inventory-live.js?v=23"></script>
 </body>
 </html>

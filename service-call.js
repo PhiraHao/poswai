@@ -2,7 +2,7 @@
 (() => {
   const storageKey = 'poswaiServiceCalls';
   const $ = selector => document.querySelector(selector);
-  const branchId = () => ($('#branchSelect')?.selectedIndex ?? 0) + 1;
+  const branchId = () => window.poswaiAuth?.branchId || (($('#branchSelect')?.selectedIndex ?? 0) + 1);
   const localCalls = () => {
     try { return JSON.parse(localStorage.getItem(storageKey) || '[]'); }
     catch { return []; }

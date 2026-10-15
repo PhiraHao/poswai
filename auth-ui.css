@@ -1,0 +1,24 @@
+.poswai-auth-button { border:1px solid #e2e7ee; background:#fff; color:#1d2837; border-radius:9px; min-height:34px; padding:5px 11px; font-weight:700; cursor:pointer; white-space:nowrap; }
+.poswai-auth-button:hover { background:#fff8df; border-color:#eac04b; }
+.poswai-live.poswai-guest .role-tab:not(:first-child),
+.poswai-live.poswai-guest .mobile-more { display:none!important; }
+.poswai-live.poswai-guest .role-tabs { width:100%; }
+.poswai-auth-overlay { position:fixed; inset:0; z-index:2000; display:grid; place-items:center; padding:18px; background:#15202bbd; backdrop-filter:blur(5px); }
+.poswai-auth-overlay[hidden] { display:none; }
+.poswai-auth-card { width:min(100%,430px); max-height:min(90vh,800px); overflow:auto; padding:24px; border-radius:18px; background:#fff; box-shadow:0 28px 80px #0004; color:#1c2734; }
+.poswai-auth-card h2 { margin:0 0 5px; font-size:21px; }
+.poswai-auth-card p { margin:0 0 18px; color:#657180; font-size:13px; }
+.poswai-auth-card label { display:block; margin:12px 0 6px; font-size:12px; font-weight:700; }
+.poswai-auth-card input,.poswai-auth-card select { width:100%; min-height:43px; border:1px solid #d9e1ea; border-radius:9px; padding:9px 11px; color:#1c2734; background:#fff; box-sizing:border-box; }
+.poswai-auth-card input:focus,.poswai-auth-card select:focus { outline:2px solid #ffcc36; border-color:#ffcc36; }
+.poswai-auth-actions { display:flex; flex-wrap:wrap; gap:9px; margin-top:18px; }
+.poswai-auth-actions button { flex:1; min-height:42px; border:0; border-radius:9px; padding:8px 11px; font-weight:700; cursor:pointer; }
+.poswai-auth-primary { background:#ffc928; color:#1c2734; }
+.poswai-auth-secondary { background:#f1f3f6; color:#263343; }
+.poswai-auth-error { color:#a9232c!important; min-height:18px; margin:9px 0 0!important; }
+.poswai-auth-result { overflow-wrap:anywhere; background:#fff8df; padding:10px; border-radius:8px; font-size:12px; }
+.poswai-auth-result[hidden] { display:none; }
+@media(max-width:768px) {
+  .poswai-auth-button { max-width:110px; overflow:hidden; text-overflow:ellipsis; padding:5px 8px; font-size:11px; }
+  .poswai-auth-card { padding:20px; }
+}

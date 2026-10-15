@@ -24,21 +24,66 @@ not the target for this hostname.
 Set `DATABASE_URL` to a persistent SQLite file, for example
 `sqlite:////var/data/poswai.db` on a mounted persistent disk. The default
 `sqlite:///./poswai.db` is for local development and will not survive an
-ephemeral deployment. Set `PROMPTPAY_ID`, `LINE_LIFF_ID`,
-`LINE_CHANNEL_ACCESS_TOKEN`, and `LINE_CHANNEL_SECRET` in the host's secret
-settings. The current server reads these values, but the LINE Messaging API
-notification and signed webhook flow have **not** been implemented.
+ephemeral deployment. Set `PROMPTPAY_ID` and the LINE settings below in the
+host's secret settings. Never place LINE tokens in frontend files or Git.
 
-The current UI includes sample orders, staff, and inventory. The new order API
-persists submitted orders and BOM deductions with retry protection. The sample
-state remains local to the browser; a fresh device does not load all records
-from the server. The app does not authenticate staff or managers yet. Do not
-put it into live financial operation until staff authorization, real inventory
-initialization, and server-backed state loading are implemented.
+### LINE leave and approval setup
 
-QR slip validation needs a real payment verification provider. The UI blocks
-QR bill closing, and the API returns HTTP 501 for QR payment. Keep QR payment
-disabled until verification is implemented and enforced server-side.
+1. Create a LINE Login channel and LIFF app with `openid` scope. Set its LIFF
+   Endpoint URL to `https://poswai.zzaxstudio.com/`. Set `LINE_LIFF_ID` to the
+   LIFF ID and `LINE_LOGIN_CHANNEL_ID` to the numeric LINE Login channel ID.
+2. Use a Messaging API channel under the **same LINE provider**. Set
+   `LINE_CHANNEL_ACCESS_TOKEN` and `LINE_CHANNEL_SECRET` from this channel.
+   Register `https://poswai.zzaxstudio.com/api/line-webhook` as the Messaging
+   API Webhook URL and enable webhooks. Managers must add the Official Account
+   as a friend to receive approval messages.
+3. Create staff accounts through the manager-only staff API. Each staff member
+   signs in to POS and clicks **เชื่อมบัญชีพนักงานกับ LINE**. This verifies a
+   fresh LINE ID token and binds that LINE user to their own staff account.
+   Managers must also bind their LINE account before they can receive and
+   approve Flex messages. One LINE account cannot bind to two staff accounts.
+4. A leave request verifies the LIFF ID token against the LINE Login channel
+   and requires the selected staff ID to match the bound LINE account. It is
+   stored even if the Flex push fails; the response reports `delivery_failed`
+   or `no_bound_manager` so an administrator can follow up. The LINE webhook
+   verifies `x-line-signature` against the **raw request bytes**, then accepts
+   postbacks only from active managers bound to that LINE user and branch.
+   Approval updates every shift in the requested date range and locks POS PIN
+   for those dates. Repeated postbacks cannot change a reviewed decision.
+
+If LINE settings are absent, leave requests fail closed. Test the full flow
+with real LINE accounts and an HTTPS deployment before enabling it for staff.
+
+The server now requires staff PIN sessions for protected actions and signed QR
+table tokens for guest orders and service calls. Set
+`POSWAI_BOOTSTRAP_MANAGER_PIN` (at least eight characters) and
+`POSWAI_TABLE_QR_SECRET` (at least 32 random characters) only in the host's
+secret settings. The bootstrap manager ID is 1. Log in and create named staff
+accounts and signed table links in the manager panel. Rotate the bootstrap PIN
+after setup. In live mode, the menu, open orders, and inventory load from the
+server; sample records are cleared. Create the real catalog and stock levels
+before accepting orders. Menu IDs may be text; BOM entries use
+`[{"ingId":"RICE","qty":1}]`. Every ingredient in a BOM must have sufficient
+stock or the order is rejected.
+
+EasySlip v2 verification is wired to the cashier's QR close flow. Set
+`EASYSLIP_API_KEY` in the host and register the restaurant's receiving account
+in EasySlip. The provider response must confirm the amount, receiving account,
+and unused slip reference before the server closes all bills on a table in one
+transaction. Never expose the API key in HTML or chat. Cash close is restricted
+to cashiers. Other electronic payment buttons remain disabled until their
+processors are integrated. The slip flow must be verified against a real bank
+transfer in the staging branch before disabling preview mode.
+
+Keep `POSWAI_PREVIEW_ONLY=1` until the remaining live workflows are implemented
+and verified. The legacy kitchen status, CRM, purchasing, some inventory
+actions, shift/payroll panels, split bills, and digital receipts still have
+browser-only demonstration behavior. They must be connected to protected APIs
+or removed from the live workflow before the store relies on them. Payroll is
+an estimate and does not include tax, Social Security, or deductions. The
+production cutover also needs the actual LINE channel credentials, LIFF ID,
+PromptPay receiving number, EasySlip key, bootstrap manager PIN, signed-table
+secret, real menu/BOM data, and end-to-end checks on the HTTPS hostname.
 
 For local smoke testing:
 

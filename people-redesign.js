@@ -49,7 +49,6 @@
       const payroll=document.createElement('div');payroll.className='people-payroll card';
       payroll.innerHTML=`<div class="card-header"><div><div class="card-title">ประวัติและสรุปเงินพนักงาน</div><p class="people-payroll-subtitle">เข้างาน · ลางาน · โอที · คอมมิชชัน</p></div></div>
         <div class="people-payroll-toolbar"><label>พนักงาน<select id="payrollStaffSelect" class="input"></select></label><label>เดือน<input id="payrollMonth" class="input" type="month"></label><button id="payrollRefresh" class="btn btn-outline" type="button">ดูข้อมูล</button></div>
-        <details class="people-disclosure people-payroll-access"><summary>เชื่อมต่อข้อมูลจริงของผู้จัดการ</summary><label>รหัสเข้าถึงรายงาน<input id="payrollManagerToken" class="input" type="password" autocomplete="off" placeholder="รหัสผู้จัดการ"></label><p>ใช้รหัสสำหรับรายงานนี้เท่านั้น ระบบไม่เก็บรหัสไว้ในเครื่อง</p></details>
         <div id="payrollSource" class="people-payroll-source"></div><div id="payrollSummary" class="people-payroll-summary"></div><div id="payrollHistory" class="people-payroll-history"></div>`;
       audit.classList.add('people-audit-card');
       tabs(staff,[['ภาพรวมทีม',[main]],['คำขอลา',[approval]],['คอมมิชชัน',[commission]],['ประวัติและเงินเดือน',[payroll,audit]]]);old.remove();
@@ -73,7 +72,7 @@
     }
   }
   function setupPayroll(host) {
-    const staffSelect=$('#payrollStaffSelect',host),monthInput=$('#payrollMonth',host),token=$('#payrollManagerToken',host);
+    const staffSelect=$('#payrollStaffSelect',host),monthInput=$('#payrollMonth',host);
     const mainStaff=$('#staffSelect');staffSelect.replaceChildren(...[...mainStaff.options].map(o=>new Option(o.textContent,o.value)));
     staffSelect.value=mainStaff.value;
     const now=new Date();monthInput.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
@@ -85,6 +84,7 @@
     const leaveName={sick:'ลาป่วย',personal:'ลากิจ',vacation:'ลาพักร้อน',swap_shift:'สลับกะ'};
     const statusName={pending:'รออนุมัติ',approved:'อนุมัติ',rejected:'ไม่อนุมัติ',cancelled:'ยกเลิก'};
     let report=null,source='demo';
+    let payrollGeneration=0;
     function makePreview() {
       const staff=typeof state==='undefined'?[]:state.staffStats;
       return staff.map((s,i)=>{
@@ -108,7 +108,7 @@
     function render() {
       const id=Number(staffSelect.value.replace('ST',''));
       const person=report?.find(s=>s.id===id);
-      $('#payrollSource',host).textContent=source==='demo'?'ข้อมูลตัวอย่างเพื่อดูรูปแบบรายงาน • ยังไม่ใช่เงินเดือนจริง':'ข้อมูลจากระบบ • ยอดก่อนหักภาษี ประกันสังคม และรายการอื่น';
+      $('#payrollSource',host).textContent=source==='demo'?'ข้อมูลตัวอย่างเพื่อดูรูปแบบรายงาน • ยังไม่ใช่เงินเดือนจริง':source==='live'?'ประมาณการจากข้อมูลที่บันทึก • ก่อนหักภาษี ประกันสังคม และรายการอื่น':'เข้าสู่ระบบด้วยบัญชีผู้จัดการเพื่อดูประวัติและค่าจ้างประมาณการ';
       if(!person){$('#payrollSummary',host).replaceChildren();$('#payrollHistory',host).textContent='ยังไม่มีข้อมูลพนักงานสำหรับเดือนนี้';return;}
       const cards=[['วันทำงาน',`${person.work_days||0} วัน`],['ชั่วโมงปกติ',hours(person.regular_hours)],['โอที',hours(person.ot_hours)],['ค่าแรง',money(person.base_pay)],['ค่าโอที',money(person.ot_pay)],['คอมมิชชัน',money(person.commission)],['รวมก่อนหัก',money(person.total_pay)]];
       $('#payrollSummary',host).innerHTML=cards.map(([label,value],i)=>`<div class="people-payroll-stat${i===6?' people-payroll-total':''}"><span>${label}</span><strong>${value}</strong></div>`).join('');
@@ -116,16 +116,81 @@
       $('#payrollHistory',host).innerHTML=`<div class="people-payroll-history-title">รายการย้อนหลัง <span>${rows.length} รายการ</span></div><div class="people-payroll-ledger">${rows.length?rows.map(r=>`<div class="people-payroll-row"><span>${date(r.day)}</span><b>${esc(r.type)}</b><span>${esc(r.description)}</span><em>${esc(r.ot)}</em></div>`).join(''):'<div class="people-empty">ยังไม่มีประวัติในเดือนนี้</div>'}</div><p class="people-payroll-note">ตัวอย่างการคำนวณ: 8 ชั่วโมงแรก × อัตรารายชั่วโมง; เวลาเกิน 8 ชั่วโมง × อัตรารายชั่วโมง × 1.5; รวมคอมมิชชันที่บันทึกแล้ว อัตราและกติกาต้องตั้งตามนโยบายร้านก่อนจ่ายเงินจริง</p>`;
     }
     async function load(){
-      if(typeof state==='undefined'||state.previewOnly||!token.value.trim()){report=makePreview();source='demo';render();return;}
+      const generation=++payrollGeneration;
+      if(typeof state==='undefined'||state.previewOnly){report=makePreview();source='demo';render();return;}
+      const auth=window.poswaiAuth?.current;
+      if(!auth||!['manager','owner'].includes(auth.role)){report=null;source='login';render();return;}
       try{
-        const response=await fetch(`/api/staff/payroll?month=${encodeURIComponent(monthInput.value)}&branch_id=1`,{headers:{'X-Manager-Report-Token':token.value.trim()},cache:'no-store'});
-        if(!response.ok)throw new Error(response.status===403?'รหัสผู้จัดการไม่ถูกต้อง':response.status===503?'ยังไม่ได้ตั้งค่ารหัสรายงานบนเซิร์ฟเวอร์':`โหลดข้อมูลไม่สำเร็จ (${response.status})`);
-        report=(await response.json()).staff;source='live';render();
-      }catch(e){report=null;$('#payrollSource',host).textContent=e.message;$('#payrollSummary',host).replaceChildren();$('#payrollHistory',host).replaceChildren();}
+        const response=await fetch(`/api/staff/payroll?month=${encodeURIComponent(monthInput.value)}&branch_id=${encodeURIComponent(auth.branch_id)}`,{credentials:'same-origin',cache:'no-store'});
+        if(generation!==payrollGeneration)return;
+        if(!response.ok)throw new Error(response.status===403?'บัญชีนี้ไม่มีสิทธิ์ดูค่าจ้าง':`โหลดข้อมูลไม่สำเร็จ (${response.status})`);
+        const data=await response.json();if(generation!==payrollGeneration)return;
+        report=data.staff;source='live';render();
+      }catch(e){if(generation!==payrollGeneration)return;report=null;$('#payrollSource',host).textContent=e.message;$('#payrollSummary',host).replaceChildren();$('#payrollHistory',host).replaceChildren();}
     }
     staffSelect.addEventListener('change',render);monthInput.addEventListener('change',load);$('#payrollRefresh',host).addEventListener('click',load);mainStaff.addEventListener('change',()=>{staffSelect.value=mainStaff.value;render();});
-    report=makePreview();render();
+    report=null;source='login';render();
+    window.poswaiRefreshPayroll=load;
+    window.addEventListener('poswai:auth-changed',load);
+    window.addEventListener('poswai:config-ready',load);
+    if(state.previewOnly)load();
   }
+  let staffRefreshGeneration=0;
+  async function refreshLiveStaff() {
+    const generation=++staffRefreshGeneration;
+    if(typeof state==='undefined'||state.previewOnly)return;
+    const auth=window.poswaiAuth?.current;
+    const notice=$('#view-staff .people-sample');
+    const select=$('#staffSelect');
+    const payrollSelect=$('#payrollStaffSelect');
+    const isManager=auth&&['manager','owner'].includes(auth.role);
+    if(!auth){
+      state.staffStats=[];state.leaveRequests=[];state.staffLiveOverview=false;
+      if(notice)notice.textContent='เข้าสู่ระบบเพื่อดูข้อมูลพนักงาน';
+    }else if(!isManager){
+      state.staffStats=[{id:`ST${String(auth.staff_id).padStart(2,'0')}`,name:auth.name,role:auth.role,
+        shift:'—',shiftStatus:'scheduled',posLocked:false,commissionToday:0,quotas:null}];
+      state.leaveRequests=[];state.staffLiveOverview=true;
+      if(notice)notice.textContent='ข้อมูลบัญชีของคุณ • ผู้จัดการจึงจะเห็นตารางกะและค่าจ้างของทีม';
+    }else{
+      try{
+        const response=await fetch(`/api/staff/overview?branch_id=${encodeURIComponent(auth.branch_id)}`,{credentials:'same-origin',cache:'no-store'});
+        if(generation!==staffRefreshGeneration)return;
+        if(!response.ok)throw new Error(`โหลดข้อมูลพนักงานไม่สำเร็จ (${response.status})`);
+        const overview=await response.json();
+        if(generation!==staffRefreshGeneration)return;
+        state.staffStats=overview.staff.map(s=>({id:`ST${String(s.id).padStart(2,'0')}`,name:s.name,role:s.role,
+          shift:s.shift,shiftStatus:s.status,posLocked:s.pos_pin_locked,commissionToday:s.commission_today,
+          sales:0,bills:0,quotas:null}));
+        state.leaveRequests=overview.leave_requests.map(l=>({id:`LV-${l.id}`,serverLeaveId:l.id,
+          staffId:`ST${String(l.staff_id).padStart(2,'0')}`,staffName:l.staff_name,leaveType:l.leave_type,
+          leaveTypeLabel:({sick:'ลาป่วย',personal:'ลากิจ',vacation:'ลาพักร้อน',swap_shift:'สลับกะ'})[l.leave_type]||l.leave_type,
+          duration:`${l.start_date} ถึง ${l.end_date}`,reason:l.reason||'—',attachment:'—',status:l.status,
+          createdAt:l.created_at,startDate:l.start_date,endDate:l.end_date}));
+        state.staffLiveOverview=true;
+        if(notice)notice.textContent=`ข้อมูลจากระบบ · ${overview.work_date} · ${overview.staff.length} คน`;
+      }catch(error){
+        if(generation!==staffRefreshGeneration)return;
+        state.staffStats=[];state.leaveRequests=[];state.staffLiveOverview=false;
+        if(notice)notice.textContent=error.message;
+      }
+    }
+    const previous=select?.value;
+    const options=state.staffStats.map(s=>new Option(s.name,s.id));
+    if(select){select.replaceChildren(...options);select.value=options.some(o=>o.value===previous)?previous:options[0]?.value||'';}
+    if(payrollSelect){
+      const selected=payrollSelect.value;
+      payrollSelect.replaceChildren(...state.staffStats.map(s=>new Option(s.name,s.id)));
+      payrollSelect.value=state.staffStats.some(s=>s.id===selected)?selected:payrollSelect.options[0]?.value||'';
+    }
+    $('#staffQuotaBanner').textContent=state.staffStats.length?'ยังไม่ได้กำหนดโควตาวันลาในระบบ':'ไม่มีข้อมูลพนักงาน';
+    $('#view-staff button[onclick*="triggerAutoAbsenceDetection"]').hidden=true;
+    $('#view-staff button[onclick*="testPosPinLoginModal"]').hidden=true;
+    if(typeof renderStaffAndAnalyticsView==='function')renderStaffAndAnalyticsView();
+    if(window.poswaiRefreshPayroll)window.poswaiRefreshPayroll();
+  }
+  window.addEventListener('poswai:auth-changed',refreshLiveStaff);
+  window.addEventListener('poswai:staff-refresh',refreshLiveStaff);
   const report=$('#view-analytics');
   if(report){
     report.classList.add('people-workspace','report-workspace');
