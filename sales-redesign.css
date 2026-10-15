@@ -26,6 +26,7 @@
 #customerCartPanel.cart-is-empty #spendThresholdBanner { display:none!important; }
 #cartItemsContainer > p { min-height:220px; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:9px; }
 #cartItemsContainer > p svg { width:44px; height:44px; stroke:currentColor; color:#a8afb9; margin-bottom:8px; }
+#cartItemsContainer > p .cart-empty-mascot { display:block;width:91px;height:91px;object-fit:contain;margin-bottom:3px;filter:drop-shadow(0 7px 8px #b3832430); }
 #cartItemsContainer > p strong { font-size:14px; color:#525f6e; }
 #cartItemsContainer > p span { font-size:12px; }
 #cartItemsContainer > div { padding:13px 0!important; gap:12px; }

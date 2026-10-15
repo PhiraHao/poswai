@@ -55,7 +55,7 @@
     if (!calls.length) {
       const empty = document.createElement('p');
       empty.className = 'service-inbox-empty';
-      empty.textContent = 'ยังไม่มีคำขอจากลูกค้า';
+      empty.innerHTML = '<img src="/assets/mascot-wave.webp" alt="" loading="lazy"><span>ยังไม่มีคำขอจากลูกค้า</span>';
       inbox.append(empty);
     }
     for (const call of calls) {

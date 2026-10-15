@@ -1,7 +1,8 @@
 /* Shared navigation/chrome, with existing application state and actions intact. */
 (() => {
-  const logo='<svg aria-hidden="true" viewBox="0 0 32 32"><path d="M5 13h22c0 7-4 12-11 12S5 20 5 13ZM10 28h12M9 8h14M12 4h9"/></svg>';
-  document.querySelectorAll('.nav-brand-mark,.brand-symbol').forEach(n=>n.innerHTML=logo);
+  const brand=document.querySelector('.nav-brand');
+  if(brand) brand.innerHTML='<img class="brand-wordmark" src="/assets/brand-logo.webp" alt="POS WAI"><img class="brand-mini-mark" src="/assets/brand-mark.webp" alt="POS WAI">';
+  document.querySelectorAll('.brand-symbol').forEach(n=>n.innerHTML='<img src="/assets/brand-mark.webp" alt="">');
   document.querySelectorAll('.role-tab').forEach(n=>n.querySelector('small')?.remove());
   document.querySelector('.nav-footer span:last-child').textContent='โหมดตัวอย่าง';
   const branches=document.getElementById('branchSelect');

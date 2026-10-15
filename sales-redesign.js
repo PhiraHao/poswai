@@ -43,7 +43,7 @@ function foodIconFor(id) { return `/assets/${[8,9,10,12].includes(Number(id)) ? 
   renderCustomerMenu = function(...args) { const result = originalMenu.apply(this, args); enhanceMenu(); return result; };
   function enhanceCart() {
     const empty = $('#cartItemsContainer > p');
-    if (empty) empty.innerHTML = '<svg aria-hidden="true"><use href="/icons.svg#menu"></use></svg><strong>เลือกเมนูที่ชอบได้เลย</strong><span>รายการอาหารจะแสดงที่นี่</span>';
+    if (empty) empty.innerHTML = '<img class="cart-empty-mascot" src="/assets/mascot-pos.webp" alt="" loading="lazy"><strong>เลือกเมนูที่ชอบได้เลย</strong><span>รายการอาหารจะแสดงที่นี่</span>';
     $('#customerCartPanel')?.classList.toggle('cart-is-empty', state.cart.length === 0);
   }
   const originalCart = renderCart;
