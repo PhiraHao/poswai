@@ -1,0 +1,16 @@
+.service-call-primary { width:100%; min-height:43px; margin:-4px 0 14px; border:1px solid #ebad00; border-radius:10px; background:#fff7d7; color:#483300; font-family:inherit; font-size:13px; font-weight:600; cursor:pointer; }
+.menu-catalog .service-call-primary { width:auto; min-width:112px; margin:0; padding:8px 12px; flex:none; }
+.service-call-primary:hover,.service-call-primary:focus-visible { background:#ffedaa; outline:2px solid #f9c623; outline-offset:2px; }
+.service-inbox { margin:0 0 18px; padding:17px 20px; border:1px solid #e8ebef; border-radius:15px; background:#fff; }
+.service-inbox-heading { display:flex; justify-content:space-between; align-items:center; padding-bottom:11px; border-bottom:1px solid #eef0f2; color:#202a35; font-size:15px; }
+.service-inbox-empty { margin:14px 0 0; color:#7b8794; font-size:12px; }
+.service-request { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid #eef0f2; }
+.service-request:last-child { border-bottom:0; padding-bottom:0; }
+.service-request strong { display:block; font-size:13px; color:#202a35; }
+.service-request small { display:block; margin-top:3px; font-size:11px; color:#7a8591; }
+.service-request button { flex:none; border:0; border-radius:9px; background:#ffcc2e; color:#202a35; padding:9px 13px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.service-request button:disabled { opacity:.55; cursor:wait; }
+.service-inbox-new { border-color:#edba15; box-shadow:0 0 0 3px #ffcc2e33; }
+.service-nav-badge { margin-left:auto; min-width:17px; height:17px; padding:0 4px; border-radius:20px; background:#dc3545; color:#fff; font-size:10px; font-weight:700; line-height:17px; text-align:center; }
+.service-nav-badge[hidden] { display:none!important; }
+@media(max-width:760px) { .service-inbox { padding:15px; } .service-request { align-items:flex-start; } .service-request button { padding:8px 10px; } .menu-catalog .service-call-primary { min-width:94px;font-size:11px;padding:6px; } }

@@ -21,4 +21,11 @@ Browser viewport review: desktop, 1024×768 tablet landscape and 390×844 mobile
 Menu filters and modifier selection; cart add and quantity total (65→130); inventory search and selected tea recipe; member search; staff tabs; report tabs. No browser console errors observed. Python compilation and JavaScript syntax checks passed. Static routes and PWA asset responses checked. Preview API write guard remains enabled; this review does not certify live payments or LINE production operation.
 
 ## Assets and offline
-SVG food/drink/dessert icons are local. Noto Sans Thai font license included in assets/OFL.txt. Worker v14 caches redesign scripts/styles/fonts/icons. Preview remains read-only for server-side transactions.
+SVG food/drink/dessert icons are local. Noto Sans Thai font license included in assets/OFL.txt. Worker v18 caches redesign scripts/styles/fonts/icons. Preview remains read-only for server-side transactions.
+
+## Follow-up requested on 2026-10-15
+- Language picker displays the current language; the other two open on click. Branch header now shows a live Thai date and time.
+- Ordering has a visible call-staff button. The cashier receives table number and time, with acknowledgement. Preview uses local notifications; the API and offline queue support live use.
+- Staff has an employee/month ledger for attendance, leave, OT, wage and commission, with a clearly marked preview sample. Real payroll data is a read-only manager report. Configure POSWAI_MANAGER_REPORT_TOKEN for manager access, and POSWAI_REGULAR_HOURS_PER_DAY / POSWAI_OT_MULTIPLIER per store policy. Actual hourly rates live in the staffs table. The report is an estimated gross amount before deductions.
+- Reports gained a detailed tab for target, retention, food cost, waste, kitchen bottleneck, staffing advice and sample CSV export. Prior menu and service tabs remain available.
+- Browser checks include mobile staff ledger, report detail, language switching, service request and cashier acknowledgement.

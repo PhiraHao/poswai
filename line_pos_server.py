@@ -15,9 +15,11 @@ import sqlite3
 import datetime
 import json
 import os
+import hmac
+import re
 from typing import List, Optional
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -43,6 +45,11 @@ LINE_LIFF_ID = os.getenv("LINE_LIFF_ID", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 PREVIEW_ONLY = os.getenv("POSWAI_PREVIEW_ONLY", "0") == "1"
+MANAGER_REPORT_TOKEN = os.getenv("POSWAI_MANAGER_REPORT_TOKEN", "")
+PAYROLL_REGULAR_HOURS_PER_DAY = float(os.getenv("POSWAI_REGULAR_HOURS_PER_DAY", "8"))
+PAYROLL_OT_MULTIPLIER = float(os.getenv("POSWAI_OT_MULTIPLIER", "1.5"))
+if PAYROLL_REGULAR_HOURS_PER_DAY <= 0 or PAYROLL_OT_MULTIPLIER < 0:
+    raise RuntimeError("Invalid payroll hours or overtime multiplier")
 if not DATABASE_URL.startswith("sqlite:///"):
     raise RuntimeError("This deployment supports SQLite only; configure a persistent SQLite DATABASE_URL")
 DB_PATH = Path(DATABASE_URL.removeprefix("sqlite:///"))
@@ -212,6 +219,10 @@ def init_db() -> None:
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS leave_event_ids (
         event_id TEXT PRIMARY KEY, leave_id INTEGER NOT NULL)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS service_calls (
+        event_id TEXT PRIMARY KEY, branch_id INTEGER NOT NULL, table_no TEXT NOT NULL,
+        call_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, acknowledged_at TEXT)""")
 
     conn.commit()
     conn.close()
@@ -242,6 +253,45 @@ class OrderCreate(BaseModel):
     table_no: str
     total_amount: float
     items: list[OrderItem]
+
+
+class ServiceCallCreate(BaseModel):
+    event_id: str
+    branch_id: int = 1
+    table_no: str
+    call_type: str
+
+
+@app.post("/api/service-calls")
+def create_service_call(req: ServiceCallCreate):
+    if not req.event_id or len(req.event_id) > 80 or req.branch_id < 1 or not req.table_no.strip() or len(req.table_no) > 24 or not req.call_type.strip() or len(req.call_type) > 80:
+        raise HTTPException(400, "Invalid service call")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT OR IGNORE INTO service_calls (event_id, branch_id, table_no, call_type) VALUES (?, ?, ?, ?)",
+                     (req.event_id, req.branch_id, req.table_no.strip(), req.call_type.strip()))
+    return {"status": "pending", "event_id": req.event_id}
+
+
+@app.get("/api/service-calls")
+def list_service_calls(branch_id: int = 1):
+    if branch_id < 1:
+        raise HTTPException(400, "Invalid branch")
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT event_id, branch_id, table_no, call_type, status, created_at FROM service_calls "
+                            "WHERE branch_id=? AND status='pending' ORDER BY created_at DESC LIMIT 100", (branch_id,)).fetchall()
+    return {"calls": [dict(row) for row in rows]}
+
+
+@app.post("/api/service-calls/{event_id}/acknowledge")
+def acknowledge_service_call(event_id: str):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute("UPDATE service_calls SET status='acknowledged', acknowledged_at=CURRENT_TIMESTAMP "
+                              "WHERE event_id=? AND status='pending'", (event_id,))
+        exists = conn.execute("SELECT status FROM service_calls WHERE event_id=?", (event_id,)).fetchone()
+    if not exists:
+        raise HTTPException(404, "Service call not found")
+    return {"event_id": event_id, "status": "acknowledged", "changed": bool(cursor.rowcount)}
 
 
 @app.post("/api/orders")
@@ -333,6 +383,97 @@ def commissions(work_date: str, branch_id: int = 1):
     divisor = calculate_pooled_commission_divisor(work_date)
     return {"sales": sales, "pool": round(sales * 0.03, 2), "pool_divisor": divisor,
             "equal_share": round(sales * 0.03 / divisor, 2)}
+
+
+@app.get("/api/staff/payroll")
+def staff_payroll(month: str, branch_id: int = 1, x_manager_report_token: str = Header(default="")):
+    """Read-only staff ledger. Rates here are configured payroll inputs, not statutory rates."""
+    if not MANAGER_REPORT_TOKEN:
+        raise HTTPException(503, "Manager payroll access is not configured")
+    if not hmac.compare_digest(x_manager_report_token, MANAGER_REPORT_TOKEN):
+        raise HTTPException(403, "Manager payroll access denied")
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+        raise HTTPException(400, "month must be YYYY-MM")
+    if branch_id < 1:
+        raise HTTPException(400, "Invalid branch")
+    start = datetime.date.fromisoformat(f"{month}-01")
+    end = (start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        staff_rows = conn.execute(
+            "SELECT id, name, role, hourly_rate FROM staffs WHERE branch_id=? AND is_active=1 ORDER BY name",
+            (branch_id,),
+        ).fetchall()
+        attendance_rows = conn.execute(
+            "SELECT id, staff_id, clock_in, clock_out FROM attendances "
+            "WHERE substr(clock_in,1,10)>=? AND substr(clock_in,1,10)<? ORDER BY clock_in DESC",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+        leave_rows = conn.execute(
+            "SELECT id, staff_id, leave_type, start_date, end_date, status FROM leave_requests "
+            "WHERE start_date<? AND end_date>=? ORDER BY start_date DESC",
+            (end.isoformat(), start.isoformat()),
+        ).fetchall()
+        commission_rows = conn.execute(
+            "SELECT staff_id, period_date, SUM(calculated_amount) AS amount FROM commission_records "
+            "WHERE period_date>=? AND period_date<? GROUP BY staff_id,period_date",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+    by_staff = {row["id"]: {
+        "id": row["id"], "name": row["name"], "role": row["role"],
+        "hourly_rate": float(row["hourly_rate"] or 0), "regular_hours": 0.0,
+        "ot_hours": 0.0, "work_days": 0, "attendance": [], "leave": [],
+        "commission_records": [], "commission": 0.0,
+    } for row in staff_rows}
+    # Configurable business defaults; payroll law and deductions must be configured separately.
+    regular_hours_per_day, ot_multiplier = PAYROLL_REGULAR_HOURS_PER_DAY, PAYROLL_OT_MULTIPLIER
+    hours_by_day = {}
+    for row in attendance_rows:
+        item = by_staff.get(row["staff_id"])
+        if item is None:
+            continue
+        hours = 0.0
+        if row["clock_out"]:
+            try:
+                delta = datetime.datetime.fromisoformat(row["clock_out"]) - datetime.datetime.fromisoformat(row["clock_in"])
+                hours = min(max(delta.total_seconds() / 3600, 0), 24)
+            except ValueError:
+                hours = 0.0
+        day_key = (row["staff_id"], row["clock_in"][:10])
+        prior = hours_by_day.get(day_key, 0.0)
+        regular = max(min(prior + hours, regular_hours_per_day) - min(prior, regular_hours_per_day), 0)
+        ot = max(hours - regular, 0)
+        hours_by_day[day_key] = prior + hours
+        item["regular_hours"] += regular
+        item["ot_hours"] += ot
+        if row["clock_out"]:
+            item.setdefault("_worked_dates", set()).add(row["clock_in"][:10])
+        item["attendance"].append({"date": row["clock_in"][:10], "clock_in": row["clock_in"],
+                                   "clock_out": row["clock_out"], "regular_hours": round(regular, 2),
+                                   "ot_hours": round(ot, 2)})
+    for row in leave_rows:
+        item = by_staff.get(row["staff_id"])
+        if item is not None:
+            item["leave"].append({"id": row["id"], "type": row["leave_type"],
+                                  "start_date": row["start_date"], "end_date": row["end_date"],
+                                  "status": row["status"]})
+    for row in commission_rows:
+        item = by_staff.get(row["staff_id"])
+        if item is not None:
+            amount = float(row["amount"] or 0)
+            item["commission"] += amount
+            item["commission_records"].append({"date": row["period_date"], "amount": round(amount, 2)})
+    for item in by_staff.values():
+        item["work_days"] = len(item.pop("_worked_dates", set()))
+        item["regular_hours"] = round(item["regular_hours"], 2)
+        item["ot_hours"] = round(item["ot_hours"], 2)
+        item["base_pay"] = round(item["regular_hours"] * item["hourly_rate"], 2)
+        item["ot_pay"] = round(item["ot_hours"] * item["hourly_rate"] * ot_multiplier, 2)
+        item["commission"] = round(item["commission"], 2)
+        item["total_pay"] = round(item["base_pay"] + item["ot_pay"] + item["commission"], 2)
+    return {"month": month, "branch_id": branch_id, "regular_hours_per_day": regular_hours_per_day,
+            "ot_multiplier": ot_multiplier, "staff": list(by_staff.values()),
+            "note": "Estimated gross pay before deductions and benefits; confirm configured payroll policy before use."}
 
 
 # =====================================================================
@@ -506,7 +647,7 @@ def get_executive_analytics_dashboard(benchmark: str = "WOW"):
             "recommended_weekend_staff": {"kitchen": 3, "bar": 1, "cashier": 1, "service": 2},
         },
         "food_cost_and_retention": {
-            "actual_food_cost_percent": 32.4,
+            "actual_food_cost_percent": 34.8,
             "target_corridor_percent": "30.0 - 35.0",
             "waste_cost_baht": 135.00,
             "returning_member_ratio_percent": 68.0,
@@ -528,14 +669,14 @@ def serve_worker():
 
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
-    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign"}:
+    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "service-call"}:
         raise HTTPException(404, "Stylesheet not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.css", media_type="text/css")
 
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "service-call"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

@@ -46,7 +46,13 @@
       const formula=$('#commissionPoolFormulaBox');commission.append(details('วิธีคำนวณ',[formula]));
       const main=document.createElement('div');main.className='people-attendance-layout';main.append(roster,attendance);
       const old=$(':scope > .grid-2',staff);
-      tabs(staff,[['ภาพรวมทีม',[main]],['คำขอลา',[approval]],['คอมมิชชัน',[commission]],['ประวัติ',[audit]]]);old.remove();
+      const payroll=document.createElement('div');payroll.className='people-payroll card';
+      payroll.innerHTML=`<div class="card-header"><div><div class="card-title">ประวัติและสรุปเงินพนักงาน</div><p class="people-payroll-subtitle">เข้างาน · ลางาน · โอที · คอมมิชชัน</p></div></div>
+        <div class="people-payroll-toolbar"><label>พนักงาน<select id="payrollStaffSelect" class="input"></select></label><label>เดือน<input id="payrollMonth" class="input" type="month"></label><button id="payrollRefresh" class="btn btn-outline" type="button">ดูข้อมูล</button></div>
+        <details class="people-disclosure people-payroll-access"><summary>เชื่อมต่อข้อมูลจริงของผู้จัดการ</summary><label>รหัสเข้าถึงรายงาน<input id="payrollManagerToken" class="input" type="password" autocomplete="off" placeholder="รหัสผู้จัดการ"></label><p>ใช้รหัสสำหรับรายงานนี้เท่านั้น ระบบไม่เก็บรหัสไว้ในเครื่อง</p></details>
+        <div id="payrollSource" class="people-payroll-source"></div><div id="payrollSummary" class="people-payroll-summary"></div><div id="payrollHistory" class="people-payroll-history"></div>`;
+      audit.classList.add('people-audit-card');
+      tabs(staff,[['ภาพรวมทีม',[main]],['คำขอลา',[approval]],['คอมมิชชัน',[commission]],['ประวัติและเงินเดือน',[payroll,audit]]]);old.remove();
       const sample=document.createElement('div');sample.className='people-sample';sample.textContent='ข้อมูลตัวอย่าง • การลงเวลาและใบลายังไม่เปิดใช้งานจริง';staff.insertBefore(sample,$('.people-tabs',staff));
       const short=()=>{
         all('#staffShiftRosterBody .badge').forEach(n=>{const t=n.textContent;n.textContent=t.includes('completed')?'เข้างานแล้ว':t.includes('scheduled')?'รอเข้างาน':t.includes('on_leave')?'ลา':t.includes('absent')?'ขาดงาน':t.includes('ระงับ')?'ระงับ':'ใช้งานได้';});
@@ -63,7 +69,62 @@
       // Re-run after existing rendering without replacing application functions.
       let queued=false;const ob=new MutationObserver(()=>{if(queued)return;queued=true;queueMicrotask(()=>{ob.disconnect();short();ob.observe($('#staffShiftRosterBody'),{childList:true});ob.observe($('#managerLeaveFlexContainer'),{childList:true});queued=false;});});
       ob.observe($('#staffShiftRosterBody'),{childList:true});ob.observe($('#managerLeaveFlexContainer'),{childList:true});
+      setupPayroll(payroll);
     }
+  }
+  function setupPayroll(host) {
+    const staffSelect=$('#payrollStaffSelect',host),monthInput=$('#payrollMonth',host),token=$('#payrollManagerToken',host);
+    const mainStaff=$('#staffSelect');staffSelect.replaceChildren(...[...mainStaff.options].map(o=>new Option(o.textContent,o.value)));
+    staffSelect.value=mainStaff.value;
+    const now=new Date();monthInput.value=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const money=n=>`฿${Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const hours=n=>`${Number(n||0).toLocaleString('th-TH',{maximumFractionDigits:2})} ชม.`;
+    const date=s=>{if(!s)return '—';const d=new Date(s);return Number.isNaN(d.getTime())?s:d.toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'});};
+    const time=s=>s?String(s).slice(11,16):'—';
+    const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const leaveName={sick:'ลาป่วย',personal:'ลากิจ',vacation:'ลาพักร้อน',swap_shift:'สลับกะ'};
+    const statusName={pending:'รออนุมัติ',approved:'อนุมัติ',rejected:'ไม่อนุมัติ',cancelled:'ยกเลิก'};
+    let report=null,source='demo';
+    function makePreview() {
+      const staff=typeof state==='undefined'?[]:state.staffStats;
+      return staff.map((s,i)=>{
+        const month=monthInput.value;
+        // Explicit sample records keep the preview useful without implying real payroll.
+        const currentMonth=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+        const attendance=[3,5,8,10,12,15,17,19,22,24].filter(day=>month<currentMonth||(month===currentMonth&&day<=now.getDate())).map((day,j)=>{
+          const dd=String(day).padStart(2,'0');const total=8+(j===2||j===6?2:0);
+          return {date:`${month}-${dd}`,clock_in:`${month}-${dd}T08:00:00`,clock_out:`${month}-${dd}T${String(8+total).padStart(2,'0')}:00:00`,regular_hours:8,ot_hours:total-8};
+        });
+        const leave=(typeof state==='undefined'?[]:state.leaveRequests).filter(l=>l.staffId===s.id).map(l=>({type:l.leaveType,start_date:l.startDate||l.date||`${month}-20`,end_date:l.endDate||l.startDate||`${month}-20`,status:l.status||'pending'})).filter(l=>l.start_date.startsWith(month)||l.end_date.startsWith(month));
+        const regular=attendance.reduce((n,a)=>n+a.regular_hours,0),ot=attendance.reduce((n,a)=>n+a.ot_hours,0);
+        const hourly=[120,85,75,90][i]||75;
+        const eligible=s.shiftStatus!=='on_leave'&&s.shiftStatus!=='absent';
+        const pool=state.shift.totalSalesToday*.03;
+        const divisor=Math.max(1,staff.filter(x=>x.shiftStatus!=='on_leave'&&x.shiftStatus!=='absent').length);
+        const commission=eligible?(($('#commissionRuleSelect')?.value||'POOLED')==='POOLED'?pool/divisor:s.sales*.03):0;
+        return {id:i+1,name:s.name,role:s.role,hourly_rate:hourly,regular_hours:regular,ot_hours:ot,work_days:attendance.length,attendance,leave,commission_records:[],commission,base_pay:regular*hourly,ot_pay:ot*hourly*1.5,total_pay:regular*hourly+ot*hourly*1.5+commission};
+      });
+    }
+    function render() {
+      const id=Number(staffSelect.value.replace('ST',''));
+      const person=report?.find(s=>s.id===id);
+      $('#payrollSource',host).textContent=source==='demo'?'ข้อมูลตัวอย่างเพื่อดูรูปแบบรายงาน • ยังไม่ใช่เงินเดือนจริง':'ข้อมูลจากระบบ • ยอดก่อนหักภาษี ประกันสังคม และรายการอื่น';
+      if(!person){$('#payrollSummary',host).replaceChildren();$('#payrollHistory',host).textContent='ยังไม่มีข้อมูลพนักงานสำหรับเดือนนี้';return;}
+      const cards=[['วันทำงาน',`${person.work_days||0} วัน`],['ชั่วโมงปกติ',hours(person.regular_hours)],['โอที',hours(person.ot_hours)],['ค่าแรง',money(person.base_pay)],['ค่าโอที',money(person.ot_pay)],['คอมมิชชัน',money(person.commission)],['รวมก่อนหัก',money(person.total_pay)]];
+      $('#payrollSummary',host).innerHTML=cards.map(([label,value],i)=>`<div class="people-payroll-stat${i===6?' people-payroll-total':''}"><span>${label}</span><strong>${value}</strong></div>`).join('');
+      const rows=[...person.attendance.map(a=>({day:a.date,type:'ลงเวลา',description:`${time(a.clock_in)}–${time(a.clock_out)} · ปกติ ${hours(a.regular_hours)}`,ot:a.ot_hours?`โอที ${hours(a.ot_hours)}`:'—'})),...person.leave.map(l=>({day:l.start_date,type:'ลา',description:`${leaveName[l.type]||esc(l.type)} · ${statusName[l.status]||esc(l.status)}`,ot:l.end_date&&l.end_date!==l.start_date?`ถึง ${date(l.end_date)}`:'—'})),...person.commission_records.map(c=>({day:c.date,type:'คอมมิชชัน',description:money(c.amount),ot:'—'}))].sort((a,b)=>String(b.day).localeCompare(String(a.day)));
+      $('#payrollHistory',host).innerHTML=`<div class="people-payroll-history-title">รายการย้อนหลัง <span>${rows.length} รายการ</span></div><div class="people-payroll-ledger">${rows.length?rows.map(r=>`<div class="people-payroll-row"><span>${date(r.day)}</span><b>${esc(r.type)}</b><span>${esc(r.description)}</span><em>${esc(r.ot)}</em></div>`).join(''):'<div class="people-empty">ยังไม่มีประวัติในเดือนนี้</div>'}</div><p class="people-payroll-note">ตัวอย่างการคำนวณ: 8 ชั่วโมงแรก × อัตรารายชั่วโมง; เวลาเกิน 8 ชั่วโมง × อัตรารายชั่วโมง × 1.5; รวมคอมมิชชันที่บันทึกแล้ว อัตราและกติกาต้องตั้งตามนโยบายร้านก่อนจ่ายเงินจริง</p>`;
+    }
+    async function load(){
+      if(typeof state==='undefined'||state.previewOnly||!token.value.trim()){report=makePreview();source='demo';render();return;}
+      try{
+        const response=await fetch(`/api/staff/payroll?month=${encodeURIComponent(monthInput.value)}&branch_id=1`,{headers:{'X-Manager-Report-Token':token.value.trim()},cache:'no-store'});
+        if(!response.ok)throw new Error(response.status===403?'รหัสผู้จัดการไม่ถูกต้อง':response.status===503?'ยังไม่ได้ตั้งค่ารหัสรายงานบนเซิร์ฟเวอร์':`โหลดข้อมูลไม่สำเร็จ (${response.status})`);
+        report=(await response.json()).staff;source='live';render();
+      }catch(e){report=null;$('#payrollSource',host).textContent=e.message;$('#payrollSummary',host).replaceChildren();$('#payrollHistory',host).replaceChildren();}
+    }
+    staffSelect.addEventListener('change',render);monthInput.addEventListener('change',load);$('#payrollRefresh',host).addEventListener('click',load);mainStaff.addEventListener('change',()=>{staffSelect.value=mainStaff.value;render();});
+    report=makePreview();render();
   }
   const report=$('#view-analytics');
   if(report){
