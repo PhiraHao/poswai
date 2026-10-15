@@ -83,6 +83,10 @@ server; sample records are cleared. Create the real catalog and stock levels
 before accepting orders. Menu IDs may be text; BOM entries use
 `[{"ingId":"RICE","qty":1}]`. Every ingredient in a BOM must have sufficient
 stock or the order is rejected.
+The Hostinger environment now contains a manager PIN of at least eight
+characters and a generated table QR signing secret. The app was recreated
+after saving both values. The manager's first login and a signed table link
+still need an end-to-end test when preview mode is lifted in staging.
 
 EasySlip v2 verification is wired to the cashier's QR close flow. Set
 `EASYSLIP_API_KEY` in the host and register the restaurant's receiving account
