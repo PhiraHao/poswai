@@ -92,8 +92,13 @@ transaction. Never expose the API key in HTML or chat. Cash close is restricted
 to cashiers. Other electronic payment buttons remain disabled until their
 processors are integrated. The slip flow must be verified against a real bank
 transfer in the staging branch before disabling preview mode.
-The restaurant selected a phone-number PromptPay destination, but its actual
-number has not yet been entered in `PROMPTPAY_ID`.
+The restaurant selected a phone-number PromptPay destination. Its number and
+an EasySlip API key have now been entered in the Hostinger Docker
+Manager environment. On 16 October 2026, the public `/api/config` confirmed a
+10-digit PromptPay destination and the running container confirmed that
+`EASYSLIP_API_KEY` is nonempty. Neither check validates the receiving account
+with EasySlip or proves a real transfer can be closed. The first EasySlip key
+was accidentally entered in a VPS terminal; rotate it before live payments.
 
 Keep `POSWAI_PREVIEW_ONLY=1` until the remaining live workflows are implemented
 and verified. The legacy kitchen status, CRM, purchasing, some inventory
