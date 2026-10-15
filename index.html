@@ -3194,6 +3194,13 @@
           </div>
         `;
       }).join("");
+      if (!list.length && state.productionMode) {
+        grid.innerHTML = `<div class="card" style="grid-column:1/-1; text-align:center; padding:32px 20px; color:var(--text-muted);">
+          <div style="font-size:2rem; margin-bottom:8px;" aria-hidden="true">🍽️</div>
+          <strong style="display:block; color:var(--text-primary); margin-bottom:6px;">${q ? 'ไม่พบเมนูที่ค้นหา' : 'ยังไม่มีเมนูของสาขานี้'}</strong>
+          <span>${q ? 'ลองค้นหาด้วยชื่ออื่น' : 'ผู้จัดการสามารถเพิ่มเมนูได้ในหน้าสต็อก'}</span>
+        </div>`;
+      }
 
       const rulesBox = document.getElementById("activePromoRulesList");
       if (rulesBox) {
@@ -4977,7 +4984,7 @@
   <script src="/service-call.js?v=19"></script>
   <script src="/auth-ui.js?v=20"></script>
   <script src="/payment-ui.js?v=21"></script>
-  <script src="/live-data.js?v=22"></script>
+  <script src="/live-data.js?v=24"></script>
   <script src="/inventory-live.js?v=23"></script>
 </body>
 </html>

@@ -32,10 +32,19 @@ host's secret settings. Never place LINE tokens in frontend files or Git.
 1. Create a LINE Login channel and LIFF app with `openid` scope. Set its LIFF
    Endpoint URL to `https://poswai.zzaxstudio.com/`. Set `LINE_LIFF_ID` to the
    LIFF ID and `LINE_LOGIN_CHANNEL_ID` to the numeric LINE Login channel ID.
+   The dedicated POS WAI LINE Login channel under ZZAX Studio is `2012039182`;
+   its LIFF ID is `2012039182-4hwigCrL` and its endpoint is the HTTPS root above.
+   The Docker Compose defaults include these public IDs. The LINE Login channel
+   is still in Developing mode; publish it after the public app and privacy
+   details have been checked.
 2. Use a Messaging API channel under the **same LINE provider**. Set
    `LINE_CHANNEL_ACCESS_TOKEN` and `LINE_CHANNEL_SECRET` from this channel.
+   The dedicated POS WAI Official Account is `@151jbyje` and its Messaging
+   API channel ID is `2012039195` under ZZAX Studio.
    Register `https://poswai.zzaxstudio.com/api/line-webhook` as the Messaging
-   API Webhook URL and enable webhooks. Managers must add the Official Account
+   API Webhook URL after deploying the new backend and enable webhooks only
+   when LINE's Verify succeeds. The current public preview rejects writes.
+   Managers must add the Official Account
    as a friend to receive approval messages.
 3. Create staff accounts through the manager-only staff API. Each staff member
    signs in to POS and clicks **เชื่อมบัญชีพนักงานกับ LINE**. This verifies a

@@ -109,6 +109,11 @@
     document.querySelectorAll('#view-customer button[onclick*="quickAddNewMenuItem"],#view-customer button[onclick*="toggleManagerQuickEditMode"]').forEach(button => {
       button.disabled = true; button.title = 'ตั้งเมนูผ่านหน้าสต็อกของผู้จัดการ';
     });
+    document.querySelector('#view-customer details.settings-panel')?.setAttribute('hidden', 'hidden');
+    document.querySelectorAll('#categoryPills .cat-pill').forEach((button, index) => {
+      if (index > 0) button.hidden = true;
+    });
+    state.currentCategory = 'ทั้งหมด';
   };
   const enterLive = () => {
     if (enabled) return;
