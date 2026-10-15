@@ -46,6 +46,10 @@ host's secret settings. Never place LINE tokens in frontend files or Git.
    `LINE_CHANNEL_ACCESS_TOKEN` and `LINE_CHANNEL_SECRET` from this channel.
    The dedicated POS WAI Official Account is `@151jbyje` and its Messaging
    API channel ID is `2012039195` under ZZAX Studio.
+   The POS WAI long-lived access token has been issued and both LINE secrets
+   are now stored in the Hostinger Docker Manager environment for `poswai`.
+   The container was recreated with these values on 16 October 2026, while
+   `POSWAI_PREVIEW_ONLY=1` remains enabled. Do not copy the values into Git.
    Register `https://poswai.zzaxstudio.com/api/line-webhook` as the Messaging
    API Webhook URL after deploying the new backend and enable webhooks only
    when LINE's Verify succeeds. The current public preview rejects writes.
@@ -88,6 +92,8 @@ transaction. Never expose the API key in HTML or chat. Cash close is restricted
 to cashiers. Other electronic payment buttons remain disabled until their
 processors are integrated. The slip flow must be verified against a real bank
 transfer in the staging branch before disabling preview mode.
+The restaurant selected a phone-number PromptPay destination, but its actual
+number has not yet been entered in `PROMPTPAY_ID`.
 
 Keep `POSWAI_PREVIEW_ONLY=1` until the remaining live workflows are implemented
 and verified. The legacy kitchen status, CRM, purchasing, some inventory
