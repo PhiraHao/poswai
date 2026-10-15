@@ -12,6 +12,11 @@ shows the interface but rejects API writes. Keep it enabled while the
 production gaps below are unresolved. After the PR is merged, change the
 build ref to `main`; do not disable preview mode until authentication and
 payment verification are complete.
+On the Hostinger VPS, Docker's Git build context needs a full 40-character
+commit SHA when pinned to a commit. After editing the Compose YAML, rebuild
+the `poswai` image and recreate only that service; applying new environment
+values alone can leave the old source files in the existing image. Verify the
+served `service-worker.js` cache version and `/api/config` after deployment.
 The Cloudflare DNS `A` record named `poswai` now points to `187.127.109.204`
 with DNS-only proxy mode. Before production deployment, merge the reviewed PR
 into `main` and set the environment secrets in Hostinger Docker Manager. DNS for
