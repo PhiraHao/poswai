@@ -164,6 +164,27 @@ class CommerceTest(unittest.TestCase):
         response = self._songwai({"order_id": 1, "restaurant_id": 37, "delivery_mode": "rider", "items": []})
         self.assertEqual(response.status_code, 403)
 
+    def test_dormant_30_day_segment_and_opt_in_line_only(self):
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            conn.execute("""INSERT INTO crm_customers(branch_id,line_user_id,display_name,marketing_opt_in,
+                completed_orders,last_order_at) VALUES(1,'U-dormant','Past customer',1,2,date('now','-31 day'))""")
+            conn.execute("""INSERT INTO crm_customers(branch_id,songwai_user_id,display_name,marketing_opt_in,
+                completed_orders,last_order_at) VALUES(1,'77','Songwai customer',0,2,date('now','-31 day'))""")
+        self._login()
+        customers = self.client.get('/api/crm/customers?segment=dormant30').json()['customers']
+        self.assertEqual(len(customers), 2)
+        draft = self.client.post('/api/crm/campaigns', json={
+            'branch_id':1, 'segment':'dormant30', 'message':'กลับมาทานอาหารกันนะ'}).json()
+        self.assertEqual(draft['eligible_recipients'], 1)
+        with patch.object(server, 'LINE_CHANNEL_ACCESS_TOKEN', 'test-token'):
+            with patch.object(server.httpx, 'Client') as client:
+                client.return_value.__enter__.return_value.post.return_value.status_code = 200
+                first = self.client.post(f"/api/crm/campaigns/{draft['campaign_id']}/send")
+                second = self.client.post(f"/api/crm/campaigns/{draft['campaign_id']}/send")
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(first.json()['attempted'], 1)
+        self.assertEqual(second.status_code, 409)
+
 
 if __name__ == "__main__":
     unittest.main()

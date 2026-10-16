@@ -164,12 +164,14 @@ names and prices as inactive drafts and links their IDs without overwriting
 any existing POS recipe. Drafts are excluded from ordering. A Songwai draft
 cannot be activated until its BOM is nonempty and each ingredient has a stock
 record. The owner chose to provide recipes and initial stock later.
-The public
-POS WAI deployment still has `POSWAI_PREVIEW_ONLY=1`, and Songwai's live order
-route currently has no pickup mode or POS webhook. Do not call the integration
-live or claim that either pickup flow is operating until those changes and an
-end-to-end order with a real menu are verified. Other delivery platforms remain
-unconnected. The existing staff features remain incomplete for live payroll:
+The public POS WAI deployment still has `POSWAI_PREVIEW_ONLY=1`. Songwai's
+live order route has a durable POS WAI outbox for restaurant 37 and a signed
+webhook sender, but the bridge remains disabled until matching secrets are
+configured. The Songwai checkout currently offers rider/postal delivery;
+POS WAI's LINE LIFF flow offers customer self pickup. Do not call the
+integration live or claim that either pickup flow is accepting real orders
+until the menu and stock are entered and an end-to-end order is verified.
+Other delivery platforms remain unconnected. The existing staff features remain incomplete for live payroll:
 the overview, attendance, leave, commission, and payroll estimate APIs exist,
 but shift/rate setup and full live payroll checks are outstanding.
 
@@ -181,3 +183,13 @@ Do not advertise an automatic integration until the provider has granted API
 access, provided its webhook contract, and an authenticated end-to-end order
 has been tested. The incoming Songwai webhook is likewise dormant until its
 secret is configured on both services and Songwai sends persisted orders.
+
+Deployment notes: the Songwai bridge module is installed as
+`/docker/songwai/lib/poswaiBridge.js` and its order route is patched on the
+Hostinger VPS. The previous route is backed up at
+`/docker/songwai/routes/orders.js.bak-poswai-20261016`; this Songwai checkout
+is not a Git repository. POS WAI's Hostinger Compose sets
+`SONGWAI_RESTAURANT_ID=37` and retains preview mode. Both services were rebuilt
+on 16 October 2026. The POS WAI bridge design and rollback instructions are in
+`integrations/SONGWAI.md`. Keep the shared webhook secret unset until the
+real catalog/BOM/stock and authenticated order test are ready.
