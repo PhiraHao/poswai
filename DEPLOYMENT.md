@@ -76,8 +76,8 @@ The server now requires staff PIN sessions for protected actions and signed QR
 table tokens for guest orders and service calls. Set
 `POSWAI_BOOTSTRAP_MANAGER_PIN` (at least eight characters) and
 `POSWAI_TABLE_QR_SECRET` (at least 32 random characters) only in the host's
-secret settings. The bootstrap manager ID is 1. Log in and create named staff
-accounts and signed table links in the manager panel. Rotate the bootstrap PIN
+secret settings. The initial owner account ID is 1. Log in and create named staff
+accounts in the staff manager panel. Manage table QR links separately from cashier table setup. Rotate the initial PIN
 after setup. In live mode, the menu, open orders, and inventory load from the
 server; sample records are cleared. Create the real catalog and stock levels
 before accepting orders. Menu IDs may be text; BOM entries use

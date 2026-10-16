@@ -1,5 +1,6 @@
 .poswai-auth-button { border:1px solid #e2e7ee; background:#fff; color:#1d2837; border-radius:9px; min-height:34px; padding:5px 11px; font-weight:700; cursor:pointer; white-space:nowrap; }
 .poswai-auth-button:hover { background:#fff8df; border-color:#eac04b; }
+.role-tab[hidden] { display:none!important; }
 .poswai-live.poswai-guest .role-tab:not(:first-child),
 .poswai-live.poswai-guest .mobile-more { display:none!important; }
 .poswai-live.poswai-guest .role-tabs { width:100%; }

@@ -41,7 +41,7 @@
       if(leave?.parentElement===attendance){const heading=leave.firstElementChild;if(heading&&!heading.querySelector('input,select'))heading.remove();attendance.append(details('ยื่นคำขอลา',[leave]));}
       const check=$('button',approval);if(check){check.textContent='ทดลองตรวจการขาดงาน';approval.append(details('เครื่องมือทดลอง',[check]));}
       const pin=$('button',roster);if(pin){pin.textContent='ทดสอบสิทธิ์ POS';roster.append(details('ตรวจสิทธิ์การใช้งาน',[pin]));}
-      all('th',roster).forEach((n,i)=>n.textContent=['พนักงาน','กะทำงาน','สถานะ','สิทธิ์ POS'][i]);
+      all('th',roster).forEach((n,i)=>n.textContent=['พนักงาน','กะทำงาน','สถานะ','สิทธิ์ POS','ลงเวลา'][i]);
       const mode=$('#commissionRuleSelect');mode.options[0].textContent='แบ่งกองกลาง 3%';mode.options[1].textContent='รายบุคคล 3%';
       const formula=$('#commissionPoolFormulaBox');commission.append(details('วิธีคำนวณ',[formula]));
       const main=document.createElement('div');main.className='people-attendance-layout';main.append(roster,attendance);
@@ -54,7 +54,7 @@
       tabs(staff,[['ภาพรวมทีม',[main]],['คำขอลา',[approval]],['คอมมิชชัน',[commission]],['ประวัติและเงินเดือน',[payroll,audit]]]);old.remove();
       const sample=document.createElement('div');sample.className='people-sample';sample.textContent='ข้อมูลตัวอย่าง • การลงเวลาและใบลายังไม่เปิดใช้งานจริง';staff.insertBefore(sample,$('.people-tabs',staff));
       const short=()=>{
-        all('#staffShiftRosterBody .badge').forEach(n=>{const t=n.textContent;n.textContent=t.includes('completed')?'เข้างานแล้ว':t.includes('scheduled')?'รอเข้างาน':t.includes('on_leave')?'ลา':t.includes('absent')?'ขาดงาน':t.includes('ระงับ')?'ระงับ':'ใช้งานได้';});
+        all('#staffShiftRosterBody .badge').forEach(n=>{const t=n.textContent;n.textContent=t.includes('clocked_out')?'ออกงานแล้ว':t.includes('clocked_in')||t.includes('completed')?'เข้างานแล้ว':t.includes('scheduled')?'รอเข้างาน':t.includes('on_leave')?'ลา':t.includes('absent')?'ขาดงาน':t.includes('ระงับ')?'ระงับ':'ใช้งานได้';});
         const requests=$('#managerLeaveFlexContainer');if(!requests.children.length){const empty=document.createElement('div');empty.className='people-empty';empty.textContent='ยังไม่มีคำขอลา';requests.append(empty);}
         all(':scope > div:not(.people-empty)',requests).forEach(card=>{
           if(card.dataset.compact)return;card.dataset.compact='true';
@@ -148,10 +148,16 @@
       state.staffStats=[];state.leaveRequests=[];state.staffLiveOverview=false;
       if(notice)notice.textContent='เข้าสู่ระบบเพื่อดูข้อมูลพนักงาน';
     }else if(!isManager){
-      state.staffStats=[{id:`ST${String(auth.staff_id).padStart(2,'0')}`,name:auth.name,role:auth.role,
-        shift:'—',shiftStatus:'scheduled',posLocked:false,commissionToday:0,quotas:null}];
+      try{
+        const response=await fetch('/api/staff/me',{credentials:'same-origin',cache:'no-store'});
+        if(!response.ok)throw new Error(`โหลดเวลาทำงานไม่สำเร็จ (${response.status})`);
+        const mine=await response.json();
+        if(generation!==staffRefreshGeneration)return;
+        state.staffStats=[{id:`ST${String(auth.staff_id).padStart(2,'0')}`,name:auth.name,role:auth.role,
+          shift:mine.shift,shiftStatus:mine.status,posLocked:mine.pos_pin_locked,commissionToday:0,quotas:null}];
+      }catch(error){if(generation!==staffRefreshGeneration)return;state.staffStats=[];if(notice)notice.textContent=error.message;}
       state.leaveRequests=[];state.staffLiveOverview=true;
-      if(notice)notice.textContent='ข้อมูลบัญชีของคุณ • ผู้จัดการจึงจะเห็นตารางกะและค่าจ้างของทีม';
+      if(notice&&state.staffStats.length)notice.textContent='ข้อมูลบัญชีของคุณ • ลงเวลาทำงานได้จากหน้านี้';
     }else{
       try{
         const response=await fetch(`/api/staff/overview?branch_id=${encodeURIComponent(auth.branch_id)}`,{credentials:'same-origin',cache:'no-store'});
@@ -177,7 +183,7 @@
     }
     const previous=select?.value;
     const options=state.staffStats.map(s=>new Option(s.name,s.id));
-    if(select){select.replaceChildren(...options);select.value=options.some(o=>o.value===previous)?previous:options[0]?.value||'';}
+    if(select){select.replaceChildren(...options);select.value=options.some(o=>o.value===previous)?previous:options.find(o=>state.staffStats.find(s=>s.id===o.value)?.shiftStatus==='scheduled')?.value||options[0]?.value||'';}
     if(payrollSelect){
       const selected=payrollSelect.value;
       payrollSelect.replaceChildren(...state.staffStats.map(s=>new Option(s.name,s.id)));

@@ -7,7 +7,17 @@
   let current = null;
   let live = false;
   let preview = false;
-  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; } };
+  const tabsByRole = {
+    owner: ['customer','kitchen','cashier','inventory','crm','staff','analytics'],
+    manager: ['customer','kitchen','cashier','inventory','crm','staff','analytics'],
+    cashier: ['customer','kitchen','cashier','staff'],
+    kitchen: ['customer','kitchen','inventory','staff'],
+    service: ['customer','kitchen','staff'],
+    staff: ['customer','staff'],
+    guest: ['customer','staff']
+  };
+  const canAccessTab = tab => (tabsByRole[current?.role || 'guest'] || tabsByRole.guest).includes(tab);
+  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; }, canAccessTab };
   window.poswaiAuth = state;
 
   const accountButton = document.createElement('button');
@@ -63,6 +73,8 @@
   };
   const open = (manager = false) => {
     if (manager) showCreateForm();
+    $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
+    if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
     $('#poswaiLoginPanel').hidden = manager;
     $('#poswaiManagerPanel').hidden = !manager;
     $('#poswaiAuthTitle').textContent = manager ? 'จัดการบัญชีพนักงาน' : 'เข้าสู่ระบบ POS WAI';
@@ -82,6 +94,13 @@
     document.body.classList.toggle('poswai-guest', live && !preview && !current);
     accountButton.hidden = !live;
     accountButton.textContent = current ? `${current.name} ▾` : 'เข้าสู่ระบบ';
+    document.querySelectorAll('.role-tab').forEach(button => {
+      const tab = button.getAttribute('onclick')?.match(/switchTab\('([^']+)'/)?.[1];
+      if (tab) button.hidden = !canAccessTab(tab);
+    });
+    if (!canAccessTab(document.body.dataset.activeTab || 'customer')) {
+      document.querySelector('.role-tab')?.click();
+    }
     const navStatus = document.querySelector('.nav-footer span:last-child');
     if (navStatus) navStatus.textContent = current ? current.name : (live ? 'ยังไม่เข้าสู่ระบบ' : 'โหมดตัวอย่าง');
     if (live && !current && tableToken && document.body.dataset.activeTab !== 'customer') {

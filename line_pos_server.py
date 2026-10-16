@@ -316,7 +316,7 @@ def init_db() -> None:
         if len(BOOTSTRAP_MANAGER_PIN) < 8:
             raise RuntimeError("POSWAI_BOOTSTRAP_MANAGER_PIN must contain at least 8 characters")
         cur.execute("INSERT OR IGNORE INTO branches (id, name) VALUES (1, 'Main branch')")
-        cur.execute("INSERT INTO staffs (branch_id, name, role, pin_code_hash) VALUES (1, ?, 'manager', ?)",
+        cur.execute("INSERT INTO staffs (branch_id, name, role, pin_code_hash) VALUES (1, ?, 'owner', ?)",
                     (os.getenv("POSWAI_BOOTSTRAP_MANAGER_NAME", "Manager"), hash_pin(BOOTSTRAP_MANAGER_PIN)))
 
     conn.commit()
@@ -475,6 +475,8 @@ def create_staff(req: StaffCreate, request: Request):
     manager = require_staff(request, roles=("manager", "owner"))
     if not req.name.strip() or len(req.name) > 100 or req.role not in ("manager", "cashier", "kitchen", "service", "staff"):
         raise HTTPException(400, "Invalid staff profile")
+    if req.role == "manager" and manager["role"] != "owner":
+        raise HTTPException(403, "Only the owner can appoint a manager")
     if req.line_user_id is not None and (not req.line_user_id or len(req.line_user_id) > 100):
         raise HTTPException(400, "Invalid LINE user ID")
     pin_hash = hash_pin(req.pin)
@@ -485,6 +487,83 @@ def create_staff(req: StaffCreate, request: Request):
         except sqlite3.IntegrityError as exc:
             raise HTTPException(409, "Staff LINE identity already exists") from exc
     return {"staff_id": cur.lastrowid, "branch_id": manager["branch_id"], "name": req.name.strip(), "role": req.role}
+
+
+def _can_manage_staff(actor: dict, target: sqlite3.Row) -> bool:
+    if actor["branch_id"] != target["branch_id"]:
+        return False
+    if actor["role"] == "owner":
+        return True
+    return actor["role"] == "manager" and target["role"] not in ("owner", "manager")
+
+
+@app.get("/api/staff/directory")
+def staff_directory(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT id,name,role,is_active,hourly_rate FROM staffs WHERE branch_id=? ORDER BY is_active DESC,id",
+                            (branch_id,)).fetchall()
+    return {"items": [{"id": row["id"], "name": row["name"], "role": row["role"],
+                       "is_active": bool(row["is_active"]), "hourly_rate": row["hourly_rate"]} for row in rows]}
+
+
+class StaffProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+@app.patch("/api/staff/{staff_id}/profile")
+def update_staff_profile(staff_id: int, req: StaffProfileUpdate, request: Request):
+    actor = require_staff(request, roles=("manager", "owner"))
+    updates = req.model_dump(exclude_none=True)
+    if not updates:
+        raise HTTPException(400, "No profile changes supplied")
+    if "name" in updates and (not updates["name"].strip() or len(updates["name"]) > 100):
+        raise HTTPException(400, "Invalid staff name")
+    if "role" in updates and updates["role"] not in ("manager", "cashier", "kitchen", "service", "staff"):
+        raise HTTPException(400, "Invalid staff role")
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        target = conn.execute("SELECT id,branch_id,name,role,is_active FROM staffs WHERE id=?", (staff_id,)).fetchone()
+        if not target or target["branch_id"] != actor["branch_id"]:
+            raise HTTPException(404, "Staff not found")
+        if not _can_manage_staff(actor, target):
+            raise HTTPException(403, "Cannot manage this staff account")
+        if target["role"] == "owner" and ("role" in updates or "is_active" in updates):
+            raise HTTPException(403, "Owner account cannot be demoted or disabled")
+        if staff_id == actor["id"] and ("role" in updates or updates.get("is_active") is False):
+            raise HTTPException(403, "Cannot change your own access")
+        if updates.get("role") == "manager" and actor["role"] != "owner":
+            raise HTTPException(403, "Only the owner can appoint a manager")
+        if "name" in updates:
+            updates["name"] = updates["name"].strip()
+        sets = ",".join(f"{field}=?" for field in updates)
+        conn.execute(f"UPDATE staffs SET {sets} WHERE id=?", (*updates.values(), staff_id))
+        if updates.get("is_active") is False or "role" in updates:
+            conn.execute("DELETE FROM auth_sessions WHERE staff_id=?", (staff_id,))
+    return {"staff_id": staff_id, "status": "updated"}
+
+
+class StaffPinReset(BaseModel):
+    pin: str
+
+
+@app.put("/api/staff/{staff_id}/pin")
+def reset_staff_pin(staff_id: int, req: StaffPinReset, request: Request):
+    actor = require_staff(request, roles=("manager", "owner"))
+    pin_hash = hash_pin(req.pin)
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        target = conn.execute("SELECT id,branch_id,role FROM staffs WHERE id=?", (staff_id,)).fetchone()
+        if not target or target["branch_id"] != actor["branch_id"]:
+            raise HTTPException(404, "Staff not found")
+        if not _can_manage_staff(actor, target) or target["role"] == "owner":
+            raise HTTPException(403, "Cannot reset this staff PIN")
+        conn.execute("UPDATE staffs SET pin_code_hash=? WHERE id=?", (pin_hash, staff_id))
+        conn.execute("DELETE FROM auth_sessions WHERE staff_id=?", (staff_id,))
+    return {"staff_id": staff_id, "status": "pin_reset"}
 
 
 class TableTokenRequest(BaseModel):
@@ -604,7 +683,7 @@ class InventorySet(BaseModel):
 
 @app.get("/api/inventory")
 def get_inventory(request: Request, branch_id: int = 1):
-    require_staff(request, branch_id=branch_id)
+    require_staff(request, roles=("owner", "manager", "kitchen"), branch_id=branch_id)
     with closing(sqlite3.connect(DB_PATH)) as conn:
         rows = conn.execute("SELECT ingredient_id,stock FROM inventory WHERE branch_id=? ORDER BY ingredient_id", (branch_id,)).fetchall()
     return {"branch_id": branch_id, "items": [{"id": row[0], "stock": row[1]} for row in rows]}
@@ -636,7 +715,7 @@ class InventoryMovementCreate(BaseModel):
 
 @app.post("/api/inventory/movements")
 def post_inventory_movement(item: InventoryMovementCreate, request: Request):
-    roles = ("manager", "owner", "staff", "kitchen") if item.action == "waste" else ("manager", "owner")
+    roles = ("manager", "owner", "kitchen") if item.action == "waste" else ("manager", "owner")
     actor = require_staff(request, roles=roles, branch_id=item.branch_id)
     try:
         with closing(sqlite3.connect(DB_PATH)) as conn, conn:
@@ -653,7 +732,7 @@ def post_inventory_movement(item: InventoryMovementCreate, request: Request):
 
 @app.get("/api/inventory/movements")
 def get_inventory_movements(request: Request, branch_id: int = 1):
-    require_staff(request, branch_id=branch_id)
+    require_staff(request, roles=("owner", "manager", "kitchen"), branch_id=branch_id)
     try:
         with closing(sqlite3.connect(DB_PATH)) as conn:
             return {"branch_id": branch_id, "items": list_inventory_movements(conn, branch_id)}
@@ -676,7 +755,7 @@ def create_service_call(req: ServiceCallCreate, request: Request):
 def list_service_calls(request: Request, branch_id: int = 1):
     if branch_id < 1:
         raise HTTPException(400, "Invalid branch")
-    require_staff(request, branch_id=branch_id)
+    require_staff(request, roles=("owner", "manager", "cashier", "service"), branch_id=branch_id)
     with closing(sqlite3.connect(DB_PATH)) as conn, conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT event_id, branch_id, table_no, call_type, status, created_at FROM service_calls "
@@ -690,7 +769,7 @@ def acknowledge_service_call(event_id: str, request: Request):
         found = conn.execute("SELECT branch_id FROM service_calls WHERE event_id=?", (event_id,)).fetchone()
         if not found:
             raise HTTPException(404, "Service call not found")
-        require_staff(request, roles=("manager", "owner", "cashier"), branch_id=found[0])
+        require_staff(request, roles=("manager", "owner", "cashier", "service"), branch_id=found[0])
         cursor = conn.execute("UPDATE service_calls SET status='acknowledged', acknowledged_at=CURRENT_TIMESTAMP "
                               "WHERE event_id=? AND status='pending'", (event_id,))
         exists = conn.execute("SELECT status FROM service_calls WHERE event_id=?", (event_id,)).fetchone()
@@ -960,7 +1039,7 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
 
 @app.get("/api/online/orders")
 def list_online_orders(request: Request, branch_id: int = 1, status: str = "active"):
-    require_staff(request, branch_id=branch_id)
+    require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
     if status not in ("active", "all"):
         raise HTTPException(400, "Invalid order filter")
     with closing(sqlite3.connect(DB_PATH)) as conn:
@@ -1167,7 +1246,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
     if table_no:
         require_table_or_staff(request, branch_id, table_no)
     else:
-        require_staff(request, branch_id=branch_id)
+        require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
     query = "SELECT order_no,table_no,total_amount,status,created_at FROM order_events WHERE branch_id=? AND status='open'"
     params: list = [branch_id]
     if table_no:
@@ -1188,7 +1267,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
 
 @app.get("/api/kds")
 def list_kds_tickets(request: Request, branch_id: int = 1):
-    require_staff(request, branch_id=branch_id)
+    require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
     with closing(sqlite3.connect(DB_PATH)) as conn:
         rows = conn.execute(
             "SELECT k.order_no,k.station,k.status,k.created_at,k.fired_at,k.ready_at,oe.table_no "
@@ -1365,11 +1444,18 @@ def record_attendance(req: AttendanceCreate, request: Request):
     if staff["id"] != req.staff_id and staff["role"] not in ("manager", "owner"):
         raise HTTPException(403, "Cannot record attendance for another staff member")
     with closing(sqlite3.connect(DB_PATH)) as conn, conn:
-        target = conn.execute("SELECT branch_id,is_active FROM staffs WHERE id=?", (req.staff_id,)).fetchone()
+        target = conn.execute("SELECT branch_id,is_active,role FROM staffs WHERE id=?", (req.staff_id,)).fetchone()
         if not target or not target[1]:
             raise HTTPException(404, "Active staff not found")
         if target[0] != staff["branch_id"]:
             raise HTTPException(403, "Staff branch not permitted")
+        if req.staff_id != staff["id"] and staff["role"] == "manager" and target[2] in ("manager", "owner"):
+            raise HTTPException(403, "Manager cannot record another manager's attendance")
+        today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
+        locked = conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
+                              (req.staff_id, today)).fetchone()
+        if locked:
+            raise HTTPException(403, "Staff access is locked for this shift")
     with closing(sqlite3.connect(DB_PATH)) as conn, conn:
         cur = conn.cursor()
         existing_event = cur.execute("SELECT staff_id,action FROM attendance_events WHERE event_id=?", (req.event_id,)).fetchone()
@@ -1622,10 +1708,11 @@ def staff_overview(request: Request, branch_id: int = 1):
         conn.row_factory = sqlite3.Row
         staff_rows = conn.execute(
             "SELECT s.id,s.name,s.role,s.branch_id,ss.status,ss.pos_pin_locked,"
-            "st.name AS shift_name,st.start_time,st.end_time,"
-            "(SELECT MAX(a.clock_in) FROM attendances a WHERE a.staff_id=s.id AND substr(a.clock_in,1,10)=?) AS clock_in "
+            "st.name AS shift_name,st.start_time,st.end_time,a.clock_in,a.clock_out "
             "FROM staffs s LEFT JOIN staff_shifts ss ON ss.staff_id=s.id AND ss.work_date=? "
             "LEFT JOIN shift_templates st ON st.id=ss.shift_template_id "
+            "LEFT JOIN attendances a ON a.id=(SELECT id FROM attendances WHERE staff_id=s.id "
+            "AND substr(clock_in,1,10)=? ORDER BY id DESC LIMIT 1) "
             "WHERE s.branch_id=? AND s.is_active=1 ORDER BY s.id",
             (today, today, branch_id),
         ).fetchall()
@@ -1643,12 +1730,32 @@ def staff_overview(request: Request, branch_id: int = 1):
     by_staff_commission = {row["staff_id"]: round(float(row["amount"]), 2) for row in commissions}
     staff = [{"id": row["id"], "name": row["name"], "role": row["role"],
               "shift": row["shift_name"] or (f"{row['start_time']}–{row['end_time']}" if row["start_time"] else "—"),
-              "status": row["status"] or ("completed" if row["clock_in"] else "scheduled"),
+              "status": row["status"] if row["status"] in ("on_leave", "absent") else
+                        ("clocked_out" if row["clock_out"] else "clocked_in" if row["clock_in"] else "scheduled"),
               "pos_pin_locked": bool(row["pos_pin_locked"]), "clock_in": row["clock_in"],
+              "clock_out": row["clock_out"],
               "commission_today": by_staff_commission.get(row["id"], 0.0)} for row in staff_rows]
     return {"branch_id": branch_id, "work_date": today, "staff": staff,
             "leave_requests": [dict(row) for row in leaves],
             "note": "Only recorded shifts, attendance, approved leave and commission entries are shown."}
+
+
+@app.get("/api/staff/me")
+def my_staff_status(request: Request):
+    actor = require_staff(request)
+    today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        row = conn.execute("SELECT a.clock_in,a.clock_out,ss.status,ss.pos_pin_locked,st.name "
+                           "FROM staffs s LEFT JOIN staff_shifts ss ON ss.staff_id=s.id AND ss.work_date=? "
+                           "LEFT JOIN shift_templates st ON st.id=ss.shift_template_id "
+                           "LEFT JOIN attendances a ON a.id=(SELECT id FROM attendances WHERE staff_id=s.id "
+                           "AND substr(clock_in,1,10)=? ORDER BY id DESC LIMIT 1) WHERE s.id=?",
+                           (today, today, actor["id"])).fetchone()
+    status = row[2] if row[2] in ("on_leave", "absent") else (
+        "clocked_out" if row[1] else "clocked_in" if row[0] else "scheduled")
+    return {"id": actor["id"], "name": actor["name"], "role": actor["role"],
+            "shift": row[4] or "—", "status": status, "pos_pin_locked": bool(row[3]),
+            "clock_in": row[0], "clock_out": row[1]}
 
 
 # =====================================================================

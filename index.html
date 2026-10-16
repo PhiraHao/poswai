@@ -654,11 +654,11 @@
   <link rel="stylesheet" href="/sales-redesign.css?v=19">
   <link rel="stylesheet" href="/ops-redesign.css?v=19">
   <link rel="stylesheet" href="/people-redesign.css?v=19">
-  <link rel="stylesheet" href="/staff-admin.css?v=32">
+  <link rel="stylesheet" href="/staff-admin.css?v=36">
   <link rel="stylesheet" href="/reports-restore.css?v=19">
   <link rel="stylesheet" href="/reports-live.css?v=20">
   <link rel="stylesheet" href="/service-call.css?v=19">
-  <link rel="stylesheet" href="/auth-ui.css?v=35">
+  <link rel="stylesheet" href="/auth-ui.css?v=36">
   <link rel="stylesheet" href="/payment-ui.css?v=21">
   <link rel="icon" href="/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/icon-192.png">
@@ -1422,6 +1422,7 @@
                   <th>กะทำงานวันนี้</th>
                   <th>สถานะกะ (`staff_shifts`)</th>
                   <th>สิทธิ์ PIN หน้าเครื่อง POS</th>
+                  <th>ลงเวลา</th>
                 </tr>
               </thead>
               <tbody id="staffShiftRosterBody"></tbody>
@@ -2266,6 +2267,7 @@
        3. CORE WORKFLOWS: BOM DEDUCTION, ORDERS, SHIFT, SPLIT BILL, AUDIT
        ========================================================================= */
     function switchTab(tabId, btnEl) {
+      if (window.poswaiAuth && !window.poswaiAuth.canAccessTab(tabId)) return;
       document.querySelectorAll(".view-section").forEach(s => s.classList.remove("active"));
       document.getElementById("view-" + tabId).classList.add("active");
       document.querySelectorAll(".role-tab").forEach(b => { b.classList.remove("active"); b.removeAttribute("aria-current"); });
@@ -4535,8 +4537,9 @@
       const rosterBody = document.getElementById("staffShiftRosterBody");
       if (rosterBody) {
         rosterBody.innerHTML = state.staffStats.map(s => {
-          let statusBadge = `<span class="badge badge-occupied">🟢 มาทำงานจริง (completed)</span>`;
+          let statusBadge = `<span class="badge badge-occupied">🟢 เข้างานแล้ว (clocked_in)</span>`;
           if (s.shiftStatus === "scheduled") statusBadge = `<span class="badge badge-cooking">🕒 รอลงเวลาเข้ากะ (scheduled)</span>`;
+          if (s.shiftStatus === "clocked_out") statusBadge = `<span class="badge">ออกงานแล้ว (clocked_out)</span>`;
           if (s.shiftStatus === "on_leave") statusBadge = `<span class="badge badge-verify">🟡 ลาได้รับอนุมัติ (on_leave)</span>`;
           if (s.shiftStatus === "absent") statusBadge = `<span class="badge badge-danger">🔴 ขาดงานอัตโนมัติ (absent)</span>`;
 
@@ -4544,12 +4547,25 @@
             ? `<span class="badge badge-danger">🔒 ระงับสิทธิ์ POS ชั่วคราว</span>`
             : `<span class="badge badge-occupied">🔓 ใช้งาน POS ได้</span>`;
 
+          const actor = window.poswaiAuth?.current;
+          const targetId = Number(String(s.id).replace("ST", ""));
+          const canRecord = state.staffLiveOverview && actor && !s.posLocked &&
+            (actor.staff_id === targetId || actor.role === "owner" ||
+              (actor.role === "manager" && !["owner", "manager"].includes(s.role)));
+          const nextAction = s.shiftStatus === "clocked_in" ? "clock_out" :
+            ["scheduled", "clocked_out"].includes(s.shiftStatus) ? "clock_in" : "";
+          const actionLabel = nextAction === "clock_out" ? "ออกงาน" : actor?.staff_id === targetId ? "เข้างาน" : "รับเข้างาน";
+          const actionButton = canRecord && nextAction
+            ? `<button type="button" class="staff-roster-action" onclick="recordAttendanceFor(${targetId}, '${nextAction}')">${actionLabel}</button>`
+            : "—";
+
           return `
             <tr>
-              <td><strong>${safeStaffText(s.name)}</strong><br/><small style="color:var(--text-muted);">${safeStaffText(s.role)}</small></td>
+              <td><strong>${safeStaffText(s.name)}</strong><br/><small style="color:var(--text-muted);">รหัส ${targetId} · ${safeStaffText(s.role)}</small></td>
               <td>${safeStaffText(s.shift)}</td>
               <td>${statusBadge}</td>
               <td>${pinBadge}</td>
+              <td>${actionButton}</td>
             </tr>
           `;
         }).join("");
@@ -4617,20 +4633,28 @@
       const staffId = document.getElementById("staffSelect").value;
       const st = state.staffStats.find(s => s.id === staffId);
       if (!st) return;
+      await recordAttendanceFor(Number(st.id.replace("ST", "")), action.includes("เข้างาน") ? "clock_in" : "clock_out");
+    }
+
+    async function recordAttendanceFor(staffId, action) {
+      const st = state.staffStats.find(s => Number(s.id.replace("ST", "")) === staffId);
+      if (!st) return;
       try {
         await apiMutation("/api/attendance", {
-          event_id: crypto.randomUUID(), staff_id: Number(st.id.replace("ST", "")),
-          action: action.includes("เข้างาน") ? "clock_in" : "clock_out"
+          event_id: crypto.randomUUID(), staff_id: staffId, action
         });
-      } catch (error) { showToast(`⚠️ ลงเวลาไม่สำเร็จ: ${error.message}`); return; }
-      if (action.includes("เข้างาน")) {
-        st.shiftStatus = "completed";
-        st.posLocked = false;
+      } catch (error) {
+        const message = error.message.includes('already clocked in') ? 'พนักงานคนนี้เข้างานแล้ว' :
+          error.message.includes('No open attendance') ? 'พนักงานคนนี้ยังไม่ได้เข้างาน' : error.message;
+        showToast(`⚠️ ลงเวลาไม่สำเร็จ: ${message}`);
+        window.dispatchEvent(new Event("poswai:staff-refresh"));
+        return;
       }
-      addAuditLog(`⏰ พนักงาน "${st.name}" กด ${action} ผ่าน LINE LIFF (ตรวจสอบพิกัด GPS ภายในรัศมี 50 เมตร)`);
-      renderAll();
+      st.shiftStatus = action === "clock_in" ? "clocked_in" : "clocked_out";
+      addAuditLog(`⏰ บันทึก${action === "clock_in" ? "เข้างาน" : "ออกงาน"}ให้ "${st.name}"`);
       window.dispatchEvent(new Event("poswai:staff-refresh"));
-      showToast(`⏰ บันทึก ${action} ของ ${st.name} เรียบร้อย!`);
+      renderStaffAndAnalyticsView();
+      showToast(`บันทึก${action === "clock_in" ? "เข้างาน" : "ออกงาน"}ของ ${st.name} เรียบร้อย`);
     }
 
     /* =========================================================================
@@ -4982,12 +5006,12 @@
   <script src="/workspace.js?v=19"></script>
   <script src="/sales-redesign.js?v=19"></script>
   <script src="/ops-redesign.js?v=19"></script>
-  <script src="/people-redesign.js?v=30"></script>
-  <script src="/staff-admin.js?v=29"></script>
+  <script src="/people-redesign.js?v=36"></script>
+  <script src="/staff-admin.js?v=36"></script>
   <script src="/reports-restore.js?v=19"></script>
   <script src="/reports-live.js?v=31"></script>
   <script src="/service-call.js?v=19"></script>
-  <script src="/auth-ui.js?v=35"></script>
+  <script src="/auth-ui.js?v=36"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/live-data.js?v=24"></script>
   <script src="/inventory-live.js?v=23"></script>
