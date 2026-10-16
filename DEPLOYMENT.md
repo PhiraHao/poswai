@@ -184,6 +184,26 @@ access, provided its webhook contract, and an authenticated end-to-end order
 has been tested. The incoming Songwai webhook is likewise dormant until its
 secret is configured on both services and Songwai sends persisted orders.
 
+## LINE staff notifications and payroll inputs
+
+Leave requests from a verified, linked LINE LIFF identity now persist manager
+Flex notifications before sending. Approval or rejection persists a result
+message for the staff member. A background worker retries pending LINE pushes
+every minute when the Messaging API token is configured and preview mode is
+off. A manager can also use **ส่ง LINE ที่ค้าง** on the staff page. LINE's retry
+key is stable for each notification and recipient, so a timeout can be retried
+without sending the same message twice during LINE's 24-hour retry window.
+HTTP acceptance means LINE accepted the request; it does not guarantee the
+recipient saw it or has added the OA.
+
+The staff page now lets managers configure hourly rates, shift templates and
+assignments, and check for staff absent more than 60 minutes after a scheduled
+start. Attendance rejects a second open clock-in or a clock-out without an
+open attendance. Existing monthly payroll remains a gross estimate based on
+recorded hours and commission; deductions, paid leave policy, overtime
+authorization, and payroll approval are not yet implemented. Test with the
+restaurant's actual pay policy before using it to pay wages.
+
 Deployment notes: the Songwai bridge module is installed as
 `/docker/songwai/lib/poswaiBridge.js` and its order route is patched on the
 Hostinger VPS. The previous route is backed up at

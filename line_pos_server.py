@@ -12,6 +12,8 @@ POS WAI Enterprise V3 Server (FastAPI + Relational SQLite/PostgreSQL Schema)
 """
 
 import sqlite3
+import asyncio
+from contextlib import asynccontextmanager
 from contextlib import closing
 import datetime
 import json
@@ -47,10 +49,38 @@ from poswai_commerce import (create_order as create_commerce_order, init_commerc
 from line_integration import (build_leave_flex, parse_leave_postback,
                               push_leave_request, verify_liff_id_token,
                               verify_webhook_signature)
+from line_notifications import enqueue as enqueue_line_notification, flush as flush_line_notifications, init_notifications
+
+async def _line_outbox_worker():
+    while True:
+        try:
+            if LINE_CHANNEL_ACCESS_TOKEN and not PREVIEW_ONLY:
+                def send_due():
+                    with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn:
+                        flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN)
+                await asyncio.to_thread(send_due)
+        except (sqlite3.Error, OSError):
+            pass  # Keep the outbox intact; the next pass will retry.
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    worker = asyncio.create_task(_line_outbox_worker())
+    try:
+        yield
+    finally:
+        worker.cancel()
+        try:
+            await worker
+        except asyncio.CancelledError:
+            pass
+
 
 app = FastAPI(
     title="POS WAI Enterprise V3 API (Leave, Shift, POS Lock & Commission Engine)",
     version="3.0.0",
+    lifespan=app_lifespan,
 )
 
 app.add_middleware(
@@ -73,6 +103,7 @@ TABLE_QR_SECRET = os.getenv("POSWAI_TABLE_QR_SECRET", "")
 SONGWAI_WEBHOOK_SECRET = os.getenv("SONGWAI_WEBHOOK_SECRET", "")
 SONGWAI_RESTAURANT_ID = int(os.getenv("SONGWAI_RESTAURANT_ID", "0"))
 SESSION_LIFETIME = 12 * 60 * 60
+BANGKOK_TZ = datetime.timezone(datetime.timedelta(hours=7))
 PAYROLL_REGULAR_HOURS_PER_DAY = float(os.getenv("POSWAI_REGULAR_HOURS_PER_DAY", "8"))
 PAYROLL_OT_MULTIPLIER = float(os.getenv("POSWAI_OT_MULTIPLIER", "1.5"))
 if PAYROLL_REGULAR_HOURS_PER_DAY <= 0 or PAYROLL_OT_MULTIPLIER < 0:
@@ -266,6 +297,7 @@ def init_db() -> None:
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS leave_event_ids (
         event_id TEXT PRIMARY KEY, leave_id INTEGER NOT NULL)""")
+    init_notifications(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS service_calls (
         event_id TEXT PRIMARY KEY, branch_id INTEGER NOT NULL, table_no TEXT NOT NULL,
         call_type TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
@@ -347,7 +379,7 @@ def require_staff(request: Request, roles: tuple[str, ...] = (), branch_id: int 
             conn.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
             row = None
         if row and conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
-                                (row["id"], datetime.date.today().isoformat())).fetchone():
+                                (row["id"], datetime.datetime.now(BANGKOK_TZ).date().isoformat())).fetchone():
             conn.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
             row = None
     if not row or not row["is_active"]:
@@ -388,7 +420,7 @@ def staff_login(req: LoginRequest, request: Request, response: Response):
                 conn.execute("UPDATE auth_login_attempts SET failures=failures+1 WHERE staff_id=?", (req.staff_id,))
             conn.commit()
             raise HTTPException(401, "Invalid staff credentials")
-        today = datetime.date.today().isoformat()
+        today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
         locked = conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
                               (row["id"], today)).fetchone()
         if locked:
@@ -1332,10 +1364,21 @@ def record_attendance(req: AttendanceCreate, request: Request):
             raise HTTPException(403, "Staff branch not permitted")
     with closing(sqlite3.connect(DB_PATH)) as conn, conn:
         cur = conn.cursor()
+        existing_event = cur.execute("SELECT staff_id,action FROM attendance_events WHERE event_id=?", (req.event_id,)).fetchone()
+        if existing_event:
+            if existing_event != (req.staff_id, req.action):
+                raise HTTPException(409, "Attendance event ID belongs to another action")
+            return {"status": "already_recorded"}
+        open_shift = cur.execute("SELECT id FROM attendances WHERE staff_id=? AND clock_out IS NULL ORDER BY id DESC LIMIT 1",
+                                 (req.staff_id,)).fetchone()
+        if req.action == "clock_in" and open_shift:
+            raise HTTPException(409, "Staff is already clocked in")
+        if req.action == "clock_out" and not open_shift:
+            raise HTTPException(409, "No open attendance to clock out")
         cur.execute("INSERT OR IGNORE INTO attendance_events (event_id, staff_id, action) VALUES (?,?,?)",
                     (req.event_id, req.staff_id, req.action))
         if cur.rowcount:
-            now = datetime.datetime.now().isoformat(timespec="seconds")
+            now = datetime.datetime.now(BANGKOK_TZ).replace(tzinfo=None).isoformat(timespec="seconds")
             if req.action == "clock_in":
                 cur.execute("INSERT INTO attendances (staff_id, clock_in) VALUES (?,?)", (req.staff_id, now))
             else:
@@ -1343,6 +1386,112 @@ def record_attendance(req: AttendanceCreate, request: Request):
                             "WHERE staff_id=? AND clock_out IS NULL ORDER BY id DESC LIMIT 1)",
                             (now, req.staff_id))
     return {"status": "recorded"}
+
+
+class StaffPayRate(BaseModel):
+    hourly_rate: float
+
+
+@app.patch("/api/staff/{staff_id}/pay-rate")
+def set_staff_pay_rate(staff_id: int, req: StaffPayRate, request: Request):
+    manager = require_staff(request, roles=("manager", "owner"))
+    if not math.isfinite(req.hourly_rate) or req.hourly_rate < 0 or req.hourly_rate > 100000:
+        raise HTTPException(400, "Invalid hourly rate")
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        changed = conn.execute("UPDATE staffs SET hourly_rate=? WHERE id=? AND branch_id=? AND is_active=1",
+                               (req.hourly_rate, staff_id, manager["branch_id"]))
+        if not changed.rowcount:
+            raise HTTPException(404, "Active staff not found")
+    return {"staff_id": staff_id, "hourly_rate": req.hourly_rate}
+
+
+class ShiftTemplateCreate(BaseModel):
+    branch_id: int
+    name: str
+    start_time: str
+    end_time: str
+
+
+@app.post("/api/staff/shift-templates")
+def create_shift_template(req: ShiftTemplateCreate, request: Request):
+    require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    if not req.name.strip() or len(req.name) > 80 or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", req.start_time) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", req.end_time) or req.start_time == req.end_time:
+        raise HTTPException(400, "Invalid shift template")
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        cur = conn.execute("INSERT INTO shift_templates (branch_id,name,start_time,end_time) VALUES (?,?,?,?)",
+                           (req.branch_id, req.name.strip(), req.start_time, req.end_time))
+    return {"id": cur.lastrowid, **req.model_dump()}
+
+
+@app.get("/api/staff/shift-templates")
+def list_shift_templates(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("SELECT id,name,start_time,end_time FROM shift_templates WHERE branch_id=? ORDER BY id",
+                            (branch_id,)).fetchall()
+    return {"items": [dict(row) for row in rows]}
+
+
+class ShiftAssignment(BaseModel):
+    staff_id: int
+    branch_id: int
+    work_date: str
+    shift_template_id: int
+
+
+@app.post("/api/staff/shifts")
+def assign_shift(req: ShiftAssignment, request: Request):
+    require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    try:
+        datetime.date.fromisoformat(req.work_date)
+    except ValueError as exc:
+        raise HTTPException(400, "Invalid work date") from exc
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        staff = conn.execute("SELECT 1 FROM staffs WHERE id=? AND branch_id=? AND is_active=1",
+                             (req.staff_id, req.branch_id)).fetchone()
+        template = conn.execute("SELECT 1 FROM shift_templates WHERE id=? AND branch_id=?",
+                                (req.shift_template_id, req.branch_id)).fetchone()
+        if not staff or not template:
+            raise HTTPException(404, "Staff or shift template not found")
+        current = conn.execute("SELECT status FROM staff_shifts WHERE staff_id=? AND work_date=?",
+                               (req.staff_id, req.work_date)).fetchone()
+        if current and current[0] in ("on_leave", "absent"):
+            raise HTTPException(409, "Cannot replace leave or absence shift")
+        conn.execute("INSERT INTO staff_shifts (staff_id,branch_id,work_date,shift_template_id,status) "
+                     "VALUES (?,?,?,?,'scheduled') ON CONFLICT(staff_id,work_date) DO UPDATE "
+                     "SET shift_template_id=excluded.shift_template_id,status='scheduled'",
+                     (req.staff_id, req.branch_id, req.work_date, req.shift_template_id))
+    return {"status": "scheduled", **req.model_dump()}
+
+
+@app.post("/api/staff/absence-check")
+def check_staff_absences(request: Request, branch_id: int = 1):
+    """Mark scheduled staff absent after the shift start plus 60 minutes."""
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
+    today = now.date().isoformat()
+    absent_ids = []
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        rows = conn.execute("SELECT ss.staff_id,st.start_time FROM staff_shifts ss "
+                            "JOIN shift_templates st ON st.id=ss.shift_template_id AND st.branch_id=ss.branch_id "
+                            "WHERE ss.branch_id=? AND ss.work_date=? AND ss.status='scheduled' "
+                            "AND ss.pos_pin_locked=0", (branch_id, today)).fetchall()
+        for staff_id, start_time in rows:
+            start = datetime.datetime.fromisoformat(f"{today}T{start_time}").replace(tzinfo=now.tzinfo)
+            if now < start + datetime.timedelta(minutes=60):
+                continue
+            worked = conn.execute("SELECT 1 FROM attendances WHERE staff_id=? AND substr(clock_in,1,10)=? LIMIT 1",
+                                  (staff_id, today)).fetchone()
+            if worked:
+                continue
+            updated = conn.execute("UPDATE staff_shifts SET status='absent',pos_pin_locked=1 "
+                                   "WHERE staff_id=? AND work_date=? AND status='scheduled'",
+                                   (staff_id, today))
+            if updated.rowcount:
+                conn.execute("DELETE FROM auth_sessions WHERE staff_id=?", (staff_id,))
+                absent_ids.append(staff_id)
+    return {"work_date": today, "absent_staff_ids": absent_ids}
 
 
 @app.get("/api/commissions")
@@ -1540,7 +1689,7 @@ def _review_leave(leave_id: int, manager_staff_id: int, decision: str) -> dict:
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
-            "SELECT l.staff_id, l.start_date, l.end_date, l.status, s.branch_id "
+            "SELECT l.staff_id, l.start_date, l.end_date, l.status, s.branch_id, s.line_user_id "
             "FROM leave_requests l JOIN staffs s ON s.id=l.staff_id WHERE l.id=?", (leave_id,),
         ).fetchone()
         if not row:
@@ -1565,9 +1714,15 @@ def _review_leave(leave_id: int, manager_staff_id: int, decision: str) -> dict:
                     "ON CONFLICT(staff_id, work_date) DO UPDATE SET status='on_leave', pos_pin_locked=1",
                     (row["staff_id"], row["branch_id"], work_date),
                 )
+        if row["line_user_id"]:
+            decision_text = "อนุมัติ" if decision == "approved" else "ไม่อนุมัติ"
+            enqueue_line_notification(conn, f"leave-result:{leave_id}", row["line_user_id"], row["branch_id"],
+                                      {"type": "text", "text": f"คำขอลา #{leave_id} ของคุณ: {decision_text}"})
         conn.commit()
+        notification = flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN, row["branch_id"])
         return {"status": decision, "leave_id": leave_id, "staff_id": row["staff_id"],
-                "pos_pin_locked": decision == "approved", "work_date": row["start_date"]}
+                "pos_pin_locked": decision == "approved", "work_date": row["start_date"],
+                "line_notification": notification["status"]}
     finally:
         conn.close()
 
@@ -1606,20 +1761,27 @@ def submit_leave_request(req: LeaveRequestCreate):
     )
     leave_id = cur.lastrowid
     cur.execute("INSERT INTO leave_event_ids VALUES (?,?)", (req.event_id, leave_id))
-    conn.commit()
     managers = [row[0] for row in cur.execute(
         "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN ('manager','owner') "
         "AND is_active=1 AND line_user_id IS NOT NULL", (staff["branch_id"],))]
+    message = build_leave_flex(leave_id, staff["name"], req.leave_type, req.start_date, req.end_date, req.reason)
+    for manager_line_id in managers:
+        enqueue_line_notification(conn, f"leave-request:{leave_id}", manager_line_id, staff["branch_id"], message)
+    conn.commit()
+    notification = flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN, staff["branch_id"])
     conn.close()
-    notification = push_leave_request(
-        LINE_CHANNEL_ACCESS_TOKEN, managers,
-        build_leave_flex(leave_id, staff["name"], req.leave_type, req.start_date, req.end_date, req.reason),
-    )
     return {
         "status": "pending",
         "leave_id": leave_id,
-        "line_flex_notification": notification,
+        "line_flex_notification": "no_bound_manager" if not managers else notification["status"],
     }
+
+
+@app.post("/api/line/notifications/retry")
+def retry_line_notifications(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        return flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN, branch_id, limit=100)
 
 
 @app.post("/api/line-webhook/approve-leave")
@@ -1709,14 +1871,14 @@ def serve_worker():
 
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
-    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
+    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
         raise HTTPException(404, "Stylesheet not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.css", media_type="text/css")
 
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

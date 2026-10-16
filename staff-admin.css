@@ -1,0 +1,14 @@
+.staff-admin { margin-top: 20px; padding: 20px; }
+.staff-admin[hidden] { display: none!important; }
+.staff-admin-note { color: #64748b; font-size: .86rem; margin: 4px 0 16px; }
+.staff-admin-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+.staff-admin form { display: grid; align-content: start; gap: 10px; padding: 16px; background: #fffaf0; border: 1px solid #f7e4ac; border-radius: 14px; }
+.staff-admin form strong { font-size: .95rem; color: #172132; }
+.staff-admin label { display: grid; gap: 5px; font-size: .78rem; color: #566174; }
+.staff-admin input,.staff-admin select { width: 100%; min-width: 0; padding: 9px 10px; background: #fff; border: 1px solid #d9dfe7; border-radius: 9px; color: #172132; }
+.staff-admin button { border: 0; border-radius: 9px; padding: 10px 13px; font-weight: 700; background: #ffcb28; color: #172132; cursor: pointer; }
+.staff-admin-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 16px; font-size: .86rem; }
+.staff-admin-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#staffAdminStatus { min-height: 1.3em; color: #34536c; font-size: .8rem; }
+@media(max-width:1050px) { .staff-admin-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+@media(max-width:650px) { .staff-admin { padding: 14px; } .staff-admin-grid { grid-template-columns: 1fr; } .staff-admin-line { align-items: stretch; flex-direction: column; } }
