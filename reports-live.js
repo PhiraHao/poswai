@@ -40,6 +40,7 @@
     return value.includes('แม่ริม') ? 2 : value.includes('คลัง') ? 3 : 1;
   };
   async function refresh() {
+    if (!root.isConnected) return;
     byId('liveReportStatus').textContent = 'กำลังอ่านข้อมูลยอดขาย...';
     try {
       const response = await fetch(`/api/enterprise/analytics-dashboard?branch_id=${branchId()}`, {cache: 'no-store'});
@@ -56,10 +57,10 @@
       renderRows('liveMenu', (data.top_selling_menu || []).map(item => [item.name, `${Number(item.quantity).toLocaleString('th-TH')} รายการ · ${money(item.gross_sales)}`]));
       renderRows('liveHours', (data.hourly_sales || []).map(item => [`${item.hour}:00`, `${item.orders} บิล · ${money(item.sales)}`]));
       byId('liveReportStatus').textContent = '';
-      report.querySelector('.module-state').textContent = 'ข้อมูลจริง';
+      if (report.querySelector('.module-state')) report.querySelector('.module-state').textContent = 'ข้อมูลจริง';
     } catch (error) {
       byId('liveReportStatus').textContent = error.message;
-      report.querySelector('.module-state').textContent = 'ยังไม่พร้อม';
+      if (report.querySelector('.module-state')) report.querySelector('.module-state').textContent = 'ยังไม่พร้อม';
     }
   }
   byId('liveReportRefresh').addEventListener('click', refresh);

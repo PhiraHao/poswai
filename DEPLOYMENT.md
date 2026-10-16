@@ -211,6 +211,15 @@ manager must sign in and link their own LINE account from the staff page
 before leave requests can be delivered to that manager's chat. No real
 messages are sent merely by enabling this flag.
 
+Live check on 16 October 2026: the LINE Messaging token authenticates (bot
+info HTTP 200), and the configured webhook URL is
+`https://poswai.zzaxstudio.com/api/line-webhook`, but LINE reports webhook
+`active=false`. The production database has one active staff record and zero
+LINE-linked managers. Enable **Use webhook** in the POS WAI Messaging API
+channel and link the manager's LINE account before testing leave approval in
+LINE. Do not claim a real recipient notification or approval round trip until
+that test succeeds.
+
 Deployment notes: the Songwai bridge module is installed as
 `/docker/songwai/lib/poswaiBridge.js` and its order route is patched on the
 Hostinger VPS. The previous route is backed up at

@@ -134,6 +134,7 @@
   fetch('/api/config', { cache: 'no-store' }).then(response => response.json()).then(async config => {
     preview = !!config.preview_only;
     live = !preview || !!config.staff_live;
+    document.body.classList.toggle('poswai-staff-live', !!config.staff_live);
     if (!live) return;
     if (!preview) document.body.classList.add('poswai-live');
     try {
