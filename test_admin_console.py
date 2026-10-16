@@ -298,6 +298,72 @@ class RegistryUpgradeTest(unittest.TestCase):
             self.assertEqual([entry["slug"] for entry in listed], ["ran-kao"])
             self.assertEqual(billing.all_shops_billing(main_db, price=399), [])
 
+    def test_an_upgrade_that_dies_halfway_leaves_the_old_registry_untouched(self):
+        """The rebuild is one transaction, so there is nothing to roll back by hand."""
+        class DyingConnection:
+            """A connection that fails at the point of no return, after the copy."""
+
+            def __init__(self, real):
+                self._real = real
+
+            def execute(self, sql, *args):
+                if sql.strip().startswith("DROP TABLE shops"):
+                    raise sqlite3.OperationalError("disk I/O error")
+                return self._real.execute(sql, *args)
+
+            def __getattr__(self, name):
+                return getattr(self._real, name)
+
+            def __enter__(self):
+                self._real.__enter__()
+                return self
+
+            def __exit__(self, *exception):
+                return self._real.__exit__(*exception)
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            main_db = Path(folder) / "main.db"
+            registry = shops.registry_path(main_db)
+            registry.parent.mkdir(parents=True, exist_ok=True)
+            with closing(sqlite3.connect(registry)) as conn, conn:
+                conn.execute("""CREATE TABLE shops (
+                    slug TEXT PRIMARY KEY, name TEXT NOT NULL, owner_name TEXT NOT NULL,
+                    phone TEXT NOT NULL, promptpay_id TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended')),
+                    trial_ends_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+                conn.execute("INSERT INTO shops(slug,name,owner_name,phone,promptpay_id,trial_ends_at) "
+                             "VALUES('ran-kao','ร้านเก่า','เจ้าของ','0812345678','0899999999','2026-12-31')")
+
+            real = sqlite3.connect(registry)
+            self.addCleanup(real.close)
+            with patch.object(shops.sqlite3, "connect", return_value=DyingConnection(real)):
+                with self.assertRaises(sqlite3.OperationalError):
+                    shops.get_shop(main_db, "ran-kao")
+
+            # Nothing was lost and nothing half-built was left behind.
+            with closing(sqlite3.connect(registry)) as conn:
+                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+                row = conn.execute("SELECT name,promptpay_id,trial_ends_at FROM shops").fetchone()
+            self.assertNotIn("shops_rebuilt", tables)
+            self.assertEqual(row, ("ร้านเก่า", "0899999999", "2026-12-31"))
+
+            # The next connection simply tries again and succeeds.
+            upgraded = shops.get_shop(main_db, "ran-kao")
+            self.assertEqual((upgraded["status"], upgraded["promptpay_id"]), ("active", "0899999999"))
+            self.assertEqual(shops.set_status(main_db, "ran-kao", "closed", "เลิกกิจการ")["status"], "closed")
+
+    def test_upgrading_an_already_upgraded_registry_does_nothing(self):
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+            main_db = Path(folder) / "main.db"
+            shops.reserve_shop(main_db, slug="ran-new", name="ร้านใหม่", owner_name="เจ้าของ",
+                               phone="0812345678", client_key="1.2.3.4", max_shops=10)
+            for _ in range(3):  # every later connection runs the same check
+                self.assertEqual(shops.get_shop(main_db, "ran-new")["status"], "active")
+            with closing(shops.connect_registry(main_db)) as conn:
+                tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            self.assertNotIn("shops_rebuilt", tables)
+
 
 if __name__ == "__main__":
     unittest.main()

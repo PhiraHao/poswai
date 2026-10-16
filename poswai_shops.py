@@ -91,11 +91,19 @@ def _add_closed_status(conn: sqlite3.Connection) -> None:
     SQLite cannot change a CHECK constraint in place, so the table is rebuilt. A
     shop closed for good keeps its row and its database file; only its status says
     it is finished, which is why nothing here ever deletes anything.
+
+    The rebuild is one transaction, so a crash halfway leaves the old table exactly
+    as it was and the next connection tries again. The write lock is taken before
+    the second check, so two workers starting together cannot both rebuild.
     """
     created = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='shops'").fetchone()
     if not created or "'closed'" in created[0]:
         return
     with conn:
+        conn.execute("BEGIN IMMEDIATE")
+        created = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='shops'").fetchone()
+        if not created or "'closed'" in created[0]:
+            return
         conn.execute("""CREATE TABLE shops_rebuilt (
             slug TEXT PRIMARY KEY,
             name TEXT NOT NULL,
