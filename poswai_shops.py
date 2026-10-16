@@ -56,9 +56,12 @@ def _connect(main_db: Path) -> sqlite3.Connection:
         owner_name TEXT NOT NULL,
         phone TEXT NOT NULL,
         promptpay_id TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended','closed')),
+        status_reason TEXT NOT NULL DEFAULT '',
+        status_changed_at TEXT,
         trial_ends_at TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+    _add_closed_status(conn)
     conn.execute("""CREATE TABLE IF NOT EXISTS shop_signups (
         ip_hash TEXT NOT NULL,
         created_at INTEGER NOT NULL)""")
@@ -82,9 +85,53 @@ def _connect(main_db: Path) -> sqlite3.Connection:
     return conn
 
 
+def _add_closed_status(conn: sqlite3.Connection) -> None:
+    """Bring a registry written before "closed" existed up to the current shape.
+
+    SQLite cannot change a CHECK constraint in place, so the table is rebuilt. A
+    shop closed for good keeps its row and its database file; only its status says
+    it is finished, which is why nothing here ever deletes anything.
+    """
+    created = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='shops'").fetchone()
+    if not created or "'closed'" in created[0]:
+        return
+    with conn:
+        conn.execute("""CREATE TABLE shops_rebuilt (
+            slug TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            owner_name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            promptpay_id TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','suspended','closed')),
+            status_reason TEXT NOT NULL DEFAULT '',
+            status_changed_at TEXT,
+            trial_ends_at TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        conn.execute("INSERT INTO shops_rebuilt(slug,name,owner_name,phone,promptpay_id,status,"
+                     "trial_ends_at,created_at) SELECT slug,name,owner_name,phone,promptpay_id,status,"
+                     "trial_ends_at,created_at FROM shops")
+        conn.execute("DROP TABLE shops")
+        conn.execute("ALTER TABLE shops_rebuilt RENAME TO shops")
+
+
 def connect_registry(main_db: Path) -> sqlite3.Connection:
     """The registry connection with every table created. Billing shares it."""
     return _connect(main_db)
+
+
+STATUSES = ("active", "suspended", "closed")
+
+
+def set_status(main_db: Path, slug: str, status: str, reason: str = "") -> dict:
+    """Suspend, close for good, or reopen a shop. The shop's data is left alone."""
+    if status not in STATUSES:
+        raise ShopError(400, "สถานะร้านไม่ถูกต้อง")
+    with closing(_connect(main_db)) as conn, conn:
+        if not conn.execute("SELECT 1 FROM shops WHERE slug=?", (slug,)).fetchone():
+            raise ShopError(404, "ไม่พบร้านนี้")
+        conn.execute("UPDATE shops SET status=?,status_reason=?,status_changed_at=CURRENT_TIMESTAMP "
+                     "WHERE slug=?", (status, reason[:200], slug))
+    return get_shop(main_db, slug)
 
 
 def valid_slug(slug: str) -> bool:
@@ -97,8 +144,9 @@ def get_shop(main_db: Path, slug: str) -> dict | None:
         return None
     with closing(_connect(main_db)) as conn:
         conn.row_factory = sqlite3.Row
-        row = conn.execute("SELECT slug,name,owner_name,phone,promptpay_id,status,trial_ends_at,created_at "
-                           "FROM shops WHERE slug=?", (slug,)).fetchone()
+        row = conn.execute("SELECT slug,name,owner_name,phone,promptpay_id,status,status_reason,"
+                           "status_changed_at,trial_ends_at,created_at FROM shops WHERE slug=?",
+                           (slug,)).fetchone()
     return dict(row) if row else None
 
 

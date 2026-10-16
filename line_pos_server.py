@@ -13,6 +13,9 @@ POS WAI Enterprise V3 Server (FastAPI + Relational SQLite/PostgreSQL Schema)
 
 import sqlite3
 import asyncio
+import csv
+import html
+import io
 import mimetypes
 from contextlib import asynccontextmanager
 from contextlib import closing
@@ -122,6 +125,9 @@ SERVICE_PROMPTPAY_ID = re.sub(r"[\s-]", "", os.getenv("POSWAI_SERVICE_PROMPTPAY_
 SERVICE_EASYSLIP_API_KEY = os.getenv("POSWAI_SERVICE_EASYSLIP_API_KEY", "")
 # The ZZAX Studio billing page is not a staff account: it opens with this key alone.
 ADMIN_KEY = os.getenv("POSWAI_ADMIN_KEY", "")
+# Shown to a shop that was suspended or closed, so it knows who to call.
+SUPPORT_CONTACT = os.getenv("POSWAI_SUPPORT_CONTACT", "").strip()[:120]
+SUPPORT_CONTACT = f" ({SUPPORT_CONTACT})" if SUPPORT_CONTACT else ""
 if not math.isfinite(MONTHLY_PRICE) or MONTHLY_PRICE <= 0:
     raise RuntimeError("Invalid POSWAI_MONTHLY_PRICE")
 if SERVICE_PROMPTPAY_ID and not re.fullmatch(r"\d{10}|\d{13}|\d{15}", SERVICE_PROMPTPAY_ID):
@@ -584,6 +590,37 @@ def require_admin_key(request: Request) -> None:
         raise HTTPException(401, "กุญแจผู้ดูแลระบบไม่ถูกต้อง")
 
 
+OUT_OF_SERVICE = {
+    "suspended": "ถูกระงับการใช้งานชั่วคราว ข้อมูลของร้านยังอยู่ครบ",
+    "closed": "ปิดการใช้งานถาวรแล้ว ข้อมูลของร้านยังถูกเก็บไว้ทั้งหมด",
+}
+
+
+def _out_of_service_text(shop: dict) -> str:
+    """Say which shop it is, why it stopped and who to call — never a silent redirect."""
+    lines = [f"“{shop['name']}” {OUT_OF_SERVICE.get(shop['status'], 'ใช้งานไม่ได้ในขณะนี้')}"]
+    if shop.get("status_reason"):
+        lines.append(f"เหตุผล: {shop['status_reason']}")
+    lines.append(f"หากต้องการเปิดใช้งานอีกครั้ง กรุณาติดต่อ ZZAX Studio{SUPPORT_CONTACT}")
+    return " · ".join(lines)
+
+
+def _out_of_service_page(shop: dict) -> HTMLResponse:
+    body = html.escape(_out_of_service_text(shop)).replace(" · ", "<br>")
+    return HTMLResponse(
+        "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>ร้านนี้ใช้งานไม่ได้ · POS WAI</title>"
+        "<link rel=\"stylesheet\" href=\"/assets/fonts.css\"><style>"
+        "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;"
+        "padding:24px;background:#f3f5f8;color:#17222e;font-family:'Noto Sans Thai','Prompt',system-ui,sans-serif}"
+        "div{max-width:460px;background:#fff;border:1px solid #dfe5ec;border-radius:16px;padding:24px;"
+        "text-align:center;line-height:1.7}h1{margin:0 0 10px;font-size:1.25rem}"
+        "a{color:#1f6feb}</style></head><body><div><h1>ร้านนี้ใช้งานไม่ได้ในขณะนี้</h1>"
+        f"<p>{body}</p><p><a href=\"/\">กลับไปหน้าแรกของ POS WAI</a></p></div></body></html>",
+        status_code=403)
+
+
 def _secure(request: Request) -> bool:
     return request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0] == "https"
 
@@ -605,7 +642,16 @@ async def protect_preview(request: Request, call_next):
         slug = MAIN_SHOP
     else:
         slug = cookie_shop or MAIN_SHOP
-    if not _known_shop(slug):
+    admin_path = request.url.path.startswith("/api/admin/")
+    record = None if slug in (MAIN_SHOP, DEMO_SHOP) else shops.get_shop(DB_PATH, slug)
+    if record and record["status"] != "active" and not admin_path:
+        # Suspended or closed: say so. Quietly falling back to another shop used to
+        # look like the shop's own data had vanished.
+        if document:
+            return _out_of_service_page(record)
+        if request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": _out_of_service_text(record)}, status_code=403)
+    elif not record and slug not in (MAIN_SHOP, DEMO_SHOP):
         if requested is not None and request.url.path.startswith("/api/"):
             return JSONResponse({"detail": "ไม่พบร้านนี้"}, status_code=404)
         slug = MAIN_SHOP
@@ -695,6 +741,10 @@ def _open_session(request: Request, response: Response, conn: sqlite3.Connection
 def staff_login(req: LoginRequest, request: Request, response: Response):
     if req.shop is not None:
         slug = req.shop.strip().lower() or MAIN_SHOP
+        stopped = shops.get_shop(DB_PATH, slug) if slug not in (MAIN_SHOP, DEMO_SHOP) else None
+        if stopped and stopped["status"] != "active":
+            # The shop code is right; it is the shop that is out of service.
+            raise HTTPException(403, _out_of_service_text(stopped))
         if slug == DEMO_SHOP or not _known_shop(slug):
             hash_pin("invalid-credentials")
             raise HTTPException(401, "รหัสร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
@@ -2843,11 +2893,13 @@ def serve_admin_page():
 
 
 @app.get("/api/admin/shops")
-def admin_list_shops(request: Request):
+def admin_list_shops(request: Request, include_closed: bool = False):
     require_admin_key(request)
     return {"price": MONTHLY_PRICE, "service_promptpay_id": SERVICE_PROMPTPAY_ID,
             "today": billing.today_date().isoformat(), "warn_days": billing.WARN_DAYS,
-            "shops": billing.all_shops_billing(DB_PATH, price=MONTHLY_PRICE)}
+            "shops": billing.all_shops_billing(DB_PATH, price=MONTHLY_PRICE,
+                                               include_closed=include_closed),
+            "revenue": billing.monthly_revenue(DB_PATH)}
 
 
 @app.get("/api/admin/shops/{slug}/payments")
@@ -2878,6 +2930,176 @@ def admin_confirm_payment(slug: str, req: AdminPaymentEntry, request: Request):
                                       price=MONTHLY_PRICE)
     except ShopError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
+
+
+class AdminGrant(BaseModel):
+    event_id: str
+    days: int = 7
+    reason: str
+
+
+class AdminShopStatus(BaseModel):
+    status: str
+    reason: str = ""
+
+
+@app.post("/api/admin/shops/{slug}/grants")
+def admin_grant_free_days(slug: str, req: AdminGrant, request: Request):
+    """Give a shop free days without pretending money arrived.
+
+    Compensation used to have to go through "payment received", which inflated the
+    revenue figures. A grant moves the date and is left out of every total.
+    """
+    require_admin_key(request)
+    slug = slug.strip().lower()
+    if not shops.get_shop(DB_PATH, slug):
+        raise HTTPException(404, "ไม่พบร้านนี้")
+    if not re.fullmatch(r"[A-Za-z0-9_:-]{4,80}", req.event_id):
+        raise HTTPException(400, "รหัสรายการไม่ถูกต้อง")
+    if not 3 <= len(req.reason.strip()) <= 300:
+        raise HTTPException(400, "เหตุผลต้องยาว 3–300 ตัวอักษร")
+    try:
+        return billing.record_payment(DB_PATH, slug, amount=0.0, method=billing.GRANT,
+                                      event_id=req.event_id, confirmed_by="zzax-admin",
+                                      note=req.reason.strip(), days=req.days, price=MONTHLY_PRICE)
+    except ShopError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+
+
+@app.post("/api/admin/shops/{slug}/status")
+def admin_set_shop_status(slug: str, req: AdminShopStatus, request: Request):
+    """Suspend a shop, close it for good, or put it back in service.
+
+    None of these touch the shop's database file. "closed" keeps every record and
+    can be undone; it exists so that nothing has to be deleted to end a contract.
+    """
+    require_admin_key(request)
+    slug = slug.strip().lower()
+    shop = shops.get_shop(DB_PATH, slug)
+    if not shop:
+        raise HTTPException(404, "ไม่พบร้านนี้")
+    if req.status not in shops.STATUSES:
+        raise HTTPException(400, "สถานะร้านไม่ถูกต้อง")
+    if req.status != "active" and not 3 <= len(req.reason.strip()) <= 200:
+        raise HTTPException(400, "ต้องระบุเหตุผลยาว 3–200 ตัวอักษร")
+    try:
+        updated = shops.set_status(DB_PATH, slug, req.status, req.reason.strip())
+    except ShopError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    return {"slug": slug, "status": updated["status"], "status_reason": updated["status_reason"],
+            "database_file": str(shops.shop_db_path(DB_PATH, slug).name), "data_kept": True,
+            "billing": billing.billing_state(DB_PATH, slug, price=MONTHLY_PRICE)}
+
+
+def _owner_line_recipients(slug: str) -> list[str]:
+    """The LINE accounts of that shop's owners and managers, read and nothing else."""
+    token = CURRENT_SHOP.set(slug)
+    try:
+        with closing(connect_db()) as conn:
+            return [row[0] for row in conn.execute(
+                "SELECT DISTINCT line_user_id FROM staffs WHERE role IN ('owner','manager') "
+                "AND is_active=1 AND line_user_id IS NOT NULL AND line_user_id<>''")]
+    finally:
+        CURRENT_SHOP.reset(token)
+
+
+def _reminder_text(shop: dict) -> str:
+    days = shop["days_left"]
+    when = (f"เหลืออีก {days} วัน (ครบกำหนด {shop['due_date']})" if days >= 0
+            else f"เลยกำหนดมาแล้ว {abs(days)} วัน (ครบกำหนด {shop['due_date']})")
+    tail = ("ตอนนี้ร้านรับออเดอร์ใหม่ไม่ได้จนกว่าจะชำระ ข้อมูลของร้านยังอยู่ครบ"
+            if days < 0 else "ชำระก่อนครบกำหนดเพื่อให้ร้านใช้งานต่อได้ไม่สะดุด")
+    return (f"แจ้งค่าบริการ POS WAI ร้าน {shop['name']}\n{when}\n"
+            f"ค่าบริการ {MONTHLY_PRICE:,.0f} บาทต่อเดือน\n{tail}\n"
+            "ชำระได้ที่หน้าแอป กดแถบแจ้งเตือนด้านบน แล้วแนบสลิป")
+
+
+@app.post("/api/admin/reminders")
+def admin_send_due_reminders(request: Request):
+    """Queue a LINE reminder for every shop near or past its due date.
+
+    The push goes to the owner's linked LINE account when there is one. A shop with
+    nobody linked is reported back with its phone number and the exact message, for
+    the team to send by hand. One shop failing never stops the rest.
+    """
+    require_admin_key(request)
+    listed = [shop for shop in billing.all_shops_billing(DB_PATH, price=MONTHLY_PRICE)
+              if shop["in_service"] and shop["state"] in (billing.STATE_DUE_SOON, billing.STATE_OVERDUE)]
+    queued, manual, failed = [], [], []
+    for shop in listed:
+        text = _reminder_text(shop)
+        try:
+            recipients = _owner_line_recipients(shop["slug"])
+        except (sqlite3.Error, OSError) as exc:
+            failed.append({"slug": shop["slug"], "name": shop["name"], "error": type(exc).__name__})
+            continue
+        if not recipients:
+            manual.append({"slug": shop["slug"], "name": shop["name"], "phone": shop["phone"],
+                           "days_left": shop["days_left"], "message": text})
+            continue
+        try:
+            # The outbox the background worker drains lives in the main database, so
+            # the reminders are queued there even though the recipients come from the
+            # shop's own staff records.
+            with closing(connect_db()) as conn, conn:
+                for recipient in recipients:
+                    enqueue_line_notification(conn, f"billing:{shop['slug']}:{shop['due_date']}",
+                                              recipient, 1, {"type": "text", "text": text})
+        except sqlite3.Error as exc:
+            failed.append({"slug": shop["slug"], "name": shop["name"], "error": type(exc).__name__})
+            continue
+        queued.append({"slug": shop["slug"], "name": shop["name"], "recipients": len(recipients),
+                       "days_left": shop["days_left"]})
+    return {"due": len(listed), "queued": queued, "manual": manual, "failed": failed,
+            "line_ready": bool(LINE_CHANNEL_ACCESS_TOKEN)}
+
+
+@app.get("/api/admin/revenue")
+def admin_revenue(request: Request, months: int = 12):
+    require_admin_key(request)
+    return {"price": MONTHLY_PRICE, "months": billing.monthly_revenue(DB_PATH, months=months)}
+
+
+def _csv_response(filename: str, header: list[str], rows: list[list]) -> Response:
+    """UTF-8 with a BOM, because Excel in Thai reads a plain UTF-8 CSV as gibberish."""
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    writer.writerows(rows)
+    return Response("﻿" + buffer.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                             "Cache-Control": "no-store"})
+
+
+@app.get("/api/admin/export/shops.csv")
+def admin_export_shops(request: Request):
+    require_admin_key(request)
+    shops_listed = billing.all_shops_billing(DB_PATH, price=MONTHLY_PRICE, include_closed=True)
+    rows = [[shop["slug"], shop["name"], shop["owner_name"], shop["phone"], shop["status"],
+             shop["state"], shop["due_date"], shop["days_left"], "ใช่" if shop["on_trial"] else "ไม่",
+             shop["payments"], f"{shop['paid_total']:.2f}", shop["grants"], shop["created_at"]]
+            for shop in shops_listed]
+    return _csv_response("poswai-shops.csv",
+                         ["รหัสร้าน", "ชื่อร้าน", "เจ้าของ", "เบอร์โทร", "สถานะร้าน", "สถานะการจ่าย",
+                          "ใช้ได้ถึง", "เหลือ (วัน)", "ยังทดลองใช้", "จ่ายแล้ว (ครั้ง)",
+                          "ยอดรวม (บาท)", "แถมฟรี (ครั้ง)", "เปิดร้านเมื่อ"], rows)
+
+
+@app.get("/api/admin/export/payments.csv")
+def admin_export_payments(request: Request):
+    require_admin_key(request)
+    names = {shop["slug"]: shop["name"] for shop
+             in billing.all_shops_billing(DB_PATH, price=MONTHLY_PRICE, include_closed=True)}
+    rows = []
+    for slug, name in names.items():
+        for entry in billing.payment_history(DB_PATH, slug, limit=200):
+            rows.append([entry["created_at"], slug, name, f"{entry['amount']:.2f}", entry["method"],
+                         entry["confirmed_by"], entry["slip_reference"] or "",
+                         entry["period_start"], entry["period_end"], entry["note"]])
+    rows.sort(key=lambda row: str(row[0]), reverse=True)
+    return _csv_response("poswai-payments.csv",
+                         ["เวลาบันทึก (UTC)", "รหัสร้าน", "ชื่อร้าน", "ยอด (บาท)", "ช่องทาง",
+                          "ผู้ยืนยัน", "รหัสสลิป", "เริ่มรอบ", "ถึงวันที่", "บันทึกช่วยจำ"], rows)
 
 
 # =====================================================================
