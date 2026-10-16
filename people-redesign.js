@@ -117,7 +117,7 @@
     }
     async function load(){
       const generation=++payrollGeneration;
-      if(typeof state==='undefined'||state.previewOnly){report=makePreview();source='demo';render();return;}
+      if(typeof state==='undefined'||(state.previewOnly&&!state.staffLive)){report=makePreview();source='demo';render();return;}
       const auth=window.poswaiAuth?.current;
       if(!auth||!['manager','owner'].includes(auth.role)){report=null;source='login';render();return;}
       try{
@@ -138,7 +138,7 @@
   let staffRefreshGeneration=0;
   async function refreshLiveStaff() {
     const generation=++staffRefreshGeneration;
-    if(typeof state==='undefined'||state.previewOnly)return;
+    if(typeof state==='undefined'||(state.previewOnly&&!state.staffLive))return;
     const auth=window.poswaiAuth?.current;
     const notice=$('#view-staff .people-sample');
     const select=$('#staffSelect');
@@ -191,6 +191,7 @@
   }
   window.addEventListener('poswai:auth-changed',refreshLiveStaff);
   window.addEventListener('poswai:staff-refresh',refreshLiveStaff);
+  window.addEventListener('poswai:config-ready',refreshLiveStaff);
   const report=$('#view-analytics');
   if(report){
     report.classList.add('people-workspace','report-workspace');

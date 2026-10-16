@@ -80,3 +80,22 @@ def test_leave_line_outbox_retries_without_duplicate():
                     assert client.post('/api/line/notifications/retry').json()['sent'] == 1
                     assert client.post('/api/line/notifications/retry').json()['sent'] == 0
                     assert post.call_count == 1
+
+
+def test_staff_live_does_not_open_sales_in_preview():
+    with TemporaryDirectory(ignore_cleanup_errors=True) as folder:
+        database = Path(folder) / 'preview.db'
+        with patch.object(server, 'DB_PATH', database), patch.object(server, 'PREVIEW_ONLY', True), \
+             patch.object(server, 'STAFF_LIVE', True):
+            server.init_db()
+            with closing(sqlite3.connect(database)) as conn, conn:
+                conn.execute("INSERT INTO branches(id,name) VALUES(1,'One')")
+                conn.execute("INSERT INTO staffs(id,branch_id,name,role,pin_code_hash) VALUES(1,1,'Manager','manager',?)",
+                             (server.hash_pin('long-test-pin'),))
+            with TestClient(server.app) as client:
+                assert client.post('/api/auth/login', json={'staff_id': 1, 'pin': 'long-test-pin'}).status_code == 200
+                assert client.post('/api/staff/shift-templates', json={'branch_id': 1, 'name': 'Morning',
+                    'start_time': '08:00', 'end_time': '17:00'}).status_code == 200
+                assert client.post('/api/orders', json={}).status_code == 403
+                assert client.post('/api/crm/campaigns', json={}).status_code == 403
+                assert client.get('/api/config').json()['staff_live'] is True

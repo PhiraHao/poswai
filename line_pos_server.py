@@ -54,7 +54,7 @@ from line_notifications import enqueue as enqueue_line_notification, flush as fl
 async def _line_outbox_worker():
     while True:
         try:
-            if LINE_CHANNEL_ACCESS_TOKEN and not PREVIEW_ONLY:
+            if LINE_CHANNEL_ACCESS_TOKEN and (not PREVIEW_ONLY or STAFF_LIVE):
                 def send_due():
                     with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn:
                         flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN)
@@ -98,6 +98,7 @@ LINE_LOGIN_CHANNEL_ID = os.getenv("LINE_LOGIN_CHANNEL_ID", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 PREVIEW_ONLY = os.getenv("POSWAI_PREVIEW_ONLY", "0") == "1"
+STAFF_LIVE = os.getenv("POSWAI_STAFF_LIVE", "0") == "1"
 BOOTSTRAP_MANAGER_PIN = os.getenv("POSWAI_BOOTSTRAP_MANAGER_PIN", "")
 TABLE_QR_SECRET = os.getenv("POSWAI_TABLE_QR_SECRET", "")
 SONGWAI_WEBHOOK_SECRET = os.getenv("SONGWAI_WEBHOOK_SECRET", "")
@@ -347,7 +348,14 @@ init_db()
 @app.middleware("http")
 async def protect_preview(request: Request, call_next):
     if PREVIEW_ONLY and request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD"):
-        return JSONResponse({"detail": "Preview mode: transactions are disabled"}, status_code=403)
+        staff_path = request.url.path
+        allowed_staff_write = STAFF_LIVE and (
+            staff_path.startswith("/api/auth/") or staff_path == "/api/staff" or
+            staff_path.startswith("/api/staff/") or staff_path == "/api/attendance" or
+            staff_path.startswith("/api/line-liff/") or staff_path.startswith("/api/line-webhook") or
+            staff_path.startswith("/api/line/notifications/"))
+        if not allowed_staff_write:
+            return JSONResponse({"detail": "Preview mode: transactions are disabled"}, status_code=403)
     if request.method not in ("GET", "HEAD", "OPTIONS") and request.cookies.get("poswai_session"):
         origin = request.headers.get("origin")
         if origin:
@@ -1920,7 +1928,8 @@ def serve_icon(size: int):
 
 @app.get("/api/config")
 def public_config():
-    return {"promptpay_id": PROMPTPAY_ID, "line_liff_id": LINE_LIFF_ID, "preview_only": PREVIEW_ONLY}
+    return {"promptpay_id": PROMPTPAY_ID, "line_liff_id": LINE_LIFF_ID,
+            "preview_only": PREVIEW_ONLY, "staff_live": STAFF_LIVE}
 
 
 if __name__ == "__main__":

@@ -204,6 +204,13 @@ recorded hours and commission; deductions, paid leave policy, overtime
 authorization, and payroll approval are not yet implemented. Test with the
 restaurant's actual pay policy before using it to pay wages.
 
+`POSWAI_STAFF_LIVE=1` allows staff login, shift setup, attendance, leave,
+LINE leave notifications, and staff management while `POSWAI_PREVIEW_ONLY=1`
+continues to block order, payment, inventory, and campaign writes. The
+manager must sign in and link their own LINE account from the staff page
+before leave requests can be delivered to that manager's chat. No real
+messages are sent merely by enabling this flag.
+
 Deployment notes: the Songwai bridge module is installed as
 `/docker/songwai/lib/poswaiBridge.js` and its order route is patched on the
 Hostinger VPS. The previous route is backed up at

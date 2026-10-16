@@ -6,6 +6,7 @@
   const tableBranchId = Number.isInteger(requestedBranch) && requestedBranch > 0 ? requestedBranch : 1;
   let current = null;
   let live = false;
+  let preview = false;
   const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; } };
   window.poswaiAuth = state;
 
@@ -66,7 +67,7 @@
     return result;
   };
   const update = () => {
-    document.body.classList.toggle('poswai-guest', live && !current);
+    document.body.classList.toggle('poswai-guest', live && !preview && !current);
     accountButton.hidden = !live;
     accountButton.textContent = current ? `${current.name} ▾` : 'เข้าสู่ระบบ';
     const navStatus = document.querySelector('.nav-footer span:last-child');
@@ -131,14 +132,15 @@
   window.poswaiAuth.logout = logout;
   window.poswaiAuth.openManager = () => { if (current?.role === 'manager' || current?.role === 'owner') open(true); };
   fetch('/api/config', { cache: 'no-store' }).then(response => response.json()).then(async config => {
-    live = !config.preview_only;
+    preview = !!config.preview_only;
+    live = !preview || !!config.staff_live;
     if (!live) return;
-    document.body.classList.add('poswai-live');
+    if (!preview) document.body.classList.add('poswai-live');
     try {
       const response = await fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' });
       if (response.ok) current = await response.json();
     } catch (_) { /* Offline pages retain local functionality without storing credentials. */ }
     update();
-    if (!current && !tableToken) open();
+    if (!current && !tableToken && !preview) open();
   }).catch(() => {});
 })();

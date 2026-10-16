@@ -2004,6 +2004,7 @@
     let state = {
       isOnline: true,
       previewOnly: false,
+      staffLive: false,
       branch: "สาขา 1: เชียงใหม่ (นิมมาน)",
       shopName: "POS WAI - สาขาเชียงใหม่ (นิมมาน)",
       promptPayId: "",
@@ -2336,7 +2337,8 @@
     }
 
     async function apiMutation(path, payload) {
-      if (state.previewOnly) throw new Error("โหมดตัวอย่างยังไม่เปิดให้บันทึกข้อมูล");
+      if (state.previewOnly && !(state.staffLive && ["/api/attendance", "/api/line-liff/leave-requests", "/api/line-webhook/approve-leave"].includes(path)))
+        throw new Error("โหมดตัวอย่างยังไม่เปิดให้บันทึกข้อมูล");
       if (path.startsWith("/api/payments/") && (!navigator.onLine || !state.isOnline)) {
         throw new Error("การปิดบิลต้องเชื่อมต่อเซิร์ฟเวอร์ กรุณาลองเมื่อออนไลน์");
       }
@@ -4964,6 +4966,7 @@
     fetch("/api/config").then(r => r.json()).then(config => {
       if (config.promptpay_id) state.promptPayId = config.promptpay_id;
       lineLiffId = config.line_liff_id || "";
+      state.staffLive = !!config.staff_live;
       if (config.preview_only) {
         state.previewOnly = true;
         const notice = document.createElement("div");
@@ -4979,12 +4982,12 @@
   <script src="/workspace.js?v=19"></script>
   <script src="/sales-redesign.js?v=19"></script>
   <script src="/ops-redesign.js?v=19"></script>
-  <script src="/people-redesign.js?v=19"></script>
+  <script src="/people-redesign.js?v=30"></script>
   <script src="/staff-admin.js?v=29"></script>
   <script src="/reports-restore.js?v=19"></script>
   <script src="/reports-live.js?v=20"></script>
   <script src="/service-call.js?v=19"></script>
-  <script src="/auth-ui.js?v=20"></script>
+  <script src="/auth-ui.js?v=30"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/live-data.js?v=24"></script>
   <script src="/inventory-live.js?v=23"></script>
