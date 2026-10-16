@@ -27,8 +27,14 @@ function foodIconFor(id) { return `/assets/${[8,9,10,12].includes(Number(id)) ? 
         img.className = 'dish-photo';
         img.alt = menu.name;
         img.loading = 'lazy';
-        img.src = foodIconFor(menu.id);
-        img.onerror = () => { img.onerror = null; img.src = '/assets/menu-placeholder.svg'; };
+        // A real dish photo fills the card; the line icon is the fallback for items without one.
+        img.classList.toggle('is-dish-photo', Boolean(menu.photo));
+        img.src = menu.photo || foodIconFor(menu.id);
+        img.onerror = () => {
+          img.onerror = null;
+          img.classList.remove('is-dish-photo');
+          img.src = foodIconFor(menu.id);
+        };
         media.replaceWith(img);
       }
       const name = card.querySelector('.menu-name');

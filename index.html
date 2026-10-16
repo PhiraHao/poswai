@@ -651,7 +651,7 @@
   <link rel="stylesheet" href="/ui.css">
   <link rel="stylesheet" href="/assets/fonts.css">
   <link rel="stylesheet" href="/workspace.css?v=45">
-  <link rel="stylesheet" href="/sales-redesign.css?v=19">
+  <link rel="stylesheet" href="/sales-redesign.css?v=49">
   <link rel="stylesheet" href="/ops-redesign.css?v=19">
   <link rel="stylesheet" href="/people-redesign.css?v=19">
   <link rel="stylesheet" href="/staff-admin.css?v=38">
@@ -1990,19 +1990,19 @@
        1. ENTERPRISE DATA & BOM INVENTORY DEFINITIONS
        ========================================================================= */
     const DEFAULT_MENU = [
-      { id: 101, barcode: "SET001", name: "เซตอิ่มคุ้มเลือกจับคู่ได้ (จานหลัก + น้ำ)", nameEn: "Value Combo Set (Main + Drink)", nameCn: "超值自选套餐 (主食+饮品)", origPrice: 155, price: 129, cost: 35, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "🔥", isComboStep: true, isStar: true, pinned: true, soldOut: false, quota: 30, promoBadge: "เซตสุดคุ้ม -฿26", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING07", qty: 20 }, { ingId: "ING09", qty: 1 }] },
-      { id: 102, barcode: "SET002", name: "ชุดครอบครัว (ต้มยำกุ้ง + ปลากะพง + ข้าว 2)", nameEn: "Family Bundle Set (Tom Yum + Sea Bass)", nameCn: "家庭欢聚套餐 (冬阴功+炸鲈鱼)", origPrice: 460, price: 399, cost: 185, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "👨‍👩‍👧‍👦", isStar: true, pinned: true, soldOut: false, quota: 15, promoBadge: "ลดพิเศษ -฿61", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }, { ingId: "ING02", qty: 400 }] },
-      { id: 1, barcode: "8850001", name: "กะเพราหมูกรอบไข่ดาว", nameEn: "Crispy Pork Basil & Fried Egg", nameCn: "脆皮猪肉打抛饭配煎蛋", price: 65, cost: 22, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍛", isStar: true, pinned: true, soldOut: false, quota: 25, promoBadge: "⭐ ขายดีอันดับ 1", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING03", qty: 1 }] },
-      { id: 2, barcode: "8850002", name: "ข้าวซอยไก่ต้นตำรับ", nameEn: "Chiang Mai Khao Soi Chicken", nameCn: "清迈特色咖喱鸡腿面", price: 75, cost: 28, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍜", isStar: true, pinned: false, soldOut: false, quota: 20, promoBadge: "⭐ แนะนำ", bom: [{ ingId: "ING04", qty: 150 }, { ingId: "ING05", qty: 120 }] },
-      { id: 3, barcode: "8850003", name: "ข้าวผัดปูจานกลาง", nameEn: "Crab Meat Fried Rice", nameCn: "蟹肉炒饭", price: 120, cost: 48, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🦀", isStar: false, pinned: false, soldOut: false, quota: 8, bom: [{ ingId: "ING02", qty: 250 }, { ingId: "ING03", qty: 2 }] },
-      { id: 4, barcode: "8850004", name: "ต้มยำกุ้งน้ำข้นหม้อไฟ", nameEn: "Tom Yum Goong Hot Pot", nameCn: "冬阴功大虾火锅", price: 180, cost: 65, category: "กับข้าว", station: "ครัวร้อน", emoji: "🍲", isStar: true, pinned: false, soldOut: false, quota: 12, promoBadge: "⭐ Star", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }] },
-      { id: 5, barcode: "8850005", name: "ปลากะพงทอดน้ำปลา", nameEn: "Deep-Fried Sea Bass with Fish Sauce", nameCn: "鱼露炸海鲈鱼", origPrice: 280, price: 250, cost: 110, category: "กับข้าว", station: "ครัวร้อน", emoji: "🐟", isStar: true, pinned: false, soldOut: false, quota: 5, promoBadge: "เชียร์ขาย -฿30", bom: [{ ingId: "ING01", qty: 100 }] },
-      { id: 6, barcode: "8850006", name: "ส้มตำไทยไข่เค็ม", nameEn: "Thai Papaya Salad with Salted Egg", nameCn: "泰式咸蛋青木瓜沙拉", price: 60, cost: 20, category: "กับข้าว", station: "ครัวเย็น/ยำ", emoji: "🥗", isStar: false, pinned: false, soldOut: false, quota: 30, bom: [{ ingId: "ING03", qty: 1 }] },
-      { id: 8, barcode: "8850008", name: "ชาไทยเย็นพรีเมียม", nameEn: "Iced Premium Thai Milk Tea", nameCn: "泰式招牌冰奶茶", origPrice: 55, price: 45, cost: 9, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧋", isStar: true, pinned: false, soldOut: false, quota: 50, promoBadge: "Happy Hour -20%", bom: [{ ingId: "ING07", qty: 20 }, { ingId: "ING08", qty: 40 }, { ingId: "ING09", qty: 1 }] },
-      { id: 9, barcode: "8850009", name: "อเมริกาโน่เย็นไม่หวาน", nameEn: "Iced Americano (Unsweetened)", nameCn: "冰美式咖啡 (无糖)", price: 55, cost: 12, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "☕", isStar: false, pinned: false, soldOut: false, quota: 40, promoBadge: "1 แถม 1 (บ่าย)", bom: [{ ingId: "ING09", qty: 1 }] },
-      { id: 10, barcode: "8850010", name: "น้ำเปล่า (ขวด)", nameEn: "Drinking Water (Bottle)", nameCn: "矿泉水 (瓶)", price: 10, cost: 4, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "💧", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 100, bom: [] },
-      { id: 12, barcode: "8850012", name: "น้ำแข็งเปล่า (แก้ว)", nameEn: "Ice Cup", nameCn: "冰块 (杯)", price: 5, cost: 2, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧊", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 200, bom: [{ ingId: "ING09", qty: 1 }] },
-      { id: 11, barcode: "8850011", name: "บัวลอยเผือกมะพร้าวอ่อน", nameEn: "Taro Balls in Coconut Milk", nameCn: "椰奶芋圆甜汤", origPrice: 45, price: 35, cost: 24, category: "ของหวาน", station: "บาร์น้ำ", emoji: "🍨", isStar: false, pinned: false, soldOut: false, quota: 3, promoBadge: "Flash Sale ระบายสต็อก", bom: [{ ingId: "ING05", qty: 80 }] }
+      { id: 101, photo: "/assets/menu/menu-101.webp", barcode: "SET001", name: "เซตอิ่มคุ้มเลือกจับคู่ได้ (จานหลัก + น้ำ)", nameEn: "Value Combo Set (Main + Drink)", nameCn: "超值自选套餐 (主食+饮品)", origPrice: 155, price: 129, cost: 35, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "🔥", isComboStep: true, isStar: true, pinned: true, soldOut: false, quota: 30, promoBadge: "เซตสุดคุ้ม -฿26", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING07", qty: 20 }, { ingId: "ING09", qty: 1 }] },
+      { id: 102, photo: "/assets/menu/menu-102.webp", barcode: "SET002", name: "ชุดครอบครัว (ต้มยำกุ้ง + ปลากะพง + ข้าว 2)", nameEn: "Family Bundle Set (Tom Yum + Sea Bass)", nameCn: "家庭欢聚套餐 (冬阴功+炸鲈鱼)", origPrice: 460, price: 399, cost: 185, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "👨‍👩‍👧‍👦", isStar: true, pinned: true, soldOut: false, quota: 15, promoBadge: "ลดพิเศษ -฿61", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }, { ingId: "ING02", qty: 400 }] },
+      { id: 1, photo: "/assets/menu/menu-1.webp", barcode: "8850001", name: "กะเพราหมูกรอบไข่ดาว", nameEn: "Crispy Pork Basil & Fried Egg", nameCn: "脆皮猪肉打抛饭配煎蛋", price: 65, cost: 22, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍛", isStar: true, pinned: true, soldOut: false, quota: 25, promoBadge: "⭐ ขายดีอันดับ 1", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING03", qty: 1 }] },
+      { id: 2, photo: "/assets/menu/menu-2.webp", barcode: "8850002", name: "ข้าวซอยไก่ต้นตำรับ", nameEn: "Chiang Mai Khao Soi Chicken", nameCn: "清迈特色咖喱鸡腿面", price: 75, cost: 28, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍜", isStar: true, pinned: false, soldOut: false, quota: 20, promoBadge: "⭐ แนะนำ", bom: [{ ingId: "ING04", qty: 150 }, { ingId: "ING05", qty: 120 }] },
+      { id: 3, photo: "/assets/menu/menu-3.webp", barcode: "8850003", name: "ข้าวผัดปูจานกลาง", nameEn: "Crab Meat Fried Rice", nameCn: "蟹肉炒饭", price: 120, cost: 48, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🦀", isStar: false, pinned: false, soldOut: false, quota: 8, bom: [{ ingId: "ING02", qty: 250 }, { ingId: "ING03", qty: 2 }] },
+      { id: 4, photo: "/assets/menu/menu-4.webp", barcode: "8850004", name: "ต้มยำกุ้งน้ำข้นหม้อไฟ", nameEn: "Tom Yum Goong Hot Pot", nameCn: "冬阴功大虾火锅", price: 180, cost: 65, category: "กับข้าว", station: "ครัวร้อน", emoji: "🍲", isStar: true, pinned: false, soldOut: false, quota: 12, promoBadge: "⭐ Star", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }] },
+      { id: 5, photo: "/assets/menu/menu-5.webp", barcode: "8850005", name: "ปลากะพงทอดน้ำปลา", nameEn: "Deep-Fried Sea Bass with Fish Sauce", nameCn: "鱼露炸海鲈鱼", origPrice: 280, price: 250, cost: 110, category: "กับข้าว", station: "ครัวร้อน", emoji: "🐟", isStar: true, pinned: false, soldOut: false, quota: 5, promoBadge: "เชียร์ขาย -฿30", bom: [{ ingId: "ING01", qty: 100 }] },
+      { id: 6, photo: "/assets/menu/menu-6.webp", barcode: "8850006", name: "ส้มตำไทยไข่เค็ม", nameEn: "Thai Papaya Salad with Salted Egg", nameCn: "泰式咸蛋青木瓜沙拉", price: 60, cost: 20, category: "กับข้าว", station: "ครัวเย็น/ยำ", emoji: "🥗", isStar: false, pinned: false, soldOut: false, quota: 30, bom: [{ ingId: "ING03", qty: 1 }] },
+      { id: 8, photo: "/assets/menu/menu-8.webp", barcode: "8850008", name: "ชาไทยเย็นพรีเมียม", nameEn: "Iced Premium Thai Milk Tea", nameCn: "泰式招牌冰奶茶", origPrice: 55, price: 45, cost: 9, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧋", isStar: true, pinned: false, soldOut: false, quota: 50, promoBadge: "Happy Hour -20%", bom: [{ ingId: "ING07", qty: 20 }, { ingId: "ING08", qty: 40 }, { ingId: "ING09", qty: 1 }] },
+      { id: 9, photo: "/assets/menu/menu-9.webp", barcode: "8850009", name: "อเมริกาโน่เย็นไม่หวาน", nameEn: "Iced Americano (Unsweetened)", nameCn: "冰美式咖啡 (无糖)", price: 55, cost: 12, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "☕", isStar: false, pinned: false, soldOut: false, quota: 40, promoBadge: "1 แถม 1 (บ่าย)", bom: [{ ingId: "ING09", qty: 1 }] },
+      { id: 10, photo: "/assets/menu/menu-10.webp", barcode: "8850010", name: "น้ำเปล่า (ขวด)", nameEn: "Drinking Water (Bottle)", nameCn: "矿泉水 (瓶)", price: 10, cost: 4, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "💧", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 100, bom: [] },
+      { id: 12, photo: "/assets/menu/menu-12.webp", barcode: "8850012", name: "น้ำแข็งเปล่า (แก้ว)", nameEn: "Ice Cup", nameCn: "冰块 (杯)", price: 5, cost: 2, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧊", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 200, bom: [{ ingId: "ING09", qty: 1 }] },
+      { id: 11, photo: "/assets/menu/menu-11.webp", barcode: "8850011", name: "บัวลอยเผือกมะพร้าวอ่อน", nameEn: "Taro Balls in Coconut Milk", nameCn: "椰奶芋圆甜汤", origPrice: 45, price: 35, cost: 24, category: "ของหวาน", station: "บาร์น้ำ", emoji: "🍨", isStar: false, pinned: false, soldOut: false, quota: 3, promoBadge: "Flash Sale ระบายสต็อก", bom: [{ ingId: "ING05", qty: 80 }] }
     ];
 
     let state = {
@@ -4855,6 +4855,8 @@
       const wrap = document.getElementById("editMenuImgPreviewWrap");
       if (state.tempEditPhotoUrl) {
         wrap.innerHTML = `<img src="${state.tempEditPhotoUrl}" style="width:100%; height:100%; object-fit:cover;" />`;
+      } else if (m?.photo) {
+        wrap.innerHTML = `<img src="${m.photo}" alt="" style="width:100%; height:100%; object-fit:cover;" />`;
       } else {
         wrap.innerHTML = m ? m.emoji : "🍽️";
       }
@@ -5035,7 +5037,7 @@
     renderAll();
   </script>
   <script src="/workspace.js?v=46"></script>
-  <script src="/sales-redesign.js?v=19"></script>
+  <script src="/sales-redesign.js?v=49"></script>
   <script src="/ops-redesign.js?v=19"></script>
   <script src="/people-redesign.js?v=38"></script>
   <script src="/staff-admin.js?v=38"></script>

@@ -112,3 +112,5 @@
 }
 
 #customerMenuGrid .dish-photo { aspect-ratio: 8/5!important; object-fit:contain; }
+/* Line icons sit inside their box; a real photo fills the whole card top. */
+#customerMenuGrid .dish-photo.is-dish-photo { aspect-ratio:4/3!important; object-fit:cover!important; background:#f4f5f7; }
