@@ -130,6 +130,12 @@ class CommerceTest(unittest.TestCase):
         payload["channel"] = "FakeFood"
         self.assertEqual(self.client.post("/api/online/manual-orders", json=payload).status_code, 400)
 
+    def test_commerce_assets_are_served_for_pwa(self):
+        for path in ("/commerce-ui.css", "/commerce-ui.js"):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertTrue(response.content)
+
     def test_pickup_requires_verified_line_and_consent_for_campaign(self):
         payload = {"event_id": "test-online-123", "branch_id": 1,
                    "fulfillment": "self_pickup", "items": [{"id": "beef", "qty": 1}],

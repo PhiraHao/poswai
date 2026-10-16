@@ -1709,14 +1709,14 @@ def serve_worker():
 
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
-    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live"}:
+    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
         raise HTTPException(404, "Stylesheet not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.css", media_type="text/css")
 
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
