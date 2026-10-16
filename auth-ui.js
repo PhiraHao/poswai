@@ -110,7 +110,9 @@
     return result;
   };
   const update = () => {
-    const locked = live && !current && !tableToken && sessionStorage.getItem('poswaiPreviewPeek') !== '1';
+    // A demo peek only counts while the shop runs in preview mode.
+    const peeking = preview && sessionStorage.getItem('poswaiPreviewPeek') === '1';
+    const locked = live && !current && !tableToken && !peeking;
     landing.hidden = !locked;
     document.body.classList.toggle('poswai-locked', locked);
     const peek = landing.querySelector('#poswaiLandingPreview');
@@ -219,7 +221,10 @@
     live = !preview || !!config.staff_live;
     document.body.classList.toggle('poswai-staff-live', !!config.staff_live);
     if (!live) return;
-    if (!preview) document.body.classList.add('poswai-live');
+    if (!preview) {
+      document.body.classList.add('poswai-live');
+      sessionStorage.removeItem('poswaiPreviewPeek');
+    }
     try {
       const response = await fetch('/api/auth/session', { credentials: 'same-origin', cache: 'no-store' });
       if (response.ok) current = await response.json();
