@@ -113,7 +113,8 @@
     const locked = live && !current && !tableToken && sessionStorage.getItem('poswaiPreviewPeek') !== '1';
     landing.hidden = !locked;
     document.body.classList.toggle('poswai-locked', locked);
-    landing.querySelector('#poswaiLandingPreview').hidden = !preview;
+    const peek = landing.querySelector('#poswaiLandingPreview');
+    if (peek) peek.hidden = !preview;
     document.body.classList.toggle('poswai-guest', live && !preview && !current);
     accountButton.hidden = !live;
     accountButton.textContent = current ? `${current.name} ▾` : 'เข้าสู่ระบบ';
@@ -174,12 +175,14 @@
     showCreateForm();
     $('#poswaiNewName').focus();
   });
-  landing.querySelector('#poswaiLandingLogin').addEventListener('click', () => open());
-  landing.querySelector('#poswaiLandingPreview').addEventListener('click', () => {
+  const enterPreview = (tab) => {
     sessionStorage.setItem('poswaiPreviewPeek', '1');
     close();
     update();
-  });
+    if (tab) document.querySelector(`.role-tab[onclick*="switchTab('${tab}'"]`)?.click();
+  };
+  landing.querySelector('#poswaiLandingLogin')?.addEventListener('click', () => open());
+  landing.querySelector('#poswaiLandingPreview')?.addEventListener('click', () => enterPreview());
   $('#poswaiCloseLogin').addEventListener('click', close);
   $('#poswaiCloseManager').addEventListener('click', close);
   $('#poswaiLogoutManager').addEventListener('click', async () => {
@@ -192,6 +195,9 @@
     await api('/api/auth/logout', {}); current = null; update(); if (!tableToken) open();
   };
   window.poswaiAuth.logout = logout;
+  window.poswaiAuth.openLogin = () => open();
+  window.poswaiAuth.enterPreview = enterPreview;
+  Object.defineProperty(window.poswaiAuth, 'preview', { get: () => preview });
   window.poswaiAuth.openManager = () => { if (current?.role === 'manager' || current?.role === 'owner') open(true); };
   fetch('/api/permissions', { cache: 'no-store' }).then(response => response.ok ? response.json() : null).then(result => {
     if (!result?.roles) return;
@@ -212,6 +218,7 @@
       if (response.ok) current = await response.json();
     } catch (_) { /* Offline pages retain local functionality without storing credentials. */ }
     update();
-    if (!current && !tableToken && sessionStorage.getItem('poswaiPreviewPeek') !== '1') open();
+    const installedApp = window.matchMedia?.('(display-mode: standalone)').matches;
+    if (!current && !tableToken && installedApp && sessionStorage.getItem('poswaiPreviewPeek') !== '1') open();
   }).catch(() => {});
 })();
