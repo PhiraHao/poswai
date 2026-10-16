@@ -37,16 +37,32 @@
         <label for="poswaiNewName">ชื่อ</label><input id="poswaiNewName" maxlength="100" required>
         <label for="poswaiNewRole">สิทธิ์</label><select id="poswaiNewRole"><option value="staff">พนักงาน</option><option value="cashier">แคชเชียร์</option><option value="kitchen">ครัว</option><option value="service">บริการ</option><option value="manager">ผู้จัดการ</option></select>
         <label for="poswaiNewPin">ตั้ง PIN ให้พนักงานคนนี้ (อย่างน้อย 8 ตัวอักษร)</label><input id="poswaiNewPin" type="password" minlength="8" autocomplete="new-password" placeholder="ห้ามใช้ PIN ของผู้จัดการ" required>
-        <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">สร้างบัญชี</button></div>
+        <div class="poswai-auth-actions"><button class="poswai-auth-primary" id="poswaiCreateStaff" type="submit">สร้างบัญชี</button></div>
       </form>
-      <p class="poswai-auth-result" id="poswaiManagerResult" hidden></p>
+      <div class="poswai-create-success" id="poswaiCreateSuccess" role="status" hidden>
+        <div class="poswai-create-check" aria-hidden="true">✓</div>
+        <h3 tabindex="-1" id="poswaiCreateSuccessTitle">สร้างบัญชีสำเร็จ</h3>
+        <p id="poswaiCreatedName"></p>
+        <span>รหัสพนักงาน</span>
+        <strong id="poswaiCreatedId"></strong>
+        <p>แจ้งรหัสนี้และ PIN ที่ตั้งไว้ให้พนักงานเป็นการส่วนตัว</p>
+        <button class="poswai-auth-primary" type="button" id="poswaiAddAnotherStaff">เพิ่มพนักงานอีกคน</button>
+      </div>
       <p class="poswai-auth-error" id="poswaiManagerError" role="alert"></p>
       <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiLogoutManager">ออกจากระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseManager">ปิด</button></div>
     </div>
   </section>`;
   document.body.append(overlay);
   const $ = (selector) => overlay.querySelector(selector);
+  const showCreateForm = () => {
+    $('#poswaiStaffForm').hidden = false;
+    $('#poswaiCreateSuccess').hidden = true;
+    $('#poswaiAuthTitle').textContent = 'จัดการบัญชีพนักงาน';
+    $('#poswaiAuthDescription').textContent = 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ';
+    $('#poswaiManagerError').textContent = '';
+  };
   const open = (manager = false) => {
+    if (manager) showCreateForm();
     $('#poswaiLoginPanel').hidden = manager;
     $('#poswaiManagerPanel').hidden = !manager;
     $('#poswaiAuthTitle').textContent = manager ? 'จัดการบัญชีพนักงาน' : 'เข้าสู่ระบบ POS WAI';
@@ -94,13 +110,27 @@
   });
   $('#poswaiStaffForm').addEventListener('submit', async (event) => {
     event.preventDefault(); $('#poswaiManagerError').textContent = '';
+    const submit = $('#poswaiCreateStaff');
+    if (submit.disabled) return;
+    submit.disabled = true;
+    submit.textContent = 'กำลังสร้างบัญชี…';
     try {
       const result = await api('/api/staff', { name: $('#poswaiNewName').value.trim(),
         role: $('#poswaiNewRole').value, pin: $('#poswaiNewPin').value });
-      $('#poswaiManagerResult').hidden = false;
-      $('#poswaiManagerResult').textContent = `สร้างบัญชีแล้ว: ${result.name} · รหัสพนักงาน ${result.staff_id}`;
-      $('#poswaiNewPin').value = '';
+      $('#poswaiCreatedName').textContent = result.name;
+      $('#poswaiCreatedId').textContent = String(result.staff_id);
+      $('#poswaiStaffForm').reset();
+      $('#poswaiStaffForm').hidden = true;
+      $('#poswaiCreateSuccess').hidden = false;
+      $('#poswaiAuthTitle').textContent = 'สร้างบัญชีสำเร็จ';
+      $('#poswaiAuthDescription').textContent = 'บัญชีพร้อมให้พนักงานเข้าสู่ระบบ';
+      $('#poswaiCreateSuccessTitle').focus();
     } catch (error) { $('#poswaiManagerError').textContent = error.message; }
+    finally { submit.disabled = false; submit.textContent = 'สร้างบัญชี'; }
+  });
+  $('#poswaiAddAnotherStaff').addEventListener('click', () => {
+    showCreateForm();
+    $('#poswaiNewName').focus();
   });
   $('#poswaiCloseLogin').addEventListener('click', close);
   $('#poswaiCloseManager').addEventListener('click', close);
