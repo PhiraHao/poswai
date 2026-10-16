@@ -21,6 +21,25 @@ class LandingAssetsTest(unittest.TestCase):
             for path in re.findall(r"/assets/landing/[\w.-]+", css.text + client.get("/landing.js").text):
                 self.assertEqual(client.get(path).status_code, 200, path)
 
+    def test_images_are_served_as_images(self):
+        """The page sends nosniff, so a wrong media type stops the browser drawing it."""
+        with TestClient(server.app) as client:
+            for path, expected in (("/assets/brand-logo.webp", "image/webp"),
+                                   ("/assets/menu/menu-1.webp", "image/webp"),
+                                   ("/assets/landing/prompt-700-thai.woff2", "font/woff2"),
+                                   ("/icon-192.png", "image/png")):
+                response = client.get(path)
+                self.assertEqual(response.status_code, 200, path)
+                self.assertEqual(response.headers["content-type"].split(";")[0], expected, path)
+
+    def test_every_sample_dish_has_its_photo(self):
+        index = (ROOT / "index.html").read_text(encoding="utf-8")
+        ids = re.findall(r'\{ id: (\d+), photo: "([^"]+)"', index)
+        self.assertEqual(len(ids), 13)
+        for item_id, photo in ids:
+            self.assertEqual(photo, f"/assets/menu/menu-{item_id}.webp")
+            self.assertTrue((ROOT / photo.lstrip("/")).exists(), photo)
+
     def test_index_loads_landing_after_auth_and_worker_caches_it(self):
         index = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertLess(index.index("/auth-ui.js"), index.index("/landing.js"))

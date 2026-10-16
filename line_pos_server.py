@@ -13,6 +13,7 @@ POS WAI Enterprise V3 Server (FastAPI + Relational SQLite/PostgreSQL Schema)
 
 import sqlite3
 import asyncio
+import mimetypes
 from contextlib import asynccontextmanager
 from contextlib import closing
 import datetime
@@ -2586,6 +2587,13 @@ def get_executive_analytics_dashboard(request: Request, benchmark: str = "WOW", 
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+
+# The slim container image carries no /etc/mime.types, so Python would label every
+# .webp as text/plain. With the nosniff header this page sends, the browser then
+# refuses to draw the image, so the types are registered here instead.
+for suffix, media_type in ((".webp", "image/webp"), (".svg", "image/svg+xml"),
+                           (".woff2", "font/woff2"), (".json", "application/json")):
+    mimetypes.add_type(media_type, suffix)
 
 app.mount("/assets", StaticFiles(directory=Path(__file__).parent / "assets"), name="assets")
 
