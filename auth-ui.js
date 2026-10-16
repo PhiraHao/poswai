@@ -39,11 +39,6 @@
         <label for="poswaiNewPin">PIN อย่างน้อย 8 ตัวอักษร</label><input id="poswaiNewPin" type="password" minlength="8" autocomplete="new-password" required>
         <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">สร้างบัญชี</button></div>
       </form>
-      <form id="poswaiTableForm">
-        <strong>ลิงก์ QR ประจำโต๊ะ</strong>
-        <label for="poswaiTableNo">หมายเลขโต๊ะ</label><input id="poswaiTableNo" maxlength="24" required>
-        <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">สร้างลิงก์</button></div>
-      </form>
       <p class="poswai-auth-result" id="poswaiManagerResult" hidden></p>
       <p class="poswai-auth-error" id="poswaiManagerError" role="alert"></p>
       <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiLogoutManager">ออกจากระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseManager">ปิด</button></div>
@@ -54,7 +49,7 @@
   const open = (manager = false) => {
     $('#poswaiLoginPanel').hidden = manager;
     $('#poswaiManagerPanel').hidden = !manager;
-    $('#poswaiAuthTitle').textContent = manager ? 'จัดการบัญชีและ QR โต๊ะ' : 'เข้าสู่ระบบ POS WAI';
+    $('#poswaiAuthTitle').textContent = manager ? 'จัดการบัญชีพนักงาน' : 'เข้าสู่ระบบ POS WAI';
     overlay.hidden = false;
     (manager ? $('#poswaiNewName') : $('#poswaiStaffId')).focus();
   };
@@ -104,19 +99,6 @@
       $('#poswaiManagerResult').hidden = false;
       $('#poswaiManagerResult').textContent = `สร้างบัญชีแล้ว: ${result.name} · รหัสพนักงาน ${result.staff_id}`;
       $('#poswaiNewPin').value = '';
-    } catch (error) { $('#poswaiManagerError').textContent = error.message; }
-  });
-  $('#poswaiTableForm').addEventListener('submit', async (event) => {
-    event.preventDefault(); $('#poswaiManagerError').textContent = '';
-    try {
-      const table = $('#poswaiTableNo').value.trim();
-      const result = await api('/api/tables/token', { branch_id: current.branch_id, table_no: table });
-      const link = new URL(location.pathname, location.origin);
-      link.searchParams.set('table', table); link.searchParams.set('table_token', result.token);
-      link.searchParams.set('branch_id', String(current.branch_id));
-      $('#poswaiManagerResult').hidden = false;
-      $('#poswaiManagerResult').textContent = link.href;
-      if (navigator.clipboard) await navigator.clipboard.writeText(link.href).catch(() => {});
     } catch (error) { $('#poswaiManagerError').textContent = error.message; }
   });
   $('#poswaiCloseLogin').addEventListener('click', close);
