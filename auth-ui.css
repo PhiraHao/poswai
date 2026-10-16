@@ -46,4 +46,17 @@
 .poswai-landing-preview { border: 0; background: none; color: #34536c; font-size: .8rem; font-weight: 700;
   text-decoration: underline; cursor: pointer; padding: 4px; }
 .poswai-landing-preview[hidden] { display: none; }
+.poswai-auth-switch { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid #eceff3; color: #64748b; font-size: .84rem; text-align: center; }
+.poswai-auth-switch button { border: 0; background: none; padding: 0; color: #1d6fe0; font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; }
+.poswai-auth-hint { margin: -4px 0 6px; font-size: .78rem; color: #64748b; min-height: 1.1em; }
+.poswai-auth-hint.ok { color: #15803d; }
+.poswai-auth-hint.bad { color: #b91c1c; }
+.poswai-auth-check { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 4px; font-size: .84rem; color: #334155; font-weight: 500; }
+.poswai-auth-check input { width: 17px; height: 17px; margin: 2px 0 0; flex: none; }
+.poswai-member-card { display: grid; justify-items: center; gap: 6px; text-align: center; }
+.poswai-member-card span { color: #64748b; font-size: .82rem; }
+.poswai-member-card strong { font-size: 2rem; color: #0f766e; }
+.poswai-member-card p { margin: 0; color: #475569; font-size: .84rem; }
+.poswai-member-card ul { width: 100%; margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.poswai-member-card li { padding: 8px 11px; background: #f8fafc; border-radius: 9px; font-size: .82rem; color: #334155; text-align: left; }
 body.poswai-locked { overflow: hidden; }

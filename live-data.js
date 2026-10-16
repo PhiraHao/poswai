@@ -96,8 +96,45 @@
       branch_id:branch(), stock:Number(data.get('stock')),
     }); } catch (error) { status(error.message); }
   });
+  const shopPanel = document.createElement('section');
+  shopPanel.className = 'live-catalog-panel';
+  shopPanel.hidden = true;
+  shopPanel.innerHTML = `<h3>ตั้งค่าร้าน</h3>
+    <p>ชื่อร้านที่ลูกค้าเห็น และบัญชีพร้อมเพย์ที่รับเงินของร้านนี้</p>
+    <form id="liveShopForm"><label>ชื่อร้าน <input name="name" maxlength="80" required></label>
+      <label>พร้อมเพย์ (เบอร์โทรหรือเลขบัตรประชาชน) <input name="promptpay_id" maxlength="20" inputmode="numeric"></label>
+      <button type="submit">บันทึกการตั้งค่า</button></form>
+    <p id="liveShopStatus" role="status"></p><p id="liveShopLink"></p>`;
+  panel.before(shopPanel);
+  const loadShop = async () => {
+    try {
+      const settings = await request('/api/shop/settings');
+      shopPanel.querySelector('[name="name"]').value = settings.name || '';
+      shopPanel.querySelector('[name="promptpay_id"]').value = settings.promptpay_id || '';
+      shopPanel.querySelector('#liveShopLink').textContent = settings.editable
+        ? `ลิงก์เข้าร้านของคุณ ${location.origin}/?shop=${settings.slug} · รหัสร้าน ${settings.slug}` +
+          (settings.trial_ends_at ? ` · ทดลองใช้ฟรีถึง ${settings.trial_ends_at}` : '')
+        : 'ร้านนี้ตั้งค่าจากเซิร์ฟเวอร์ ติดต่อทีมงานหากต้องการแก้';
+      shopPanel.querySelector('#liveShopForm').hidden = !settings.editable;
+    } catch (error) { shopPanel.querySelector('#liveShopStatus').textContent = error.message; }
+  };
+  shopPanel.querySelector('#liveShopForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    const note = shopPanel.querySelector('#liveShopStatus');
+    try {
+      await request('/api/shop/settings', {method:'PUT', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name:String(data.get('name')).trim(), promptpay_id:String(data.get('promptpay_id')).trim()})});
+      note.textContent = 'บันทึกแล้ว';
+      const config = await (await fetch('/api/config', {cache:'no-store'})).json();
+      if (config.promptpay_id) state.promptPayId = config.promptpay_id;
+    } catch (error) { note.textContent = error.message; }
+  });
+
   const updateManager = () => {
     panel.hidden = !enabled || !['manager','owner'].includes(window.poswaiAuth?.current?.role);
+    shopPanel.hidden = !enabled || window.poswaiAuth?.current?.role !== 'owner';
+    if (!shopPanel.hidden) loadShop();
     if (enabled) refresh().catch(error => showToast(`โหลดข้อมูลจริงไม่สำเร็จ: ${error.message}`));
   };
   window.addEventListener('poswai:auth-changed', updateManager);
@@ -133,9 +170,18 @@
     updateManager();
     window.setInterval(() => { if (navigator.onLine) refresh().catch(() => {}); }, 15000);
   };
-  if (localStorage.getItem('poswai-live-mode') === '1') enterLive();
+  // Remembering live mode per shop keeps the sample shop's sample records out of a real shop,
+  // and starts a real shop on server data before /api/config answers.
+  const KEY = 'poswai-live-shop';
+  const asked = (new URLSearchParams(location.search).get('shop') || '').trim().toLowerCase();
+  let remembered = '';
+  try { remembered = localStorage.getItem(KEY) || ''; } catch (_) { /* private browsing */ }
+  if (remembered && (!asked || asked === remembered)) enterLive();
   fetch('/api/config', {cache:'no-store'}).then(r => r.json()).then(config => {
-    if (config.preview_only) { localStorage.removeItem('poswai-live-mode'); return; }
-    localStorage.setItem('poswai-live-mode', '1'); enterLive();
+    try {
+      if (config.preview_only) localStorage.removeItem(KEY);
+      else localStorage.setItem(KEY, config.shop?.slug || 'main');
+    } catch (_) { /* private browsing */ }
+    if (!config.preview_only) enterLive();
   }).catch(() => {});
 })();

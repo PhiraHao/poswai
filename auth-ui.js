@@ -4,9 +4,12 @@
   const tableNo = new URLSearchParams(location.search).get('table') || '';
   const requestedBranch = Number(new URLSearchParams(location.search).get('branch_id'));
   const tableBranchId = Number.isInteger(requestedBranch) && requestedBranch > 0 ? requestedBranch : 1;
+  const requestedShop = (new URLSearchParams(location.search).get('shop') || '').trim().toLowerCase();
   let current = null;
   let live = false;
   let preview = false;
+  let shop = { slug: requestedShop || 'main', name: '', is_demo: false, trial_ends_at: null };
+  let pointBaht = 10;
   /* Mirrors ROLE_PERMISSIONS in line_pos_server.py and is refreshed from /api/permissions.
      Hiding a tab is only a convenience: every endpoint checks the role again. */
   const tabsByRole = {
@@ -19,8 +22,9 @@
     guest: ['customer','staff']
   };
   let matrix = null;
-  const canAccessTab = tab => (tabsByRole[current?.role || 'guest'] || tabsByRole.guest).includes(tab);
-  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; }, get permissions() { return matrix; }, canAccessTab };
+  // The sample shop is a guided tour of every screen, and holds no real records.
+  const canAccessTab = tab => shop.is_demo || (tabsByRole[current?.role || 'guest'] || tabsByRole.guest).includes(tab);
+  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; }, get permissions() { return matrix; }, get shop() { return shop; }, get pointBaht() { return pointBaht; }, canAccessTab };
   window.poswaiAuth = state;
 
   const accountButton = document.createElement('button');
@@ -38,11 +42,45 @@
     <p id="poswaiAuthDescription">ใช้รหัสพนักงานและ PIN ส่วนตัว</p>
     <div id="poswaiLoginPanel">
       <form id="poswaiLoginForm">
+        <label for="poswaiShopCode">รหัสร้าน</label><input id="poswaiShopCode" name="shop" autocomplete="organization" placeholder="เช่น baan-kaew" required>
         <label for="poswaiStaffId">รหัสพนักงาน</label><input id="poswaiStaffId" name="staff_id" type="number" min="1" inputmode="numeric" autocomplete="username" required>
         <label for="poswaiStaffPin">PIN</label><input id="poswaiStaffPin" name="pin" type="password" minlength="8" autocomplete="current-password" required>
         <p class="poswai-auth-error" id="poswaiLoginError" role="alert"></p>
         <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseLogin">ปิด</button></div>
       </form>
+      <p class="poswai-auth-switch">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
+    </div>
+    <div id="poswaiSignupPanel" hidden>
+      <form id="poswaiSignupForm">
+        <label for="poswaiShopName">ชื่อร้าน</label><input id="poswaiShopName" maxlength="80" required>
+        <label for="poswaiNewSlug">รหัสร้าน (ใช้ตอนเข้าสู่ระบบ)</label><input id="poswaiNewSlug" maxlength="30" pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]" placeholder="a-z ตัวเลข และขีดกลาง" required>
+        <p class="poswai-auth-hint" id="poswaiSlugHint" role="status"></p>
+        <label for="poswaiOwnerName">ชื่อเจ้าของร้าน</label><input id="poswaiOwnerName" maxlength="100" required>
+        <label for="poswaiOwnerPhone">เบอร์โทร</label><input id="poswaiOwnerPhone" type="tel" maxlength="20" required>
+        <label for="poswaiOwnerPin">ตั้ง PIN เจ้าของร้าน (อย่างน้อย 8 ตัวอักษร)</label><input id="poswaiOwnerPin" type="password" minlength="8" autocomplete="new-password" required>
+        <label class="poswai-auth-check"><input type="checkbox" id="poswaiAcceptTerms" required> ยอมรับเงื่อนไขการใช้งานและนโยบายข้อมูลส่วนบุคคล</label>
+        <p class="poswai-auth-error" id="poswaiSignupError" role="alert"></p>
+        <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiSignupSubmit">เปิดร้าน</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseSignup">ปิด</button></div>
+      </form>
+      <p class="poswai-auth-switch">มีร้านแล้ว? <button type="button" id="poswaiBackToLogin">เข้าสู่ระบบ</button></p>
+    </div>
+    <div id="poswaiMemberPanel" hidden>
+      <div id="poswaiMemberJoin">
+        <form id="poswaiMemberForm">
+          <label for="poswaiMemberName">ชื่อที่ให้ร้านเรียก</label><input id="poswaiMemberName" maxlength="100">
+          <label for="poswaiMemberPhone">เบอร์โทร (ใช้บอกพนักงานตอนสะสมแต้ม)</label><input id="poswaiMemberPhone" type="tel" maxlength="20" required>
+          <label class="poswai-auth-check"><input type="checkbox" id="poswaiMemberConsent"> ยินยอมรับข่าวสารและโปรโมชันทาง LINE</label>
+          <p class="poswai-auth-error" id="poswaiMemberError" role="alert"></p>
+          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiMemberSubmit">สมัครด้วย LINE</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseMember">ปิด</button></div>
+        </form>
+      </div>
+      <div class="poswai-member-card" id="poswaiMemberCard" hidden>
+        <span>แต้มสะสม</span>
+        <strong id="poswaiMemberPoints">0</strong>
+        <p id="poswaiMemberSummary"></p>
+        <ul id="poswaiMemberHistory"></ul>
+        <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiCloseMemberCard">ปิด</button></div>
+      </div>
     </div>
     <div id="poswaiManagerPanel" hidden>
       <form id="poswaiStaffForm">
@@ -90,16 +128,30 @@
     $('#poswaiAuthDescription').textContent = 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ';
     $('#poswaiManagerError').textContent = '';
   };
-  const open = (manager = false) => {
-    if (manager) showCreateForm();
+  const PANELS = {
+    login: ['เข้าสู่ระบบ POS WAI', 'ใส่รหัสร้าน รหัสพนักงาน และ PIN ส่วนตัว', '#poswaiShopCode'],
+    manager: ['จัดการบัญชีพนักงาน', 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ', '#poswaiNewName'],
+    signup: ['เปิดร้านของคุณ', 'ใช้ฟรี 30 วัน ไม่ต้องใส่บัตรเครดิต', '#poswaiShopName'],
+    member: ['สมาชิกร้าน', 'สะสมแต้มทุกครั้งที่ซื้อ และรับโปรโมชันจากร้าน', '#poswaiMemberPhone'],
+  };
+  const open = (panel = 'login') => {
+    if (panel === true) panel = 'manager';
+    if (panel === 'manager') showCreateForm();
+    if (panel === 'login') {
+      $('#poswaiShopCode').value = $('#poswaiShopCode').value || (shop.slug === 'main' ? '' : shop.slug);
+      $('#poswaiShopCode').required = shop.slug !== 'main';
+    }
     $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
     if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
-    $('#poswaiLoginPanel').hidden = manager;
-    $('#poswaiManagerPanel').hidden = !manager;
-    $('#poswaiAuthTitle').textContent = manager ? 'จัดการบัญชีพนักงาน' : 'เข้าสู่ระบบ POS WAI';
-    $('#poswaiAuthDescription').textContent = manager ? 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ' : 'ใช้รหัสพนักงานและ PIN ส่วนตัว';
+    for (const name of Object.keys(PANELS)) {
+      const box = $(`#poswai${name[0].toUpperCase()}${name.slice(1)}Panel`);
+      if (box) box.hidden = name !== panel;
+    }
+    const [title, description, focus] = PANELS[panel];
+    $('#poswaiAuthTitle').textContent = title;
+    $('#poswaiAuthDescription').textContent = description;
     overlay.hidden = false;
-    (manager ? $('#poswaiNewName') : $('#poswaiStaffId')).focus();
+    $(focus)?.focus();
   };
   const close = () => { overlay.hidden = true; };
   const api = async (url, body) => {
@@ -111,7 +163,7 @@
   };
   const update = () => {
     // A demo peek only counts while the shop runs in preview mode.
-    const peeking = preview && sessionStorage.getItem('poswaiPreviewPeek') === '1';
+    const peeking = (preview || shop.is_demo) && sessionStorage.getItem('poswaiPreviewPeek') === '1';
     const locked = live && !current && !tableToken && !peeking;
     landing.hidden = !locked;
     document.body.classList.toggle('poswai-locked', locked);
@@ -145,10 +197,14 @@
     event.preventDefault();
     $('#poswaiLoginError').textContent = '';
     try {
+      const code = $('#poswaiShopCode').value.trim().toLowerCase();
       current = await api('/api/auth/login', {
         staff_id: Number($('#poswaiStaffId').value), pin: $('#poswaiStaffPin').value,
+        shop: code || undefined,
       });
       $('#poswaiStaffPin').value = '';
+      if (current.shop) shop = { ...shop, slug: current.shop, is_demo: false };
+      sessionStorage.removeItem('poswaiPreviewPeek');
       close(); update();
       if (typeof flushOfflineSyncQueue === 'function') flushOfflineSyncQueue();
     } catch (error) { $('#poswaiLoginError').textContent = error.message; }
@@ -177,6 +233,88 @@
     showCreateForm();
     $('#poswaiNewName').focus();
   });
+  $('#poswaiOpenSignup').addEventListener('click', () => open('signup'));
+  $('#poswaiBackToLogin').addEventListener('click', () => open('login'));
+  $('#poswaiCloseSignup').addEventListener('click', close);
+  let slugTimer;
+  $('#poswaiNewSlug').addEventListener('input', event => {
+    const field = event.currentTarget;
+    field.value = field.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const hint = $('#poswaiSlugHint');
+    clearTimeout(slugTimer);
+    if (field.value.length < 3) { hint.textContent = ''; return; }
+    slugTimer = setTimeout(async () => {
+      try {
+        const result = await (await fetch(`/api/shops/check?slug=${encodeURIComponent(field.value)}`)).json();
+        hint.textContent = !result.valid ? 'รหัสร้านใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว'
+          : result.available ? `ใช้ได้ · ลิงก์ร้านคุณคือ ${location.origin}/?shop=${result.slug}` : 'รหัสนี้มีคนใช้แล้ว';
+        hint.className = `poswai-auth-hint${result.valid && result.available ? ' ok' : ' bad'}`;
+      } catch (_) { hint.textContent = ''; }
+    }, 350);
+  });
+  $('#poswaiSignupForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = $('#poswaiSignupSubmit');
+    if (submit.disabled) return;
+    submit.disabled = true; submit.textContent = 'กำลังเปิดร้าน…';
+    $('#poswaiSignupError').textContent = '';
+    try {
+      const result = await api('/api/shops', {
+        shop_name: $('#poswaiShopName').value.trim(), slug: $('#poswaiNewSlug').value.trim(),
+        owner_name: $('#poswaiOwnerName').value.trim(), phone: $('#poswaiOwnerPhone').value.trim(),
+        pin: $('#poswaiOwnerPin').value, accept_terms: $('#poswaiAcceptTerms').checked,
+      });
+      $('#poswaiOwnerPin').value = '';
+      sessionStorage.removeItem('poswaiPreviewPeek');
+      // The new shop runs for real, so reload the page on its own address.
+      location.href = `/?shop=${encodeURIComponent(result.shop.slug)}`;
+    } catch (error) { $('#poswaiSignupError').textContent = error.message; }
+    finally { submit.disabled = false; submit.textContent = 'เปิดร้าน'; }
+  });
+
+  const showMemberCard = card => {
+    $('#poswaiMemberJoin').hidden = true;
+    $('#poswaiMemberCard').hidden = false;
+    $('#poswaiMemberPoints').textContent = `${card.points} แต้ม`;
+    $('#poswaiMemberSummary').textContent =
+      `${card.display_name || 'สมาชิก'} · ซื้อแล้ว ${card.completed_orders} ครั้ง · ทุก ${card.point_baht} บาท ได้ 1 แต้ม`;
+    $('#poswaiMemberHistory').replaceChildren(...(card.history || []).map(entry => {
+      const row = document.createElement('li');
+      row.textContent = `${entry.change > 0 ? '+' : ''}${entry.change} · ${entry.reason}`;
+      return row;
+    }));
+    try { localStorage.setItem('poswaiMemberPhone', card.phone || ''); } catch (_) { /* private browsing */ }
+  };
+  const joinMember = async () => {
+    const token = typeof getLineIdToken === 'function' ? await getLineIdToken() : '';
+    if (!token) throw new Error('เปิดหน้านี้จาก LINE แล้วเข้าสู่ระบบ LINE ก่อน จึงจะสมัครสมาชิกได้');
+    return api('/api/members/me', {
+      branch_id: state.branchId, line_id_token: token,
+      display_name: $('#poswaiMemberName').value.trim() || undefined,
+      phone: $('#poswaiMemberPhone').value.trim() || undefined,
+      marketing_opt_in: $('#poswaiMemberConsent').checked,
+    });
+  };
+  $('#poswaiMemberForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = $('#poswaiMemberSubmit');
+    if (submit.disabled) return;
+    submit.disabled = true; submit.textContent = 'กำลังสมัคร…';
+    $('#poswaiMemberError').textContent = '';
+    try { showMemberCard(await joinMember()); }
+    catch (error) { $('#poswaiMemberError').textContent = error.message; }
+    finally { submit.disabled = false; submit.textContent = 'สมัครด้วย LINE'; }
+  });
+  $('#poswaiCloseMember').addEventListener('click', close);
+  $('#poswaiCloseMemberCard').addEventListener('click', close);
+  const openMember = () => {
+    $('#poswaiMemberJoin').hidden = false;
+    $('#poswaiMemberCard').hidden = true;
+    $('#poswaiMemberError').textContent = '';
+    try { $('#poswaiMemberPhone').value ||= localStorage.getItem('poswaiMemberPhone') || ''; } catch (_) { /* private browsing */ }
+    open('member');
+  };
+
   const enterPreview = (tab) => {
     sessionStorage.setItem('poswaiPreviewPeek', '1');
     history.pushState({ poswaiPeek: 1 }, '', location.href);
@@ -204,7 +342,9 @@
     await api('/api/auth/logout', {}); current = null; update(); if (!tableToken) open();
   };
   window.poswaiAuth.logout = logout;
-  window.poswaiAuth.openLogin = () => open();
+  window.poswaiAuth.openLogin = () => open('login');
+  window.poswaiAuth.openSignup = () => open('signup');
+  window.poswaiAuth.openMember = openMember;
   window.poswaiAuth.enterPreview = enterPreview;
   Object.defineProperty(window.poswaiAuth, 'preview', { get: () => preview });
   window.poswaiAuth.openManager = () => { if (current?.role === 'manager' || current?.role === 'owner') open(true); };
@@ -218,9 +358,13 @@
   }).catch(() => { /* The built-in matrix above keeps the offline shell usable. */ });
   fetch('/api/config', { cache: 'no-store' }).then(response => response.json()).then(async config => {
     preview = !!config.preview_only;
+    shop = config.shop || shop;
+    pointBaht = config.point_baht || pointBaht;
     live = !preview || !!config.staff_live;
+    if (shop.is_demo) sessionStorage.setItem('poswaiPreviewPeek', '1');
+    window.dispatchEvent(new CustomEvent('poswai:shop-ready', { detail: shop }));
     document.body.classList.toggle('poswai-staff-live', !!config.staff_live);
-    if (!live) return;
+    if (!live) { update(); return; }
     if (!preview) {
       document.body.classList.add('poswai-live');
       sessionStorage.removeItem('poswaiPreviewPeek');

@@ -650,7 +650,7 @@
   </style>
   <link rel="stylesheet" href="/ui.css">
   <link rel="stylesheet" href="/assets/fonts.css">
-  <link rel="stylesheet" href="/workspace.css?v=19">
+  <link rel="stylesheet" href="/workspace.css?v=45">
   <link rel="stylesheet" href="/sales-redesign.css?v=19">
   <link rel="stylesheet" href="/ops-redesign.css?v=19">
   <link rel="stylesheet" href="/people-redesign.css?v=19">
@@ -659,8 +659,8 @@
   <link rel="stylesheet" href="/reports-restore.css?v=19">
   <link rel="stylesheet" href="/reports-live.css?v=20">
   <link rel="stylesheet" href="/service-call.css?v=19">
-  <link rel="stylesheet" href="/auth-ui.css?v=40">
-  <link rel="stylesheet" href="/landing.css?v=41">
+  <link rel="stylesheet" href="/auth-ui.css?v=44">
+  <link rel="stylesheet" href="/landing.css?v=42">
   <link rel="stylesheet" href="/payment-ui.css?v=21">
   <link rel="icon" href="/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/icon-192.png">
@@ -5014,8 +5014,18 @@
       if (config.preview_only) {
         state.previewOnly = true;
         const notice = document.createElement("div");
-        notice.textContent = "ตัวอย่าง POS WAI — การขาย การชำระเงิน และการแก้ข้อมูลบนเซิร์ฟเวอร์ยังปิดอยู่";
         notice.className = "preview-notice";
+        notice.append(config.shop?.is_demo
+          ? "ร้านตัวอย่าง — ลองกดได้ทุกปุ่ม ข้อมูลเป็นตัวอย่าง ไม่มีการบันทึกจริง"
+          : "ตัวอย่าง POS WAI — การขาย การชำระเงิน และการแก้ข้อมูลบนเซิร์ฟเวอร์ยังปิดอยู่");
+        if (config.shop?.is_demo) {
+          const leave = document.createElement("button");
+          leave.type = "button";
+          leave.className = "preview-notice-exit";
+          leave.textContent = "ออกจากร้านตัวอย่าง";
+          leave.onclick = () => { location.href = "/"; };
+          notice.append(leave);
+        }
         document.querySelector(".sim-topbar").prepend(notice);
       }
       if (!config.preview_only) flushOfflineSyncQueue();
@@ -5023,7 +5033,7 @@
     }).catch(() => {});
     renderAll();
   </script>
-  <script src="/workspace.js?v=19"></script>
+  <script src="/workspace.js?v=46"></script>
   <script src="/sales-redesign.js?v=19"></script>
   <script src="/ops-redesign.js?v=19"></script>
   <script src="/people-redesign.js?v=38"></script>
@@ -5032,12 +5042,12 @@
   <script src="/reports-restore.js?v=19"></script>
   <script src="/reports-live.js?v=31"></script>
   <script src="/service-call.js?v=19"></script>
-  <script src="/auth-ui.js?v=43"></script>
-  <script src="/landing.js?v=41"></script>
+  <script src="/auth-ui.js?v=46"></script>
+  <script src="/landing.js?v=42"></script>
   <script src="/payment-ui.js?v=21"></script>
-  <script src="/live-data.js?v=24"></script>
+  <script src="/live-data.js?v=25"></script>
   <script src="/inventory-live.js?v=23"></script>
-  <link rel="stylesheet" href="/commerce-ui.css?v=28">
-  <script src="/commerce-ui.js?v=27"></script>
+  <link rel="stylesheet" href="/commerce-ui.css?v=29">
+  <script src="/commerce-ui.js?v=30"></script>
 </body>
 </html>

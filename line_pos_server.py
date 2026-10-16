@@ -25,8 +25,10 @@ import base64
 import secrets
 import time
 import re
+import threading
 import httpx
 from contextlib import closing
+from contextvars import ContextVar
 from typing import List, Optional
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -48,11 +50,13 @@ from poswai_dossier import (DossierError, add_asset, add_timeline_entry, branch_
                             update_profile)
 from poswai_commerce import (create_order as create_commerce_order, init_commerce,
                              list_customers as commerce_customers, mark_handed_off,
-                             restore_cancelled_inventory, segment_for, upsert_customer)
+                             restore_cancelled_inventory, segment_for, upsert_customer, POINT_BAHT)
 from line_integration import (build_leave_flex, parse_leave_postback,
                               push_leave_request, verify_liff_id_token,
                               verify_webhook_signature)
 from line_notifications import enqueue as enqueue_line_notification, flush as flush_line_notifications, init_notifications
+import poswai_shops as shops
+from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
 
 async def _line_outbox_worker():
     while True:
@@ -107,6 +111,7 @@ TABLE_QR_SECRET = os.getenv("POSWAI_TABLE_QR_SECRET", "")
 SONGWAI_WEBHOOK_SECRET = os.getenv("SONGWAI_WEBHOOK_SECRET", "")
 SONGWAI_RESTAURANT_ID = int(os.getenv("SONGWAI_RESTAURANT_ID", "0"))
 SESSION_LIFETIME = 12 * 60 * 60
+MAX_SHOPS = int(os.getenv("POSWAI_MAX_SHOPS", "500"))
 # A cashier may cancel small unpaid orders alone; anything above these limits,
 # and every refund of money already taken, needs a manager or the owner.
 VOID_CASHIER_MAX_AMOUNT = float(os.getenv("POSWAI_VOID_CASHIER_MAX_AMOUNT", "200"))
@@ -170,13 +175,45 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # =====================================================================
 # 1. RELATIONAL DATABASE SCHEMA (5 หมวดหลักตาม ER-Diagram)
+# The shop a request belongs to. Background jobs and LINE/Songwai webhooks carry
+# no shop cookie, so they keep working on the original shop ("main").
+CURRENT_SHOP: ContextVar[str] = ContextVar("poswai_shop", default=MAIN_SHOP)
+_prepared_databases: set[Path] = set()
+_prepare_lock = threading.Lock()
+
+
+def current_db_path() -> Path:
+    """The open shop's database; other shops' files are created on first use.
+
+    The original shop is prepared once at start-up (init_db below), as before.
+    """
+    if CURRENT_SHOP.get() == MAIN_SHOP:
+        return DB_PATH
+    path = shops.shop_db_path(DB_PATH, CURRENT_SHOP.get())
+    if path not in _prepared_databases:
+        with _prepare_lock:
+            if path not in _prepared_databases:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                _prepared_databases.add(path)
+                try:
+                    init_db()
+                except Exception:
+                    _prepared_databases.discard(path)
+                    raise
+    return path
+
+
+def is_preview() -> bool:
+    return PREVIEW_ONLY or CURRENT_SHOP.get() == DEMO_SHOP
+
+
 def connect_db(timeout: float = 10.0) -> sqlite3.Connection:
     """Every connection shares the same concurrency settings.
 
     WAL lets the kitchen display keep reading while the cashier writes, and the
     busy timeout makes a locked database wait instead of failing a sale.
     """
-    conn = sqlite3.connect(DB_PATH, timeout=timeout)
+    conn = sqlite3.connect(current_db_path(), timeout=timeout)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=10000")
     conn.execute("PRAGMA synchronous=NORMAL")
@@ -185,7 +222,9 @@ def connect_db(timeout: float = 10.0) -> sqlite3.Connection:
 
 # =====================================================================
 def init_db() -> None:
-    conn = connect_db()
+    conn = sqlite3.connect(shops.shop_db_path(DB_PATH, CURRENT_SHOP.get()), timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
     cur = conn.cursor()
 
     # หมวดที่ 1: พนักงานและสาขา (branches & staffs)
@@ -395,7 +434,19 @@ def init_db() -> None:
         sick INTEGER NOT NULL DEFAULT 30,
         personal INTEGER NOT NULL DEFAULT 3,
         vacation INTEGER NOT NULL DEFAULT 6)""")
-    if BOOTSTRAP_MANAGER_PIN and not cur.execute("SELECT 1 FROM staffs LIMIT 1").fetchone():
+    # Loyalty points: the balance lives on the customer, every change in the ledger.
+    if "points" not in {row[1] for row in cur.execute("PRAGMA table_info(crm_customers)")}:
+        cur.execute("ALTER TABLE crm_customers ADD COLUMN points INTEGER NOT NULL DEFAULT 0")
+    cur.execute("""CREATE TABLE IF NOT EXISTS crm_point_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        customer_id INTEGER NOT NULL REFERENCES crm_customers(id),
+        change INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        staff_id INTEGER,
+        order_no TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+    if (CURRENT_SHOP.get() == MAIN_SHOP and BOOTSTRAP_MANAGER_PIN
+            and not cur.execute("SELECT 1 FROM staffs LIMIT 1").fetchone()):
         if len(BOOTSTRAP_MANAGER_PIN) < 8:
             raise RuntimeError("POSWAI_BOOTSTRAP_MANAGER_PIN must contain at least 8 characters")
         cur.execute("INSERT OR IGNORE INTO branches (id, name) VALUES (1, 'Main branch')")
@@ -414,7 +465,7 @@ def init_db() -> None:
 
 def hash_pin(pin: str) -> str:
     if len(pin) < 8 or len(pin) > 128:
-        raise HTTPException(400, "PIN must contain 8 to 128 characters")
+        raise HTTPException(400, "PIN ต้องยาว 8 ถึง 128 ตัวอักษร")
     salt = secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", pin.encode(), salt, 310_000)
     return f"pbkdf2_sha256$310000${salt.hex()}${digest.hex()}"
@@ -484,17 +535,47 @@ def role_permission_matrix():
     return {"tab_labels": TAB_LABELS, "roles": ROLE_PERMISSIONS}
 
 
+def _known_shop(slug: str) -> bool:
+    return slug in (MAIN_SHOP, DEMO_SHOP) or (
+        shops.get_shop(DB_PATH, slug) or {}).get("status") == "active"
+
+
+def _secure(request: Request) -> bool:
+    return request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0] == "https"
+
+
+def _remember_shop(request: Request, response: Response, slug: str) -> None:
+    # The demo is never remembered: leaving its page returns a visitor to the real service.
+    response.set_cookie("poswai_shop", slug, max_age=None if slug == DEMO_SHOP else 365 * 24 * 3600,
+                        httponly=True, secure=_secure(request), samesite="lax", path="/")
+
+
 @app.middleware("http")
 async def protect_preview(request: Request, call_next):
-    if PREVIEW_ONLY and request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD"):
+    requested = request.query_params.get("shop")
+    cookie_shop = request.cookies.get("poswai_shop", "")
+    document = request.method == "GET" and request.url.path in ("/", "/index.html")
+    if requested is not None:
+        slug = requested.strip().lower() or MAIN_SHOP
+    elif document and cookie_shop == DEMO_SHOP:
+        slug = MAIN_SHOP
+    else:
+        slug = cookie_shop or MAIN_SHOP
+    if not _known_shop(slug):
+        if requested is not None and request.url.path.startswith("/api/"):
+            return JSONResponse({"detail": "ไม่พบร้านนี้"}, status_code=404)
+        slug = MAIN_SHOP
+    CURRENT_SHOP.set(slug)
+    if is_preview() and request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD"):
         staff_path = request.url.path
-        allowed_staff_write = STAFF_LIVE and (
+        # Signing in and opening a new shop work from the demo page too.
+        allowed_staff_write = (slug == DEMO_SHOP and staff_path in ("/api/auth/login", "/api/shops")) or STAFF_LIVE and slug != DEMO_SHOP and (
             staff_path.startswith("/api/auth/") or staff_path == "/api/staff" or
             staff_path.startswith("/api/staff/") or staff_path == "/api/attendance" or
             staff_path.startswith("/api/line-liff/") or staff_path.startswith("/api/line-webhook") or
             staff_path.startswith("/api/line/notifications/"))
         if not allowed_staff_write:
-            return JSONResponse({"detail": "Preview mode: transactions are disabled"}, status_code=403)
+            return JSONResponse({"detail": "ร้านตัวอย่าง: บันทึกข้อมูลจริงไม่ได้"}, status_code=403)
     if request.method not in ("GET", "HEAD", "OPTIONS") and request.cookies.get("poswai_session"):
         origin = request.headers.get("origin")
         if origin:
@@ -502,8 +583,13 @@ async def protect_preview(request: Request, call_next):
             source = urlsplit(origin)
             forwarded_host = request.headers.get("x-forwarded-host", request.headers.get("host", ""))
             if source.netloc != forwarded_host or source.scheme not in ("https", "http"):
-                return JSONResponse({"detail": "Invalid request origin"}, status_code=403)
+                return JSONResponse({"detail": "คำขอมาจากแหล่งที่ไม่ถูกต้อง"}, status_code=403)
     response = await call_next(request)
+    if document and (requested is not None or cookie_shop != slug) and slug != cookie_shop:
+        if slug == MAIN_SHOP and requested is None:
+            response.delete_cookie("poswai_shop", path="/")
+        else:
+            _remember_shop(request, response, slug)
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Content-Type-Options"] = "nosniff"
     if request.url.path.startswith("/api/"):
@@ -514,7 +600,7 @@ async def protect_preview(request: Request, call_next):
 def require_staff(request: Request, roles: tuple[str, ...] = (), branch_id: int | None = None) -> dict:
     token = request.cookies.get("poswai_session", "")
     if len(token) != 64 or not re.fullmatch(r"[0-9a-f]{64}", token):
-        raise HTTPException(401, "Staff login required")
+        raise HTTPException(401, "กรุณาเข้าสู่ระบบพนักงานก่อน")
     with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
@@ -530,31 +616,51 @@ def require_staff(request: Request, roles: tuple[str, ...] = (), branch_id: int 
             conn.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
             row = None
     if not row or not row["is_active"]:
-        raise HTTPException(401, "Staff login required")
+        raise HTTPException(401, "กรุณาเข้าสู่ระบบพนักงานก่อน")
     staff = dict(row)
     if roles and staff["role"] not in roles:
-        raise HTTPException(403, "Staff role not permitted")
+        raise HTTPException(403, "สิทธิ์ของคุณใช้ส่วนนี้ไม่ได้")
     if branch_id is not None and staff["branch_id"] != branch_id:
-        raise HTTPException(403, "Staff branch not permitted")
+        raise HTTPException(403, "คุณไม่ได้อยู่สาขานี้")
     return staff
 
 
 class LoginRequest(BaseModel):
     staff_id: int
     pin: str
+    shop: Optional[str] = None
+
+
+def _open_session(request: Request, response: Response, conn: sqlite3.Connection, staff_id: int) -> int:
+    token = secrets.token_hex(32)
+    expires = int(time.time()) + SESSION_LIFETIME
+    conn.execute("DELETE FROM auth_sessions WHERE staff_id=? OR expires_at<=?", (staff_id, int(time.time())))
+    conn.execute("INSERT INTO auth_sessions (token_hash,staff_id,expires_at) VALUES (?,?,?)",
+                 (hashlib.sha256(token.encode()).hexdigest(), staff_id, expires))
+    response.set_cookie("poswai_session", token, max_age=SESSION_LIFETIME, httponly=True,
+                        secure=_secure(request), samesite="strict", path="/")
+    return expires
 
 
 @app.post("/api/auth/login")
 def staff_login(req: LoginRequest, request: Request, response: Response):
+    if req.shop is not None:
+        slug = req.shop.strip().lower() or MAIN_SHOP
+        if slug == DEMO_SHOP or not _known_shop(slug):
+            hash_pin("invalid-credentials")
+            raise HTTPException(401, "รหัสร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
+        CURRENT_SHOP.set(slug)
+    if CURRENT_SHOP.get() == DEMO_SHOP:
+        raise HTTPException(401, "ร้านตัวอย่างไม่มีบัญชีพนักงาน")
     if req.staff_id < 1 or len(req.pin) > 128:
-        raise HTTPException(401, "Invalid staff credentials")
+        raise HTTPException(401, "รหัสร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
     with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         now = int(time.time())
         attempt = conn.execute("SELECT failures,first_failed_at FROM auth_login_attempts WHERE staff_id=?",
                                (req.staff_id,)).fetchone()
         if attempt and attempt["failures"] >= 5 and now - attempt["first_failed_at"] < 900:
-            raise HTTPException(429, "Too many login attempts; try again in 15 minutes")
+            raise HTTPException(429, "ใส่ PIN ผิดหลายครั้ง กรุณารอ 15 นาทีแล้วลองใหม่")
         row = conn.execute("SELECT id,branch_id,name,role,is_active,pin_code_hash FROM staffs WHERE id=?", (req.staff_id,)).fetchone()
         # Always run a slow comparison so missing staff IDs do not provide a fast enumeration path.
         valid = verify_pin(req.pin, row["pin_code_hash"] if row else hash_pin("invalid-credentials"))
@@ -566,23 +672,17 @@ def staff_login(req: LoginRequest, request: Request, response: Response):
             else:
                 conn.execute("UPDATE auth_login_attempts SET failures=failures+1 WHERE staff_id=?", (req.staff_id,))
             conn.commit()
-            raise HTTPException(401, "Invalid staff credentials")
+            raise HTTPException(401, "รหัสร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
         today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
         locked = conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
                               (row["id"], today)).fetchone()
         if locked:
-            raise HTTPException(403, "Staff access is locked for this shift")
-        token = secrets.token_hex(32)
-        expires = int(time.time()) + SESSION_LIFETIME
+            raise HTTPException(403, "บัญชีนี้ถูกระงับสิทธิ์สำหรับกะวันนี้")
         conn.execute("DELETE FROM auth_login_attempts WHERE staff_id=?", (row["id"],))
-        conn.execute("DELETE FROM auth_sessions WHERE staff_id=? OR expires_at<=?", (row["id"], int(time.time())))
-        conn.execute("INSERT INTO auth_sessions (token_hash,staff_id,expires_at) VALUES (?,?,?)",
-                     (hashlib.sha256(token.encode()).hexdigest(), row["id"], expires))
-    secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0] == "https"
-    response.set_cookie("poswai_session", token, max_age=SESSION_LIFETIME, httponly=True,
-                        secure=secure, samesite="strict", path="/")
+        expires = _open_session(request, response, conn, row["id"])
+    _remember_shop(request, response, CURRENT_SHOP.get())
     return {"staff_id": row["id"], "branch_id": row["branch_id"], "name": row["name"],
-            "role": row["role"], "expires_at": expires}
+            "role": row["role"], "expires_at": expires, "shop": CURRENT_SHOP.get()}
 
 
 @app.get("/api/auth/session")
@@ -621,13 +721,13 @@ class StaffCreate(BaseModel):
 def create_staff(req: StaffCreate, request: Request):
     manager = require_staff(request, roles=("manager", "owner"))
     if not req.name.strip() or len(req.name) > 100 or req.role not in STAFF_ROLES:
-        raise HTTPException(400, "Invalid staff profile")
+        raise HTTPException(400, "ข้อมูลพนักงานไม่ถูกต้อง")
     if req.role == "manager" and manager["role"] != "owner":
-        raise HTTPException(403, "Only the owner can appoint a manager")
+        raise HTTPException(403, "เฉพาะเจ้าของร้านเท่านั้นที่ตั้งผู้จัดการได้")
     if req.line_user_id is not None and (not req.line_user_id or len(req.line_user_id) > 100):
-        raise HTTPException(400, "Invalid LINE user ID")
+        raise HTTPException(400, "LINE ID ไม่ถูกต้อง")
     if req.hourly_rate is not None and (not math.isfinite(req.hourly_rate) or not 0 <= req.hourly_rate <= 100000):
-        raise HTTPException(400, "Invalid hourly rate")
+        raise HTTPException(400, "ค่าแรงต่อชั่วโมงไม่ถูกต้อง")
     pin_hash = hash_pin(req.pin)
     with closing(connect_db()) as conn, conn:
         try:
@@ -640,7 +740,7 @@ def create_staff(req: StaffCreate, request: Request):
                                    (manager["branch_id"], req.line_user_id, req.name.strip(), req.role, pin_hash,
                                     req.hourly_rate))
         except sqlite3.IntegrityError as exc:
-            raise HTTPException(409, "Staff LINE identity already exists") from exc
+            raise HTTPException(409, "LINE นี้ผูกกับพนักงานคนอื่นแล้ว") from exc
         store_leave_quota(conn, cur.lastrowid, req.leave_quota.model_dump() if req.leave_quota else None)
     return {"staff_id": cur.lastrowid, "branch_id": manager["branch_id"], "name": req.name.strip(),
             "role": req.role, "hourly_rate": req.hourly_rate}
@@ -682,26 +782,26 @@ def update_staff_profile(staff_id: int, req: StaffProfileUpdate, request: Reques
     updates = req.model_dump(exclude_none=True)
     quota = updates.pop("leave_quota", None)
     if not updates and quota is None:
-        raise HTTPException(400, "No profile changes supplied")
+        raise HTTPException(400, "ไม่มีข้อมูลที่ต้องแก้")
     if "name" in updates and (not updates["name"].strip() or len(updates["name"]) > 100):
-        raise HTTPException(400, "Invalid staff name")
+        raise HTTPException(400, "ชื่อพนักงานไม่ถูกต้อง")
     if "role" in updates and updates["role"] not in STAFF_ROLES:
-        raise HTTPException(400, "Invalid staff role")
+        raise HTTPException(400, "สิทธิ์ที่เลือกไม่ถูกต้อง")
     if "hourly_rate" in updates and (not math.isfinite(updates["hourly_rate"]) or not 0 <= updates["hourly_rate"] <= 100000):
-        raise HTTPException(400, "Invalid hourly rate")
+        raise HTTPException(400, "ค่าแรงต่อชั่วโมงไม่ถูกต้อง")
     with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         target = conn.execute("SELECT id,branch_id,name,role,is_active FROM staffs WHERE id=?", (staff_id,)).fetchone()
         if not target or target["branch_id"] != actor["branch_id"]:
-            raise HTTPException(404, "Staff not found")
+            raise HTTPException(404, "ไม่พบพนักงานคนนี้")
         if not _can_manage_staff(actor, target):
-            raise HTTPException(403, "Cannot manage this staff account")
+            raise HTTPException(403, "คุณจัดการบัญชีนี้ไม่ได้")
         if target["role"] == "owner" and ("role" in updates or "is_active" in updates):
-            raise HTTPException(403, "Owner account cannot be demoted or disabled")
+            raise HTTPException(403, "บัญชีเจ้าของร้านลดสิทธิ์หรือปิดไม่ได้")
         if staff_id == actor["id"] and ("role" in updates or updates.get("is_active") is False):
-            raise HTTPException(403, "Cannot change your own access")
+            raise HTTPException(403, "เปลี่ยนสิทธิ์ของตัวเองไม่ได้")
         if updates.get("role") == "manager" and actor["role"] != "owner":
-            raise HTTPException(403, "Only the owner can appoint a manager")
+            raise HTTPException(403, "เฉพาะเจ้าของร้านเท่านั้นที่ตั้งผู้จัดการได้")
         if "name" in updates:
             updates["name"] = updates["name"].strip()
         if updates:
@@ -727,15 +827,15 @@ def set_staff_pos_access(staff_id: int, req: StaffPosAccess, request: Request):
         conn.row_factory = sqlite3.Row
         target = conn.execute("SELECT id,branch_id,role FROM staffs WHERE id=? AND is_active=1", (staff_id,)).fetchone()
         if not target or target["branch_id"] != actor["branch_id"]:
-            raise HTTPException(404, "Staff not found")
+            raise HTTPException(404, "ไม่พบพนักงานคนนี้")
         if not _can_manage_staff(actor, target) or target["role"] == "owner":
-            raise HTTPException(403, "Cannot change POS access for this account")
+            raise HTTPException(403, "คุณเปลี่ยนสิทธิ์ POS ของบัญชีนี้ไม่ได้")
         if staff_id == actor["id"]:
-            raise HTTPException(403, "Cannot change your own POS access")
+            raise HTTPException(403, "ระงับสิทธิ์ของตัวเองไม่ได้")
         current = conn.execute("SELECT status FROM staff_shifts WHERE staff_id=? AND work_date=?",
                                (staff_id, today)).fetchone()
         if current and current["status"] == "on_leave":
-            raise HTTPException(409, "Approved leave controls POS access for this day")
+            raise HTTPException(409, "วันนี้ลาอนุมัติแล้ว ระบบคุมสิทธิ์ให้เอง")
         # A manager suspending access is recorded as its own state, never as absence.
         status = "suspended" if req.locked else (
             "scheduled" if current and current["status"] in ("suspended", "absent")
@@ -761,9 +861,9 @@ def reset_staff_pin(staff_id: int, req: StaffPinReset, request: Request):
         conn.row_factory = sqlite3.Row
         target = conn.execute("SELECT id,branch_id,role FROM staffs WHERE id=?", (staff_id,)).fetchone()
         if not target or target["branch_id"] != actor["branch_id"]:
-            raise HTTPException(404, "Staff not found")
+            raise HTTPException(404, "ไม่พบพนักงานคนนี้")
         if not _can_manage_staff(actor, target) or target["role"] == "owner":
-            raise HTTPException(403, "Cannot reset this staff PIN")
+            raise HTTPException(403, "คุณตั้ง PIN ใหม่ให้บัญชีนี้ไม่ได้")
         conn.execute("UPDATE staffs SET pin_code_hash=? WHERE id=?", (pin_hash, staff_id))
         conn.execute("DELETE FROM auth_sessions WHERE staff_id=?", (staff_id,))
     return {"staff_id": staff_id, "status": "pin_reset"}
@@ -782,17 +882,20 @@ def _table_signature(payload: bytes) -> str:
 def issue_table_token(req: TableTokenRequest, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
     if len(TABLE_QR_SECRET) < 32:
-        raise HTTPException(503, "Table QR signing is not configured")
+        raise HTTPException(503, "ยังไม่ได้ตั้งค่ากุญแจ QR โต๊ะ")
     if req.branch_id < 1 or not re.fullmatch(r"[\w\- ]{1,24}", req.table_no, re.UNICODE):
-        raise HTTPException(400, "Invalid table")
+        raise HTTPException(400, "โต๊ะไม่ถูกต้อง")
     with closing(connect_db()) as conn, conn:
         if not conn.execute("SELECT 1 FROM branches WHERE id=?", (req.branch_id,)).fetchone():
-            raise HTTPException(404, "Branch not found")
+            raise HTTPException(404, "ไม่พบสาขานี้")
     expires = int(time.time()) + 30 * 24 * 3600
-    payload = json.dumps({"b": req.branch_id, "t": req.table_no, "e": expires},
+    payload = json.dumps({"b": req.branch_id, "t": req.table_no, "e": expires, "s": CURRENT_SHOP.get()},
                          sort_keys=True, separators=(",", ":")).encode()
     encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
-    return {"token": encoded + "." + _table_signature(payload), "expires_at": expires}
+    token = encoded + "." + _table_signature(payload)
+    from urllib.parse import urlencode
+    return {"token": token, "expires_at": expires,
+            "url": "/?" + urlencode({"shop": CURRENT_SHOP.get(), "table_token": token})}
 
 
 def require_table_or_staff(request: Request, branch_id: int, table_no: str) -> None:
@@ -805,16 +908,17 @@ def require_table_or_staff(request: Request, branch_id: int, table_no: str) -> N
                 raise
     token = request.headers.get("x-table-token", "")
     if len(TABLE_QR_SECRET) < 32 or len(token) > 512 or "." not in token:
-        raise HTTPException(401, "Staff login or table QR token required")
+        raise HTTPException(401, "ต้องเข้าสู่ระบบพนักงาน หรือสแกน QR ที่โต๊ะ")
     try:
         encoded, signature = token.split(".", 1)
         payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
         data = json.loads(payload)
         valid = hmac.compare_digest(signature, _table_signature(payload))
-        if not valid or data["b"] != branch_id or data["t"] != table_no or data["e"] < int(time.time()):
+        if (not valid or data["b"] != branch_id or data["t"] != table_no or data["e"] < int(time.time())
+                or data.get("s", MAIN_SHOP) != CURRENT_SHOP.get()):
             raise ValueError("Invalid table token")
     except (ValueError, KeyError, TypeError):
-        raise HTTPException(403, "Invalid or expired table QR token")
+        raise HTTPException(403, "QR โต๊ะไม่ถูกต้องหรือหมดอายุแล้ว")
 
 
 class OrderItem(BaseModel):
@@ -957,7 +1061,7 @@ def create_service_call(req: ServiceCallCreate, request: Request):
 @app.get("/api/service-calls")
 def list_service_calls(request: Request, branch_id: int = 1):
     if branch_id < 1:
-        raise HTTPException(400, "Invalid branch")
+        raise HTTPException(400, "สาขาไม่ถูกต้อง")
     require_staff(request, roles=("owner", "manager", "cashier", "service"), branch_id=branch_id)
     with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
@@ -1300,7 +1404,7 @@ def confirm_online_payment(order_no: str, request: Request):
 def get_crm_customers(request: Request, branch_id: int = 1, segment: str = "all"):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     if segment not in ("all", "new", "returning", "dormant30"):
-        raise HTTPException(400, "Invalid customer segment")
+        raise HTTPException(400, "กลุ่มลูกค้าไม่ถูกต้อง")
     with closing(connect_db()) as conn:
         customers = commerce_customers(conn, branch_id, segment)
     return {"branch_id": branch_id, "segment": segment, "customers": customers}
@@ -1315,7 +1419,7 @@ class CustomerConsent(BaseModel):
 @app.post("/api/crm/me/consent")
 def set_customer_consent(req: CustomerConsent):
     if req.branch_id < 1:
-        raise HTTPException(400, "Invalid branch")
+        raise HTTPException(400, "สาขาไม่ถูกต้อง")
     line_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -1444,7 +1548,7 @@ def create_order(req: OrderCreate, request: Request):
 @app.get("/api/orders")
 def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
     if branch_id < 1:
-        raise HTTPException(400, "Invalid branch")
+        raise HTTPException(400, "สาขาไม่ถูกต้อง")
     if table_no:
         require_table_or_staff(request, branch_id, table_no)
     else:
@@ -1775,7 +1879,7 @@ def _dossier_reader(request: Request, staff_id: int, conn: sqlite3.Connection) -
     actor = require_staff(request)
     owner_row = conn.execute("SELECT branch_id,role FROM staffs WHERE id=?", (staff_id,)).fetchone()
     if not owner_row:
-        raise HTTPException(404, "Staff not found")
+        raise HTTPException(404, "ไม่พบพนักงานคนนี้")
     if actor["id"] == staff_id:
         return actor
     if actor["role"] not in ("manager", "owner") or actor["branch_id"] != owner_row[0]:
@@ -1788,7 +1892,7 @@ def _dossier_editor(request: Request, staff_id: int, conn: sqlite3.Connection) -
     conn.row_factory = sqlite3.Row
     target = conn.execute("SELECT id,branch_id,role FROM staffs WHERE id=?", (staff_id,)).fetchone()
     if not target or target["branch_id"] != actor["branch_id"]:
-        raise HTTPException(404, "Staff not found")
+        raise HTTPException(404, "ไม่พบพนักงานคนนี้")
     if not _can_manage_staff(actor, target) and actor["id"] != staff_id:
         raise HTTPException(403, "Cannot edit this staff dossier")
     return actor
@@ -1892,14 +1996,14 @@ def record_attendance(req: AttendanceCreate, request: Request):
         if not target or not target[1]:
             raise HTTPException(404, "Active staff not found")
         if target[0] != staff["branch_id"]:
-            raise HTTPException(403, "Staff branch not permitted")
+            raise HTTPException(403, "คุณไม่ได้อยู่สาขานี้")
         if req.staff_id != staff["id"] and staff["role"] == "manager" and target[2] in ("manager", "owner"):
             raise HTTPException(403, "Manager cannot record another manager's attendance")
         today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
         locked = conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
                               (req.staff_id, today)).fetchone()
         if locked:
-            raise HTTPException(403, "Staff access is locked for this shift")
+            raise HTTPException(403, "บัญชีนี้ถูกระงับสิทธิ์สำหรับกะวันนี้")
     with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
         existing_event = cur.execute("SELECT staff_id,action FROM attendance_events WHERE event_id=?", (req.event_id,)).fetchone()
@@ -1934,7 +2038,7 @@ class StaffPayRate(BaseModel):
 def set_staff_pay_rate(staff_id: int, req: StaffPayRate, request: Request):
     manager = require_staff(request, roles=("manager", "owner"))
     if not math.isfinite(req.hourly_rate) or req.hourly_rate < 0 or req.hourly_rate > 100000:
-        raise HTTPException(400, "Invalid hourly rate")
+        raise HTTPException(400, "ค่าแรงต่อชั่วโมงไม่ถูกต้อง")
     with closing(connect_db()) as conn, conn:
         changed = conn.execute("UPDATE staffs SET hourly_rate=? WHERE id=? AND branch_id=? AND is_active=1",
                                (req.hourly_rate, staff_id, manager["branch_id"]))
@@ -2064,7 +2168,7 @@ def staff_payroll(request: Request, month: str, branch_id: int = 1):
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
         raise HTTPException(400, "month must be YYYY-MM")
     if branch_id < 1:
-        raise HTTPException(400, "Invalid branch")
+        raise HTTPException(400, "สาขาไม่ถูกต้อง")
     start = datetime.date.fromisoformat(f"{month}-01")
     end = (start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
     with closing(connect_db()) as conn, conn:
@@ -2421,7 +2525,7 @@ def calculate_pooled_commission_divisor(work_date: str) -> int:
 def get_executive_analytics_dashboard(request: Request, benchmark: str = "WOW", branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     try:
-        return build_analytics_dashboard(DB_PATH, benchmark, branch_id)
+        return build_analytics_dashboard(current_db_path(), benchmark, branch_id)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -2487,8 +2591,226 @@ def serve_icon(size: int):
 
 @app.get("/api/config")
 def public_config():
-    return {"promptpay_id": PROMPTPAY_ID, "line_liff_id": LINE_LIFF_ID,
-            "preview_only": PREVIEW_ONLY, "staff_live": STAFF_LIVE}
+    slug = CURRENT_SHOP.get()
+    shop = shops.get_shop(DB_PATH, slug) if slug not in (MAIN_SHOP, DEMO_SHOP) else None
+    return {"promptpay_id": shop["promptpay_id"] if shop else (PROMPTPAY_ID if slug == MAIN_SHOP else ""),
+            "line_liff_id": LINE_LIFF_ID, "preview_only": is_preview(),
+            "staff_live": STAFF_LIVE and slug != DEMO_SHOP,
+            "shop": {"slug": slug, "name": shop["name"] if shop else "",
+                     "is_demo": slug == DEMO_SHOP, "trial_ends_at": shop["trial_ends_at"] if shop else None},
+            "point_baht": POINT_BAHT}
+
+
+# =====================================================================
+# Opening a new shop
+class ShopSignup(BaseModel):
+    shop_name: str
+    slug: str
+    owner_name: str
+    phone: str
+    pin: str
+    accept_terms: bool
+
+
+@app.get("/api/shops/check")
+def check_shop_slug(slug: str):
+    slug = slug.strip().lower()
+    return {"slug": slug, "valid": shops.valid_slug(slug),
+            "available": shops.slug_available(DB_PATH, slug)}
+
+
+@app.post("/api/shops")
+def open_shop(req: ShopSignup, request: Request, response: Response):
+    slug = req.slug.strip().lower()
+    shop_name, owner_name = req.shop_name.strip(), req.owner_name.strip()
+    phone = re.sub(r"[\s-]", "", req.phone)
+    if not req.accept_terms:
+        raise HTTPException(400, "กรุณายอมรับเงื่อนไขการใช้งาน")
+    if not shop_name or len(shop_name) > 80 or not owner_name or len(owner_name) > 100:
+        raise HTTPException(400, "กรุณากรอกชื่อร้านและชื่อเจ้าของร้าน")
+    if not re.fullmatch(r"\+?\d{9,15}", phone):
+        raise HTTPException(400, "เบอร์โทรไม่ถูกต้อง")
+    if not shops.valid_slug(slug):
+        raise HTTPException(400, "รหัสร้านใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว")
+    pin_hash = hash_pin(req.pin)
+    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown")
+    try:
+        shop = shops.reserve_shop(DB_PATH, slug=slug, name=shop_name, owner_name=owner_name,
+                                  phone=phone, client_key=client, max_shops=MAX_SHOPS)
+    except ShopError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    CURRENT_SHOP.set(slug)
+    try:
+        with closing(connect_db()) as conn, conn:
+            conn.execute("INSERT INTO branches (id,name) VALUES (1,?)", (shop_name,))
+            cur = conn.execute("INSERT INTO staffs (branch_id,name,role,pin_code_hash) VALUES (1,?,'owner',?)",
+                               (owner_name, pin_hash))
+            store_leave_quota(conn, cur.lastrowid, None)
+            owner_id = cur.lastrowid
+            expires = _open_session(request, response, conn, owner_id)
+    except Exception:
+        _prepared_databases.discard(shops.shop_db_path(DB_PATH, slug))
+        shops.shop_db_path(DB_PATH, slug).unlink(missing_ok=True)
+        shops.release_shop(DB_PATH, slug)
+        raise
+    _remember_shop(request, response, slug)
+    return {"shop": {"slug": slug, "name": shop["name"], "trial_ends_at": shop["trial_ends_at"]},
+            "staff_id": owner_id, "branch_id": 1, "name": owner_name, "role": "owner",
+            "expires_at": expires}
+
+
+class ShopSettings(BaseModel):
+    name: Optional[str] = None
+    promptpay_id: Optional[str] = None
+
+
+@app.get("/api/shop/settings")
+def read_shop_settings(request: Request):
+    require_staff(request, roles=("owner",))
+    slug = CURRENT_SHOP.get()
+    shop = shops.get_shop(DB_PATH, slug)
+    if not shop:
+        return {"slug": slug, "name": "", "promptpay_id": PROMPTPAY_ID, "editable": False}
+    return {"slug": slug, "name": shop["name"], "promptpay_id": shop["promptpay_id"],
+            "trial_ends_at": shop["trial_ends_at"], "editable": True}
+
+
+@app.put("/api/shop/settings")
+def save_shop_settings(req: ShopSettings, request: Request):
+    require_staff(request, roles=("owner",))
+    slug = CURRENT_SHOP.get()
+    if not shops.get_shop(DB_PATH, slug):
+        raise HTTPException(409, "ร้านหลักตั้งค่าผ่านไฟล์ตั้งค่าเซิร์ฟเวอร์")
+    name = req.name.strip() if req.name is not None else None
+    promptpay = re.sub(r"[\s-]", "", req.promptpay_id) if req.promptpay_id is not None else None
+    if name is not None and (not name or len(name) > 80):
+        raise HTTPException(400, "ชื่อร้านต้องยาว 1–80 ตัวอักษร")
+    if promptpay and not re.fullmatch(r"\d{10}|\d{13}|\d{15}", promptpay):
+        raise HTTPException(400, "พร้อมเพย์ต้องเป็นเบอร์โทร 10 หลัก เลขบัตร 13 หลัก หรือ e-Wallet 15 หลัก")
+    shop = shops.update_shop(DB_PATH, slug, name=name, promptpay_id=promptpay)
+    if name is not None:
+        with closing(connect_db()) as conn, conn:
+            conn.execute("UPDATE branches SET name=? WHERE id=1", (name,))
+    return {"slug": slug, "name": shop["name"], "promptpay_id": shop["promptpay_id"]}
+
+
+# =====================================================================
+# Shop members: customers join with LINE and collect points
+class MemberJoin(BaseModel):
+    branch_id: int = 1
+    line_id_token: str
+    display_name: Optional[str] = None
+    phone: Optional[str] = None
+    marketing_opt_in: Optional[bool] = None
+
+
+def _member_card(conn: sqlite3.Connection, customer_id: int) -> dict:
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT id,display_name,phone,points,completed_orders,lifetime_cents,"
+                       "marketing_opt_in,created_at FROM crm_customers WHERE id=?", (customer_id,)).fetchone()
+    history = conn.execute("SELECT change,reason,created_at FROM crm_point_ledger WHERE customer_id=? "
+                           "ORDER BY id DESC LIMIT 10", (customer_id,)).fetchall()
+    return {"member_id": row["id"], "display_name": row["display_name"], "phone": row["phone"],
+            "points": row["points"], "completed_orders": row["completed_orders"],
+            "lifetime_amount": row["lifetime_cents"] / 100, "marketing_opt_in": bool(row["marketing_opt_in"]),
+            "member_since": row["created_at"], "point_baht": POINT_BAHT,
+            "history": [dict(item) for item in history]}
+
+
+@app.post("/api/members/me")
+def join_or_read_membership(req: MemberJoin):
+    if req.branch_id < 1:
+        raise HTTPException(400, "สาขาไม่ถูกต้อง")
+    if req.display_name is not None and len(req.display_name.strip()) > 100:
+        raise HTTPException(400, "ชื่อยาวเกินไป")
+    phone = re.sub(r"[\s-]", "", req.phone or "")
+    if phone and not re.fullmatch(r"\+?\d{9,15}", phone):
+        raise HTTPException(400, "เบอร์โทรไม่ถูกต้อง")
+    line_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
+    with closing(connect_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if not conn.execute("SELECT 1 FROM branches WHERE id=?", (req.branch_id,)).fetchone():
+            raise HTTPException(404, "ไม่พบสาขานี้")
+        customer_id = upsert_customer(conn, branch_id=req.branch_id, source="line", external_id=line_id,
+                                      display_name=(req.display_name or "").strip(), phone=phone,
+                                      marketing_opt_in=req.marketing_opt_in)
+        return _member_card(conn, customer_id)
+
+
+class CounterMember(BaseModel):
+    branch_id: int = 1
+    display_name: str
+    phone: str
+    marketing_opt_in: bool = False
+
+
+@app.post("/api/members")
+def register_member_at_counter(req: CounterMember, request: Request):
+    """Staff sign a walk-in customer up at the till, for customers who do not use LINE."""
+    require_staff(request, roles=("cashier", "manager", "owner"), branch_id=req.branch_id)
+    name = req.display_name.strip()
+    phone = re.sub(r"[\s-]", "", req.phone)
+    if not name or len(name) > 100:
+        raise HTTPException(400, "กรุณากรอกชื่อลูกค้า")
+    if not re.fullmatch(r"\+?\d{9,15}", phone):
+        raise HTTPException(400, "เบอร์โทรไม่ถูกต้อง")
+    with closing(connect_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM crm_customers WHERE branch_id=? AND phone=?",
+                        (req.branch_id, phone)).fetchone():
+            raise HTTPException(409, "เบอร์นี้เป็นสมาชิกอยู่แล้ว")
+        cur = conn.execute("INSERT INTO crm_customers(branch_id,display_name,phone,marketing_opt_in) "
+                           "VALUES(?,?,?,?)", (req.branch_id, name, phone, int(req.marketing_opt_in)))
+        return _member_card(conn, cur.lastrowid)
+
+
+class PointChange(BaseModel):
+    branch_id: int = 1
+    phone: str
+    spend_amount: Optional[float] = None
+    redeem_points: Optional[int] = None
+    note: str = ""
+
+
+@app.post("/api/members/points")
+def change_member_points(req: PointChange, request: Request):
+    staff = require_staff(request, roles=("cashier", "manager", "owner"), branch_id=req.branch_id)
+    phone = re.sub(r"[\s-]", "", req.phone)
+    if not re.fullmatch(r"\+?\d{9,15}", phone):
+        raise HTTPException(400, "เบอร์โทรไม่ถูกต้อง")
+    if (req.spend_amount is None) == (req.redeem_points is None):
+        raise HTTPException(400, "เลือกสะสมแต้มจากยอดซื้อ หรือใช้แต้ม อย่างใดอย่างหนึ่ง")
+    if req.spend_amount is not None and (not math.isfinite(req.spend_amount) or not 0 < req.spend_amount <= 1_000_000):
+        raise HTTPException(400, "ยอดซื้อไม่ถูกต้อง")
+    if req.redeem_points is not None and not 0 < req.redeem_points <= 1_000_000:
+        raise HTTPException(400, "จำนวนแต้มไม่ถูกต้อง")
+    if len(req.note) > 200:
+        raise HTTPException(400, "หมายเหตุยาวเกินไป")
+    with closing(connect_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute("SELECT id,points FROM crm_customers WHERE branch_id=? AND phone=?",
+                            (req.branch_id, phone)).fetchall()
+        if not rows:
+            raise HTTPException(404, "ไม่พบสมาชิกเบอร์นี้ สมัครสมาชิกให้ลูกค้าก่อน หรือให้ลูกค้าสมัครเองผ่าน LINE")
+        if len(rows) > 1:
+            raise HTTPException(409, "มีสมาชิกใช้เบอร์นี้มากกว่าหนึ่งคน กรุณาตรวจในหน้าสมาชิก")
+        customer_id, balance = rows[0]
+        if req.spend_amount is not None:
+            change, reason = int(req.spend_amount // POINT_BAHT), f"ซื้อ {req.spend_amount:,.2f} บาท"
+            if change == 0:
+                raise HTTPException(400, f"ยอดซื้อต้องถึง {POINT_BAHT} บาทจึงได้แต้ม")
+        else:
+            if req.redeem_points > balance:
+                raise HTTPException(409, f"แต้มไม่พอ มีอยู่ {balance} แต้ม")
+            change, reason = -req.redeem_points, "ใช้แต้ม"
+        if req.note.strip():
+            reason += " · " + req.note.strip()
+        conn.execute("UPDATE crm_customers SET points=points+?,updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                     (change, customer_id))
+        conn.execute("INSERT INTO crm_point_ledger(customer_id,change,reason,staff_id) VALUES(?,?,?,?)",
+                     (customer_id, change, reason, staff["id"]))
+        return {"change": change, **_member_card(conn, customer_id)}
 
 
 if __name__ == "__main__":

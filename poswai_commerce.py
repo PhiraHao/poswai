@@ -11,6 +11,9 @@ import sqlite3
 
 from poswai_catalog import deduct_inventory, quote_order
 
+# Members earn one point for every POINT_BAHT baht they spend.
+POINT_BAHT = 10
+
 
 def init_commerce(conn: sqlite3.Connection) -> None:
     conn.execute("""CREATE TABLE IF NOT EXISTS crm_customers (
@@ -154,9 +157,10 @@ def segment_for(row: sqlite3.Row, today: datetime.date | None = None) -> str:
 
 def list_customers(conn: sqlite3.Connection, branch_id: int, segment: str = "all") -> list[dict]:
     conn.row_factory = sqlite3.Row
-    rows = conn.execute("""SELECT id,display_name,phone,marketing_opt_in,completed_orders,
+    rows = conn.execute("""SELECT id,display_name,phone,marketing_opt_in,completed_orders,points,
         lifetime_cents,last_order_at,CASE WHEN line_user_id IS NULL THEN 0 ELSE 1 END AS line_linked,
-        CASE WHEN songwai_user_id IS NOT NULL THEN 'Songwai' ELSE 'LINE' END AS source
+        CASE WHEN songwai_user_id IS NOT NULL THEN 'Songwai'
+             WHEN line_user_id IS NOT NULL THEN 'LINE' ELSE 'สมัครที่ร้าน' END AS source
         FROM crm_customers WHERE branch_id=? ORDER BY COALESCE(last_order_at,created_at) DESC LIMIT 1000""",
         (branch_id,)).fetchall()
     result = []
@@ -180,6 +184,11 @@ def mark_handed_off(conn: sqlite3.Connection, order_no: str) -> bool:
         conn.execute("""UPDATE crm_customers SET completed_orders=completed_orders+1,
             lifetime_cents=lifetime_cents+?,last_order_at=CURRENT_TIMESTAMP,
             updated_at=CURRENT_TIMESTAMP WHERE id=?""", (round(amount * 100), row[0]))
+        earned = int(amount // POINT_BAHT)
+        if earned and {r[1] for r in conn.execute("PRAGMA table_info(crm_customers)")} >= {"points"}:
+            conn.execute("UPDATE crm_customers SET points=points+? WHERE id=?", (earned, row[0]))
+            conn.execute("INSERT INTO crm_point_ledger(customer_id,change,reason,order_no) VALUES(?,?,?,?)",
+                         (row[0], earned, "สั่งออนไลน์", order_no))
     return bool(changed)
 
 

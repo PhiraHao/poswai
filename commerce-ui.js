@@ -26,7 +26,7 @@
     <button data-pane="connectors" aria-selected="false">ช่องทางขาย</button></div>
     <div id="commerceNotice" class="commerce-alert" role="status"></div>
     <section class="commerce-pane" data-pane="orders"><div class="commerce-card"><div class="commerce-toolbar"><h2>รับออเดอร์ออนไลน์</h2><select id="commerceOrderFilter" aria-label="กรองออเดอร์"><option value="active">กำลังดำเนินการ</option><option value="all">ทั้งหมด</option></select><button id="commerceRefresh" class="commerce-btn secondary">รีเฟรช</button></div><div id="commerceOrders" class="commerce-list"></div></div></section>
-    <section class="commerce-pane" data-pane="members" hidden><div class="commerce-stats" id="commerceStats"></div><div class="commerce-card"><div class="commerce-toolbar"><h2>ลูกค้าร้าน</h2><select id="commerceSegment" aria-label="กลุ่มลูกค้า"><option value="all">ทั้งหมด</option><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></div><div id="commerceMembers" class="commerce-list"></div></div></section>
+    <section class="commerce-pane" data-pane="members" hidden><div class="commerce-stats" id="commerceStats"></div><div class="commerce-card"><h2>สมาชิกและแต้มสะสม</h2><p class="commerce-muted">ลูกค้าสมัครเองผ่าน LINE ได้ หรือพนักงานสมัครให้ที่หน้าร้านด้วยชื่อและเบอร์โทร จากนั้นบันทึกยอดซื้อเพื่อสะสมแต้ม หรือหักแต้มที่ลูกค้าขอใช้</p><form id="commerceJoinForm" class="commerce-form"><label>ชื่อลูกค้า<input name="display_name" maxlength="100" required></label><label>เบอร์โทร<input name="phone" type="tel" maxlength="20" required></label><label class="wide"><span><input name="consent" type="checkbox"> ลูกค้ายินยอมรับข่าวสารทาง LINE</span></label><button class="commerce-btn secondary" type="submit">สมัครสมาชิกให้ลูกค้า</button></form><p id="commerceJoinResult" role="status"></p><form id="commercePointForm" class="commerce-form"><label>เบอร์สมาชิก<input name="phone" type="tel" maxlength="20" required></label><label>ทำรายการ<select name="mode"><option value="earn">สะสมแต้มจากยอดซื้อ</option><option value="redeem">ใช้แต้ม</option></select></label><label id="commercePointValueLabel">ยอดซื้อ (บาท)<input name="value" type="number" min="1" step="0.01" required></label><label>หมายเหตุ<input name="note" maxlength="200"></label><button class="commerce-btn" type="submit">บันทึก</button></form><p id="commercePointResult" role="status"></p></div><div class="commerce-card"><div class="commerce-toolbar"><h2>ลูกค้าร้าน</h2><select id="commerceSegment" aria-label="กลุ่มลูกค้า"><option value="all">ทั้งหมด</option><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></div><div id="commerceMembers" class="commerce-list"></div></div></section>
     <section class="commerce-pane" data-pane="campaigns" hidden><div class="commerce-card"><h2>ส่งโปรโมชันผ่าน LINE OA</h2><p class="commerce-muted">ส่งเฉพาะผู้ที่ยินยอมรับข่าวสารและเชื่อม LINE แล้ว ตรวจข้อความและจำนวนผู้รับก่อนส่งทุกครั้ง</p><form id="commerceCampaignForm" class="commerce-form"><label>กลุ่มเป้าหมาย<select name="segment"><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></label><label class="wide">ข้อความ<textarea name="message" rows="4" maxlength="500" required></textarea></label><button class="commerce-btn" type="submit">สร้างฉบับร่าง</button></form><div id="commerceCampaignDraft" class="commerce-muted"></div></div></section>
     <section class="commerce-pane" data-pane="connectors" hidden><div class="commerce-card"><h2>Songwai · ร้านโคตรเนื้อ</h2><p class="commerce-muted">เตรียมเมนูจาก Songwai เป็นฉบับร่างก่อน เมนูจะยังไม่เปิดขายจนกว่าจะใส่สูตรและสต็อกจริง</p><button id="commerceImport" class="commerce-btn" type="button">เตรียมเมนูทั้ง 8 รายการ</button><div id="commerceMap" class="commerce-list"></div></div><div class="commerce-card"><h3>ออเดอร์จากแอปอื่น · พนักงานบันทึก</h3><p class="commerce-muted">ใช้เมื่อร้านได้รับออเดอร์ในแอปแล้ว จึงบันทึกเข้าคิวครัว POS WAI ช่องทางเหล่านี้ยังไม่ได้ดึงออเดอร์อัตโนมัติ</p><form id="commerceManualForm" class="commerce-form"><label>ช่องทาง<select name="channel"><option>GrabFood</option><option>LINE MAN</option><option>ShopeeFood</option><option>TikTok Shop</option><option>โทรศัพท์</option></select></label><label>เลขออเดอร์ในแอป<input name="external_order_id" required maxlength="80" pattern="[A-Za-z0-9_-]{2,80}"></label><label>วิธีรับอาหาร<select name="fulfillment"><option value="rider_pickup">ไรเดอร์มารับ</option><option value="self_pickup">ลูกค้ามารับเอง</option></select></label><label>ชื่อลูกค้า<input name="customer_name" maxlength="100"></label><label>เบอร์โทร<input name="contact_phone" maxlength="30"></label><div class="wide commerce-menu-lines" id="commerceManualMenu"></div><button class="commerce-btn" type="submit">บันทึกเข้าคิวครัว</button></form><p id="commerceManualResult" role="status"></p></div></section>`;
   crm.querySelector('.module-intro')?.after(shell);
@@ -63,6 +63,47 @@
       await loadOrders();
     } catch(error) { notice(error.message); }
   });
+  shell.querySelector('#commerceJoinForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const result = shell.querySelector('#commerceJoinResult');
+    if (preview()) { result.textContent = 'ร้านตัวอย่างยังสมัครสมาชิกจริงไม่ได้'; return; }
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    try {
+      const card = await post('/api/members', {branch_id:branch(), display_name:String(data.get('display_name')).trim(),
+        phone:String(data.get('phone')).trim(), marketing_opt_in:!!data.get('consent')});
+      result.textContent = `สมัครให้ ${card.display_name} แล้ว · เริ่มที่ ${card.points} แต้ม`;
+      shell.querySelector('#commercePointForm [name="phone"]').value = card.phone;
+      form.reset();
+      await loadMembers();
+    } catch (error) { result.textContent = error.message; }
+  });
+
+  const pointForm = shell.querySelector('#commercePointForm');
+  pointForm.querySelector('[name="mode"]').addEventListener('change', event => {
+    const earning = event.currentTarget.value === 'earn';
+    const label = shell.querySelector('#commercePointValueLabel');
+    label.firstChild.textContent = earning ? 'ยอดซื้อ (บาท)' : 'จำนวนแต้มที่ใช้';
+    const field = label.querySelector('input');
+    field.step = earning ? '0.01' : '1';
+  });
+  pointForm.addEventListener('submit', async event => {
+    event.preventDefault();
+    const result = shell.querySelector('#commercePointResult');
+    if (preview()) { result.textContent = 'ร้านตัวอย่างยังบันทึกแต้มจริงไม่ได้'; return; }
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const amount = Number(data.get('value'));
+    const body = {branch_id:branch(), phone:String(data.get('phone')).trim(), note:String(data.get('note') || '')};
+    if (data.get('mode') === 'earn') body.spend_amount = amount; else body.redeem_points = Math.round(amount);
+    try {
+      const card = await post('/api/members/points', body);
+      result.textContent = `${card.display_name || 'สมาชิก'} · ${card.change > 0 ? '+' : ''}${card.change} แต้ม · คงเหลือ ${card.points} แต้ม`;
+      form.reset();
+      await loadMembers();
+    } catch (error) { result.textContent = error.message; }
+  });
+
   async function loadMembers() {
     const box = shell.querySelector('#commerceMembers');
     if (!manager()) { box.textContent = 'ผู้จัดการเท่านั้นที่ดูข้อมูลสมาชิกได้'; return; }
@@ -71,7 +112,7 @@
       const segment = shell.querySelector('#commerceSegment').value;
       const rows = segment === 'all' ? all : all.filter(c => c.segment === segment);
       shell.querySelector('#commerceStats').innerHTML = [['ทั้งหมด',all.length],['ลูกค้าประจำ',all.filter(c=>c.segment==='returning').length],['หายไป 30 วัน',all.filter(c=>c.segment==='dormant30').length]].map(([label,count])=>`<div class="commerce-stat"><span>${label}</span><strong>${count}</strong></div>`).join('');
-      box.innerHTML = rows.length ? rows.map(c=>`<article class="commerce-row"><div class="commerce-row-head"><strong>${escapeHtml(c.display_name || 'ลูกค้า')}</strong><span class="commerce-pill ${c.marketing_opt_in?'green':'gray'}">${c.marketing_opt_in?'ยินยอมรับข่าวสาร':'ไม่รับข่าวสาร'}</span></div><small>${escapeHtml(c.phone || 'ไม่มีเบอร์')} · ${escapeHtml(c.source)} · ${c.completed_orders} ออเดอร์ · ${money(c.lifetime_amount)}</small><small>ล่าสุด ${escapeHtml(c.last_order_at || 'ยังไม่มีการซื้อ')} · ${escapeHtml(c.segment)}</small></article>`).join('') : 'ยังไม่มีลูกค้าในกลุ่มนี้';
+      box.innerHTML = rows.length ? rows.map(c=>`<article class="commerce-row"><div class="commerce-row-head"><strong>${escapeHtml(c.display_name || 'ลูกค้า')}</strong><span class="commerce-pill ${c.marketing_opt_in?'green':'gray'}">${c.marketing_opt_in?'ยินยอมรับข่าวสาร':'ไม่รับข่าวสาร'}</span></div><small>${escapeHtml(c.phone || 'ไม่มีเบอร์')} · ${escapeHtml(c.source)} · ${c.completed_orders} ออเดอร์ · ${money(c.lifetime_amount)} · ${Number(c.points || 0)} แต้ม</small><small>ล่าสุด ${escapeHtml(c.last_order_at || 'ยังไม่มีการซื้อ')} · ${escapeHtml(c.segment)}</small></article>`).join('') : 'ยังไม่มีลูกค้าในกลุ่มนี้';
     } catch(error) { box.textContent = `โหลดสมาชิกไม่ได้: ${error.message}`; }
   }
   shell.querySelector('#commerceSegment').addEventListener('change', loadMembers);
@@ -132,6 +173,8 @@
   });
   const customer=document.querySelector('#view-customer .module-intro');
   if (customer) {
+    const join=document.createElement('button'); join.type='button'; join.className='commerce-btn secondary commerce-pickup-open'; join.textContent='สมัครสมาชิก · ดูแต้มสะสม';
+    join.onclick=()=>window.poswaiAuth?.openMember?.(); customer.append(join);
     const open=document.createElement('button'); open.type='button'; open.className='commerce-btn commerce-pickup-open'; open.textContent='สั่งล่วงหน้า · รับที่ร้าน'; customer.append(open);
     const modal=document.createElement('div'); modal.className='commerce-modal'; modal.hidden=true;
     modal.innerHTML=`<div class="commerce-modal-card" role="dialog" aria-modal="true" aria-label="สั่งอาหารรับที่ร้าน"><div class="commerce-modal-head"><h2>สั่งล่วงหน้า รับที่ร้าน</h2><button class="commerce-btn secondary" id="pickupClose">ปิด</button></div><p class="commerce-muted">เลือกอาหาร แล้วลงชื่อเข้าใช้ LINE เพื่อยืนยันออเดอร์</p><form id="pickupForm" class="commerce-form"><div class="commerce-menu-lines wide" id="pickupMenu"></div><label>ชื่อผู้รับ<input name="name" maxlength="100" required></label><label>เบอร์โทร<input name="phone" type="tel" maxlength="30"></label><label class="wide"><span><input name="consent" type="checkbox"> ยินยอมรับโปรโมชันทาง LINE</span></label><button class="commerce-btn" type="submit">ยืนยันออเดอร์</button></form><p id="pickupResult" role="status"></p></div>`;

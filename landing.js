@@ -15,22 +15,95 @@
   window.addEventListener('resize', fit);
 
   const auth = () => window.poswaiAuth || {};
-  const openLine = () => window.open(LINE_OA, '_blank', 'noopener');
-  const demo = (tab) => {
-    if (auth().preview && auth().enterPreview) auth().enterPreview(tab);
-    else openLine();
+  /* The sample shop is a real shop on the server that refuses every change, so the
+     tour shows the working screens without touching anyone's sales. */
+  const sample = (tab) => {
+    try { if (tab) sessionStorage.setItem('poswaiSampleTab', tab); } catch (_) { /* private browsing */ }
+    location.href = '/?shop=demo';
   };
+  try {
+    const wanted = sessionStorage.getItem('poswaiSampleTab');
+    if (wanted) {
+      sessionStorage.removeItem('poswaiSampleTab');
+      window.addEventListener('poswai:shop-ready', () => {
+        setTimeout(() => document.querySelector(`.role-tab[onclick*="switchTab('${wanted}'"]`)?.click(), 60);
+      }, { once: true });
+    }
+  } catch (_) { /* private browsing */ }
+
+  /* Reference panels. Everything the top menu promises is answered on this page. */
+  const PANELS = {
+    price: ['ราคา', `
+      <p class="lp-panel-lead">ทดลองใช้ฟรี 30 วันเต็ม ไม่ต้องผูกบัตร ยกเลิกเมื่อไหร่ก็ได้ ข้อมูลของร้านเป็นของร้าน</p>
+      <div class="lp-plans">
+        <article><h3>เริ่มต้น</h3><strong>ฟรี</strong><span>30 วันแรก</span>
+          <ul><li>ทุกฟีเจอร์ ไม่จำกัด</li><li>1 สาขา พนักงานไม่จำกัด</li><li>รับออเดอร์ผ่าน QR ที่โต๊ะ</li></ul></article>
+        <article class="lp-plan-main"><h3>ร้านเดียว</h3><strong>399 บาท</strong><span>ต่อเดือน</span>
+          <ul><li>ทุกอย่างในแพ็กเริ่มต้น</li><li>รายงานยอดขายย้อนหลัง</li><li>สมาชิกและแต้มสะสม</li><li>ช่วยเหลือทาง LINE ในเวลาทำการ</li></ul></article>
+        <article><h3>หลายสาขา</h3><strong>คุยกันได้</strong><span>ตามจำนวนสาขา</span>
+          <ul><li>ทุกอย่างในแพ็กร้านเดียว</li><li>รวมรายงานทุกสาขา</li><li>ช่วยตั้งระบบให้ตอนเริ่ม</li></ul></article>
+      </div>
+      <p class="lp-panel-note">ราคานี้เป็นราคาแนะนำช่วงเปิดตัว ร้านที่เปิดใช้ในช่วงนี้ได้ราคานี้ตลอดอายุการใช้งาน</p>`],
+    devices: ['อุปกรณ์ที่ใช้ได้', `
+      <p class="lp-panel-lead">POS WAI ทำงานบนเบราว์เซอร์ ไม่ต้องลงโปรแกรม เครื่องที่ร้านมีอยู่แล้วใช้ได้เลย</p>
+      <div class="lp-devices">
+        <article><h3>แท็บเล็ตและมือถือ</h3><p>Android 8 ขึ้นไป หรือ iPad/iPhone iOS 14 ขึ้นไป เปิดผ่าน Chrome หรือ Safari แล้วกดเพิ่มลงหน้าจอหลัก ใช้เหมือนแอปได้เลย</p></article>
+        <article><h3>คอมพิวเตอร์</h3><p>Windows, Mac หรือ Chromebook ใช้ Chrome, Edge หรือ Safari รุ่นปัจจุบัน เหมาะกับเครื่องแคชเชียร์และจอครัว</p></article>
+        <article><h3>เครื่องพิมพ์ใบเสร็จ</h3><p>พิมพ์ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์ ใช้ได้กับเครื่องพิมพ์ความร้อน 58 มม. และ 80 มม. ที่ต่อกับเครื่องนั้น</p></article>
+        <article><h3>ลูกค้าสแกนสั่ง</h3><p>พิมพ์ QR ของแต่ละโต๊ะจากหน้าตั้งค่า ลูกค้าสแกนด้วยกล้องมือถือ เปิดเมนูได้ทันที ไม่ต้องโหลดแอป</p></article>
+        <article><h3>อินเทอร์เน็ตหลุด</h3><p>หน้ารับออเดอร์ยังเปิดใช้ได้ รายการที่ค้างจะส่งขึ้นระบบให้เองเมื่อเน็ตกลับมา</p></article>
+      </div>`],
+    help: ['ช่วยเหลือ', `
+      <p class="lp-panel-lead">เริ่มใช้งานได้ใน 10 นาที ทำตามลำดับนี้</p>
+      <ol class="lp-steps">
+        <li><strong>เปิดร้าน</strong> กดปุ่ม "ทดลองใช้ฟรี" ตั้งรหัสร้านและ PIN เจ้าของร้าน</li>
+        <li><strong>ใส่เมนู</strong> เข้าแท็บ สต็อก กรอกชื่อเมนูและราคา ใส่สูตรวัตถุดิบถ้าต้องการให้ตัดสต็อกเอง</li>
+        <li><strong>เพิ่มพนักงาน</strong> กดชื่อคุณมุมขวาบน เลือกเพิ่มพนักงาน ระบบจะให้รหัสพนักงานมาแจ้งเขา</li>
+        <li><strong>ติด QR ที่โต๊ะ</strong> สร้าง QR รายโต๊ะจากหน้าตั้งค่าโต๊ะ แล้วพิมพ์ไปติด</li>
+        <li><strong>เปิดขาย</strong> ออเดอร์เข้าจอครัวอัตโนมัติ แคชเชียร์รับเงินและปิดบิลได้ทันที</li>
+      </ol>
+      <h3 class="lp-panel-subtitle">คำถามที่พบบ่อย</h3>
+      <dl class="lp-faq">
+        <dt>ลืม PIN ทำอย่างไร</dt><dd>ให้เจ้าของร้านหรือผู้จัดการตั้ง PIN ใหม่ให้ในหน้าพนักงาน ถ้าลืม PIN เจ้าของร้าน ให้ทักหาทีมงานพร้อมรหัสร้าน</dd>
+        <dt>ข้อมูลร้านปนกับร้านอื่นไหม</dt><dd>ไม่ปน แต่ละร้านเก็บข้อมูลแยกคนละชุด เข้าถึงได้เฉพาะคนที่มีรหัสร้านและ PIN ของร้านนั้น</dd>
+        <dt>ย้ายข้อมูลจากระบบเดิมได้ไหม</dt><dd>ได้ ส่งไฟล์เมนูเดิมมาให้ทีมงานทาง LINE เราช่วยนำเข้าให้</dd>
+        <dt>ยกเลิกแล้วข้อมูลหายไหม</dt><dd>แจ้งก่อนยกเลิก เราส่งไฟล์ข้อมูลร้านคุณกลับให้</dd>
+      </dl>
+      <p class="lp-panel-note">ติดปัญหาเร่งด่วน ทักทีมงานทาง LINE ได้ทุกวัน <a href="${LINE_OA}" target="_blank" rel="noopener">เปิดแชท LINE</a></p>`],
+  };
+  const panel = document.createElement('div');
+  panel.className = 'lp-panel';
+  panel.hidden = true;
+  panel.innerHTML = `<div class="lp-panel-card" role="dialog" aria-modal="true" aria-labelledby="lpPanelTitle">
+    <div class="lp-panel-head"><h2 id="lpPanelTitle" tabindex="-1"></h2>
+    <button type="button" class="lp-panel-close" aria-label="ปิด">✕</button></div>
+    <div class="lp-panel-body"></div></div>`;
+  host.append(panel);
+  const closePanel = () => { panel.hidden = true; };
+  const openPanel = name => {
+    const [title, body] = PANELS[name];
+    panel.querySelector('#lpPanelTitle').textContent = title;
+    panel.querySelector('.lp-panel-body').innerHTML = body;
+    panel.hidden = false;
+    panel.querySelector('#lpPanelTitle').focus();
+  };
+  panel.querySelector('.lp-panel-close').addEventListener('click', closePanel);
+  panel.addEventListener('click', event => { if (event.target === panel) closePanel(); });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && !panel.hidden) closePanel(); });
+
   const actions = {
     login: () => auth().openLogin?.(),
-    trial: () => demo('customer'),
-    demo: () => demo('customer'),
+    trial: () => auth().openSignup?.(),
+    demo: () => sample('customer'),
     home: () => host.scrollTo({ top: 0, behavior: 'smooth' }),
     features: () => host.querySelector('#lpFeatures')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
-    price: openLine, devices: openLine, help: openLine,
-    stores: () => demo('customer'),
-    'tile-order': () => demo('customer'),
-    'tile-staff': () => auth().openLogin?.(),
-    'tile-sales': () => auth().openLogin?.(),
+    price: () => openPanel('price'),
+    devices: () => openPanel('devices'),
+    help: () => openPanel('help'),
+    stores: () => sample('customer'),
+    'tile-order': () => sample('customer'),
+    'tile-staff': () => sample('staff'),
+    'tile-sales': () => sample('analytics'),
   };
   host.addEventListener('click', (event) => {
     const target = event.target.closest('[data-lp]');

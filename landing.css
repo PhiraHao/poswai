@@ -151,6 +151,44 @@
 @media (max-width: 520px) {
 .lp-shows { grid-template-columns: 1fr; }
 }
+
+/* ---- reference panels (price, devices, help) ---------------------------- */
+.lp-panel { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 20px;
+  background: rgba(15, 23, 42, .55); overflow-y: auto; }
+.lp-panel[hidden] { display: none; }
+.lp-panel-card { width: min(760px, 100%); max-height: 86vh; overflow-y: auto; background: #fff;
+  border-radius: 22px; padding: 26px 28px 30px; box-shadow: 0 24px 60px rgba(15, 23, 42, .3); }
+.lp-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 6px; }
+.lp-panel-head h2 { margin: 0; font-size: 1.5rem; color: #10151d; outline: none; }
+.lp-panel-close { width: 38px; height: 38px; flex: none; border: 0; border-radius: 50%; background: #f1f5f9;
+  font-size: 1rem; color: #334155; }
+.lp-panel-close:hover { background: #e2e8f0; }
+.lp-panel-lead { margin: 0 0 18px; color: #475569; font-size: .98rem; line-height: 1.6; }
+.lp-panel-note { margin: 18px 0 0; padding: 13px 15px; background: #fffaf0; border: 1px solid #f7e4ac;
+  border-radius: 12px; color: #6b5a2e; font-size: .9rem; line-height: 1.6; }
+.lp-panel-note a { color: #0f6cc9; font-weight: 700; }
+.lp-panel-subtitle { margin: 24px 0 10px; font-size: 1.1rem; color: #10151d; }
+.lp-plans { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.lp-plans article { border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px 16px; }
+.lp-plan-main { border-color: #ffc928; box-shadow: 0 8px 20px rgba(255, 180, 20, .18); }
+.lp-plans h3 { margin: 0 0 6px; font-size: 1.05rem; color: #10151d; }
+.lp-plans strong { display: block; font-size: 1.5rem; color: #0f172a; }
+.lp-plans span { display: block; margin-bottom: 10px; color: #64748b; font-size: .85rem; }
+.lp-plans ul, .lp-steps { margin: 0; padding-left: 20px; color: #475569; font-size: .92rem; line-height: 1.75; }
+.lp-devices { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.lp-devices article { border: 1px solid #e2e8f0; border-radius: 16px; padding: 16px; }
+.lp-devices h3 { margin: 0 0 6px; font-size: 1rem; color: #10151d; }
+.lp-devices p { margin: 0; color: #475569; font-size: .9rem; line-height: 1.65; }
+.lp-steps li { margin-bottom: 6px; }
+.lp-steps strong { color: #10151d; }
+.lp-faq { margin: 0; color: #475569; font-size: .92rem; line-height: 1.65; }
+.lp-faq dt { font-weight: 700; color: #10151d; margin-top: 12px; }
+.lp-faq dd { margin: 4px 0 0; }
+@media (max-width: 640px) {
+  .lp-panel { padding: 12px; align-items: start; }
+  .lp-panel-card { padding: 20px 18px 24px; max-height: 92vh; }
+  .lp-panel-head h2 { font-size: 1.25rem; }
+}
 .lp-t-nav-home{color:#0d0e11;font-weight:600}
 .lp-t-nav-features{color:#45464a;font-weight:500}
 .lp-t-nav-price{color:#45464a;font-weight:500}

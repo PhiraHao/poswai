@@ -50,7 +50,7 @@
   const sync=()=>badge.classList.toggle('is-empty',document.getElementById('syncCount').textContent==='0');sync();
   new MutationObserver(sync).observe(document.getElementById('syncCount'),{childList:true,characterData:true,subtree:true});
   const header=document.querySelector('.sim-topbar');
-  const placeNotice=()=>{const notice=header.querySelector(':scope > .preview-notice');if(notice){notice.title='ระบบตัวอย่าง: การขาย การชำระเงิน และการบันทึกข้อมูลจริงยังปิดอยู่';notice.textContent='โหมดตัวอย่าง';document.querySelector('.net-controls').append(notice);}};
+  const placeNotice=()=>{const notice=header.querySelector(':scope > .preview-notice');if(notice){notice.title=notice.textContent;const exit=notice.querySelector('.preview-notice-exit');notice.textContent=exit?'ร้านตัวอย่าง':'โหมดตัวอย่าง';if(exit)notice.append(exit);document.querySelector('.net-controls').append(notice);}};
   new MutationObserver(placeNotice).observe(header,{childList:true});placeNotice();
   document.querySelectorAll('.module-intro p,.module-state').forEach(n=>n.hidden=true);
 })();
