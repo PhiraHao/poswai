@@ -129,3 +129,40 @@ python -m uvicorn line_pos_server:app --host 0.0.0.0 --port 8000
 ```
 
 Open `http://localhost:8000/`. Service workers require localhost or HTTPS.
+
+## Online pickup, Songwai, and LINE marketing (16 October 2026)
+
+POS WAI now has server-backed online pickup orders, a staff fulfillment queue,
+menu mapping for Songwai restaurant **โคตรเนื้อ** (restaurant ID `37`), and
+CRM segments (`new`, `returning`, `dormant30`). A handed-off paid order updates
+the customer's completed-order count and last visit. Cancelling an order
+restores its BOM inventory in the same transaction. Customer marketing consent
+is stored separately from order data. Campaigns start as drafts; a manager
+must explicitly submit a draft, and only opted-in, LINE-linked customers can
+receive a LINE OA push. LINE HTTP acceptance is recorded separately from
+delivery confirmation.
+
+Set `SONGWAI_RESTAURANT_ID=37` and a random `SONGWAI_WEBHOOK_SECRET` of at least
+32 characters on the POS WAI server. Songwai must hold the same secret and
+send a JSON POST to `https://poswai.zzaxstudio.com/api/integrations/songwai/orders`
+after its order is durably created. Sign the exact request body with
+`HMAC-SHA256(secret, <Unix-seconds> + "." + <raw-body>)`, then send headers
+`X-Songwai-Timestamp` and `X-Songwai-Signature: sha256=<hex digest>`.
+The body contains `order_id`, `restaurant_id: 37`, `user_id`, `delivery_mode`
+(`pickup` or `rider`), `payment_status` (`pending` or `paid`), and `items` with
+Songwai `menu_id` and `qty`. POS WAI ignores partner prices and uses its own
+catalog and BOM. Repeating the same `(restaurant_id, order_id)` does not
+deduct stock twice. Songwai should retain failed deliveries in a durable outbox
+and retry using the same order ID; do not treat a failed webhook as an accepted
+POS order.
+
+The existing Songwai restaurant's eight menu IDs are `480`–`483` and
+`1490`–`1493`. A manager must first enter the real POS menu, ingredient stocks,
+and BOM recipes, then map each Songwai item on the **ช่องทางขาย** tab. The public
+POS WAI deployment still has `POSWAI_PREVIEW_ONLY=1`, and Songwai's live order
+route currently has no pickup mode or POS webhook. Do not call the integration
+live or claim that either pickup flow is operating until those changes and an
+end-to-end order with a real menu are verified. Other delivery platforms remain
+unconnected. The existing staff features remain incomplete for live payroll:
+the overview, attendance, leave, commission, and payroll estimate APIs exist,
+but shift/rate setup and full live payroll checks are outstanding.

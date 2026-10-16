@@ -104,8 +104,8 @@
   window.poswaiLiveData = {refresh};
   const crmNav = document.querySelector('.role-tab[onclick*="\'crm\'"]');
   const hideUnsupported = () => {
-    if (crmNav) crmNav.hidden = true;
-    document.getElementById('view-crm')?.setAttribute('hidden', 'hidden');
+    if (crmNav) crmNav.hidden = false;
+    document.getElementById('view-crm')?.removeAttribute('hidden');
     document.querySelectorAll('#view-customer button[onclick*="quickAddNewMenuItem"],#view-customer button[onclick*="toggleManagerQuickEditMode"]').forEach(button => {
       button.disabled = true; button.title = 'ตั้งเมนูผ่านหน้าสต็อกของผู้จัดการ';
     });

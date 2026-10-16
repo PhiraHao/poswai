@@ -23,6 +23,7 @@ import base64
 import secrets
 import time
 import re
+import httpx
 from contextlib import closing
 from typing import List, Optional
 from pathlib import Path
@@ -32,6 +33,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pydantic import ValidationError
 from poswai_analytics import build_analytics_dashboard
 from poswai_commissions import allocate_commissions
 from poswai_inventory import (InventoryError, apply_inventory_movement,
@@ -39,6 +41,9 @@ from poswai_inventory import (InventoryError, apply_inventory_movement,
 from easyslip import SlipVerificationError, verify_bank_slip
 from poswai_catalog import (CatalogError, deduct_inventory, init_catalog,
                             list_menu_items, quote_order, upsert_menu_item, STATIONS)
+from poswai_commerce import (create_order as create_commerce_order, init_commerce,
+                             list_customers as commerce_customers, mark_handed_off, segment_for,
+                             upsert_customer)
 from line_integration import (build_leave_flex, parse_leave_postback,
                               push_leave_request, verify_liff_id_token,
                               verify_webhook_signature)
@@ -65,6 +70,8 @@ LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 PREVIEW_ONLY = os.getenv("POSWAI_PREVIEW_ONLY", "0") == "1"
 BOOTSTRAP_MANAGER_PIN = os.getenv("POSWAI_BOOTSTRAP_MANAGER_PIN", "")
 TABLE_QR_SECRET = os.getenv("POSWAI_TABLE_QR_SECRET", "")
+SONGWAI_WEBHOOK_SECRET = os.getenv("SONGWAI_WEBHOOK_SECRET", "")
+SONGWAI_RESTAURANT_ID = int(os.getenv("SONGWAI_RESTAURANT_ID", "0"))
 SESSION_LIFETIME = 12 * 60 * 60
 PAYROLL_REGULAR_HOURS_PER_DAY = float(os.getenv("POSWAI_REGULAR_HOURS_PER_DAY", "8"))
 PAYROLL_OT_MULTIPLIER = float(os.getenv("POSWAI_OT_MULTIPLIER", "1.5"))
@@ -269,6 +276,7 @@ def init_db() -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at)")
     init_catalog(conn)
     init_inventory_movements(conn)
+    init_commerce(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
         staff_id INTEGER PRIMARY KEY, failures INTEGER NOT NULL, first_failed_at INTEGER NOT NULL)""")
     if BOOTSTRAP_MANAGER_PIN and not cur.execute("SELECT 1 FROM staffs LIMIT 1").fetchone():
@@ -640,6 +648,361 @@ def acknowledge_service_call(event_id: str, request: Request):
     if not exists:
         raise HTTPException(404, "Service call not found")
     return {"event_id": event_id, "status": "acknowledged", "changed": bool(cursor.rowcount)}
+
+
+class OnlineOrderLine(BaseModel):
+    id: str | int
+    qty: int
+
+
+class OnlineOrderCreate(BaseModel):
+    event_id: str
+    branch_id: int = 1
+    fulfillment: str = "self_pickup"
+    items: list[OnlineOrderLine]
+    customer_name: str = ""
+    contact_phone: str = ""
+    line_id_token: str
+    marketing_opt_in: bool | None = None
+
+
+def _online_order_record(conn: sqlite3.Connection, order_no: str) -> dict:
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("""SELECT o.order_no,o.branch_id,o.source,o.external_id,o.fulfillment,
+        o.customer_name,o.contact_phone,o.pickup_code,o.payment_status,o.status,o.created_at,
+        e.total_amount FROM online_orders o JOIN order_events e ON e.order_no=o.order_no
+        WHERE o.order_no=?""", (order_no,)).fetchone()
+    if not row:
+        raise HTTPException(404, "Online order not found")
+    result = dict(row)
+    result["items"] = [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3]}
+                       for item in conn.execute("SELECT item_id,name,quantity,unit_price FROM order_items WHERE order_no=?", (order_no,))]
+    return result
+
+
+@app.post("/api/online/orders")
+def place_online_order(req: OnlineOrderCreate):
+    if req.branch_id < 1 or req.fulfillment != "self_pickup" or not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", req.event_id):
+        raise HTTPException(400, "Invalid online order")
+    if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
+        raise HTTPException(400, "Invalid customer details")
+    line_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute("""SELECT o.order_no,c.line_user_id FROM online_orders o
+            LEFT JOIN crm_customers c ON c.id=o.customer_id
+            WHERE o.branch_id=? AND o.source='poswai' AND o.external_id=?""",
+            (req.branch_id, req.event_id)).fetchone()
+        if existing:
+            if existing[1] != line_id:
+                raise HTTPException(409, "Order ID already used")
+            return _online_order_record(conn, existing[0])
+        customer_id = upsert_customer(conn, branch_id=req.branch_id, source="line",
+            external_id=line_id, display_name=req.customer_name.strip(),
+            phone=req.contact_phone.strip(), marketing_opt_in=req.marketing_opt_in)
+        try:
+            result = create_commerce_order(conn, branch_id=req.branch_id, source="poswai",
+                external_id=req.event_id, fulfillment="self_pickup",
+                items=[line.model_dump() for line in req.items], customer_id=customer_id,
+                customer_name=req.customer_name.strip(), contact_phone=req.contact_phone.strip())
+        except CatalogError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        return _online_order_record(conn, result["order_no"])
+
+
+class SongwaiOrderLine(BaseModel):
+    menu_id: int
+    qty: int
+
+
+class SongwaiOrderCreate(BaseModel):
+    order_id: int
+    restaurant_id: int
+    user_id: int | None = None
+    delivery_mode: str
+    customer_name: str = ""
+    contact_phone: str = ""
+    payment_status: str = "pending"
+    items: list[SongwaiOrderLine]
+
+
+@app.post("/api/integrations/songwai/orders")
+async def intake_songwai_order(request: Request):
+    if len(SONGWAI_WEBHOOK_SECRET) < 32 or SONGWAI_RESTAURANT_ID < 1:
+        raise HTTPException(503, "Songwai integration is not configured")
+    body = await request.body()
+    if len(body) > 64_000:
+        raise HTTPException(413, "Order payload too large")
+    stamp = request.headers.get("x-songwai-timestamp", "")
+    signature = request.headers.get("x-songwai-signature", "")
+    if not stamp.isdecimal() or abs(int(stamp) - int(time.time())) > 300:
+        raise HTTPException(401, "Invalid Songwai timestamp")
+    expected = hmac.new(SONGWAI_WEBHOOK_SECRET.encode(), stamp.encode() + b"." + body,
+                        hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, "sha256=" + expected):
+        raise HTTPException(401, "Invalid Songwai signature")
+    try:
+        req = SongwaiOrderCreate.model_validate_json(body)
+    except ValidationError as exc:
+        raise HTTPException(422, "Invalid Songwai order") from exc
+    if req.restaurant_id != SONGWAI_RESTAURANT_ID or req.order_id < 1:
+        raise HTTPException(403, "Unmapped Songwai restaurant")
+    if req.delivery_mode not in ("pickup", "rider") or req.payment_status not in ("pending", "paid"):
+        raise HTTPException(400, "Invalid Songwai fulfillment or payment state")
+    if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
+        raise HTTPException(400, "Invalid customer details")
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        external_id = str(req.order_id)
+        existing = conn.execute("SELECT order_no FROM online_orders WHERE branch_id=1 AND source='songwai' AND external_id=?",
+                                (external_id,)).fetchone()
+        if existing:
+            return _online_order_record(conn, existing[0])
+        mapped = []
+        for line in req.items:
+            row = conn.execute("""SELECT pos_item_id FROM songwai_menu_map
+                WHERE branch_id=1 AND restaurant_id=? AND songwai_menu_id=?""",
+                (req.restaurant_id, line.menu_id)).fetchone()
+            if not row:
+                raise HTTPException(409, f"Songwai menu {line.menu_id} is not mapped")
+            mapped.append({"id": row[0], "qty": line.qty})
+        customer_id = None
+        if req.user_id and req.user_id > 0:
+            customer_id = upsert_customer(conn, branch_id=1, source="songwai",
+                external_id=str(req.user_id), display_name=req.customer_name.strip(),
+                phone=req.contact_phone.strip())
+        try:
+            result = create_commerce_order(conn, branch_id=1, source="songwai",
+                external_id=external_id,
+                fulfillment="self_pickup" if req.delivery_mode == "pickup" else "rider_pickup",
+                items=mapped, customer_id=customer_id, customer_name=req.customer_name.strip(),
+                contact_phone=req.contact_phone.strip(), payment_status=req.payment_status)
+        except CatalogError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        return _online_order_record(conn, result["order_no"])
+
+
+class SongwaiMenuMap(BaseModel):
+    branch_id: int = 1
+    restaurant_id: int
+    songwai_menu_id: int
+    pos_item_id: str
+
+
+@app.put("/api/integrations/songwai/menu-map")
+def map_songwai_menu(req: SongwaiMenuMap, request: Request):
+    require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    if req.restaurant_id != SONGWAI_RESTAURANT_ID or req.songwai_menu_id < 1 or not req.pos_item_id.strip():
+        raise HTTPException(400, "Invalid Songwai menu mapping")
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        item = conn.execute("SELECT 1 FROM menu_catalog WHERE branch_id=? AND item_id=? AND active=1",
+                            (req.branch_id, req.pos_item_id.strip())).fetchone()
+        if not item:
+            raise HTTPException(409, "POS menu item must be active first")
+        conn.execute("""INSERT INTO songwai_menu_map(branch_id,restaurant_id,songwai_menu_id,pos_item_id)
+            VALUES(?,?,?,?) ON CONFLICT(branch_id,restaurant_id,songwai_menu_id)
+            DO UPDATE SET pos_item_id=excluded.pos_item_id""",
+            (req.branch_id, req.restaurant_id, req.songwai_menu_id, req.pos_item_id.strip()))
+    return {"status": "mapped", **req.model_dump()}
+
+
+@app.get("/api/integrations/songwai/menu-map")
+def list_songwai_menu_map(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        rows = conn.execute("""SELECT songwai_menu_id,pos_item_id FROM songwai_menu_map
+            WHERE branch_id=? AND restaurant_id=? ORDER BY songwai_menu_id""",
+            (branch_id, SONGWAI_RESTAURANT_ID)).fetchall()
+    return {"restaurant_id": SONGWAI_RESTAURANT_ID,
+            "mappings": [{"songwai_menu_id": row[0], "pos_item_id": row[1]} for row in rows]}
+
+
+@app.get("/api/integrations/songwai/catalog")
+def get_songwai_catalog(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    if SONGWAI_RESTAURANT_ID < 1:
+        raise HTTPException(503, "Songwai restaurant is not configured")
+    try:
+        response = httpx.get(f"https://songwai.online/api/restaurants/{SONGWAI_RESTAURANT_ID}/menus", timeout=8)
+        response.raise_for_status()
+        items = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(502, "Cannot load Songwai menu") from exc
+    if not isinstance(items, list):
+        raise HTTPException(502, "Invalid Songwai menu response")
+    return {"restaurant_id": SONGWAI_RESTAURANT_ID, "items": [
+        {"id": item.get("id"), "name": item.get("name") or item.get("name_th") or "",
+         "price": item.get("price")}
+        for item in items if isinstance(item, dict) and item.get("restaurant_id") == SONGWAI_RESTAURANT_ID
+    ]}
+
+
+@app.get("/api/online/orders")
+def list_online_orders(request: Request, branch_id: int = 1, status: str = "active"):
+    require_staff(request, branch_id=branch_id)
+    if status not in ("active", "all"):
+        raise HTTPException(400, "Invalid order filter")
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        query = "SELECT order_no FROM online_orders WHERE branch_id=?"
+        if status == "active":
+            query += " AND status NOT IN ('handed_off','cancelled')"
+        query += " ORDER BY created_at DESC LIMIT 200"
+        return {"orders": [_online_order_record(conn, row[0]) for row in conn.execute(query, (branch_id,)).fetchall()]}
+
+
+class OnlineStatusUpdate(BaseModel):
+    status: str
+
+
+@app.patch("/api/online/orders/{order_no}")
+def update_online_order(order_no: str, req: OnlineStatusUpdate, request: Request):
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT branch_id,status FROM online_orders WHERE order_no=?", (order_no,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Online order not found")
+        require_staff(request, roles=("manager", "owner", "cashier", "kitchen", "service"), branch_id=row[0])
+        allowed = {"new": {"accepted", "cancelled"}, "accepted": {"preparing", "cancelled"},
+                   "preparing": {"ready", "cancelled"}, "ready": {"handed_off"}}
+        if req.status == row[1]:
+            return _online_order_record(conn, order_no)
+        if req.status not in allowed.get(row[1], set()):
+            raise HTTPException(409, "Invalid order status transition")
+        if req.status == "handed_off":
+            if not conn.execute("SELECT 1 FROM online_orders WHERE order_no=? AND payment_status='paid'", (order_no,)).fetchone():
+                raise HTTPException(409, "Payment must be confirmed before handoff")
+            mark_handed_off(conn, order_no)
+        else:
+            if req.status == "cancelled":
+                from poswai_commerce import restore_cancelled_inventory
+                restore_cancelled_inventory(conn, row[0], order_no)
+            conn.execute("UPDATE online_orders SET status=?,ready_at=CASE WHEN ?='ready' THEN CURRENT_TIMESTAMP ELSE ready_at END WHERE order_no=?",
+                         (req.status, req.status, order_no))
+        return _online_order_record(conn, order_no)
+
+
+@app.patch("/api/online/orders/{order_no}/payment")
+def confirm_online_payment(order_no: str, request: Request):
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT branch_id,payment_status FROM online_orders WHERE order_no=?", (order_no,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Online order not found")
+        require_staff(request, roles=("manager", "owner", "cashier"), branch_id=row[0])
+        if row[1] != "paid":
+            conn.execute("UPDATE online_orders SET payment_status='paid' WHERE order_no=?", (order_no,))
+        return _online_order_record(conn, order_no)
+
+
+@app.get("/api/crm/customers")
+def get_crm_customers(request: Request, branch_id: int = 1, segment: str = "all"):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    if segment not in ("all", "new", "returning", "dormant30"):
+        raise HTTPException(400, "Invalid customer segment")
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        customers = commerce_customers(conn, branch_id, segment)
+    return {"branch_id": branch_id, "segment": segment, "customers": customers}
+
+
+class CustomerConsent(BaseModel):
+    branch_id: int = 1
+    line_id_token: str
+    marketing_opt_in: bool
+
+
+@app.post("/api/crm/me/consent")
+def set_customer_consent(req: CustomerConsent):
+    if req.branch_id < 1:
+        raise HTTPException(400, "Invalid branch")
+    line_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        customer_id = upsert_customer(conn, branch_id=req.branch_id, source="line",
+            external_id=line_id, marketing_opt_in=req.marketing_opt_in)
+    return {"customer_id": customer_id, "marketing_opt_in": req.marketing_opt_in}
+
+
+class CampaignDraft(BaseModel):
+    branch_id: int = 1
+    segment: str
+    message: str
+
+
+@app.post("/api/crm/campaigns")
+def create_campaign(req: CampaignDraft, request: Request):
+    manager = require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    if req.segment not in ("new", "returning", "dormant30") or not 1 <= len(req.message.strip()) <= 500:
+        raise HTTPException(400, "Invalid campaign")
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        audience = [c for c in commerce_customers(conn, req.branch_id, req.segment)
+                    if c["marketing_opt_in"] and c["line_linked"]]
+        cursor = conn.execute("INSERT INTO crm_campaigns(branch_id,segment,message,created_by) VALUES(?,?,?,?)",
+                              (req.branch_id, req.segment, req.message.strip(), manager["id"]))
+    return {"campaign_id": cursor.lastrowid, "status": "draft", "eligible_recipients": len(audience)}
+
+
+@app.get("/api/crm/campaigns/{campaign_id}")
+def get_campaign(campaign_id: int, request: Request):
+    with closing(sqlite3.connect(DB_PATH)) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT id,branch_id,segment,message,status,created_at,sent_at FROM crm_campaigns WHERE id=?",
+                           (campaign_id,)).fetchone()
+        if not row:
+            raise HTTPException(404, "Campaign not found")
+        require_staff(request, roles=("manager", "owner"), branch_id=row["branch_id"])
+        audience = [c for c in commerce_customers(conn, row["branch_id"], row["segment"])
+                    if c["marketing_opt_in"] and c["line_linked"]]
+        counts = dict(conn.execute("SELECT status,COUNT(*) FROM crm_campaign_deliveries WHERE campaign_id=? GROUP BY status",
+                                   (campaign_id,)).fetchall())
+    return {**dict(row), "eligible_recipients": len(audience), "delivery_attempts": counts}
+
+
+@app.post("/api/crm/campaigns/{campaign_id}/send")
+def send_campaign(campaign_id: int, request: Request):
+    if not LINE_CHANNEL_ACCESS_TOKEN:
+        raise HTTPException(503, "LINE OA is not configured")
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.row_factory = sqlite3.Row
+        campaign = conn.execute("SELECT id,branch_id,segment,message,status FROM crm_campaigns WHERE id=?",
+                                (campaign_id,)).fetchone()
+        if not campaign:
+            raise HTTPException(404, "Campaign not found")
+        require_staff(request, roles=("manager", "owner"), branch_id=campaign["branch_id"])
+        if campaign["status"] != "draft":
+            raise HTTPException(409, "Campaign was already submitted")
+        recipients = [row for row in conn.execute("SELECT * FROM crm_customers WHERE branch_id=? AND marketing_opt_in=1 AND line_user_id IS NOT NULL",
+                                                (campaign["branch_id"],)).fetchall()
+                      if segment_for(row) == campaign["segment"]]
+        if not recipients:
+            raise HTTPException(409, "No opted-in LINE recipients in this segment")
+        if len(recipients) > 50:
+            raise HTTPException(409, "Campaign exceeds the 50-recipient safety limit")
+        conn.execute("UPDATE crm_campaigns SET status='submitting',sent_at=CURRENT_TIMESTAMP WHERE id=?", (campaign_id,))
+        for recipient in recipients:
+            conn.execute("INSERT INTO crm_campaign_deliveries(campaign_id,customer_id,status) VALUES(?,?,'unknown')",
+                         (campaign_id, recipient["id"]))
+    # Mark each attempt before contacting LINE. A timeout stays unknown and is
+    # never retried automatically, so an ambiguous response cannot double-send.
+    accepted = 0
+    with httpx.Client(timeout=8.0) as client:
+        for recipient in recipients:
+            try:
+                response = client.post("https://api.line.me/v2/bot/message/push",
+                    headers={"Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}"},
+                    json={"to": recipient["line_user_id"], "messages": [
+                        {"type": "text", "text": campaign["message"]}]})
+                status = "accepted" if response.status_code == 200 else "rejected"
+            except httpx.HTTPError:
+                status = "unknown"
+            accepted += status == "accepted"
+            with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+                conn.execute("UPDATE crm_campaign_deliveries SET status=? WHERE campaign_id=? AND customer_id=?",
+                             (status, campaign_id, recipient["id"]))
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("UPDATE crm_campaigns SET status='submitted' WHERE id=?", (campaign_id,))
+    return {"campaign_id": campaign_id, "status": "submitted", "line_accepted": accepted,
+            "attempted": len(recipients), "note": "LINE HTTP acceptance does not prove message delivery"}
 
 
 @app.post("/api/orders")
