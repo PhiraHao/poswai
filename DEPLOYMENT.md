@@ -102,14 +102,14 @@ Manager environment. On 16 October 2026, the public `/api/config` confirmed a
 10-digit PromptPay destination. An authenticated EasySlip `/v2/info` call from
 the running container returned HTTP 200, an active branch, and 48 remaining
 verification requests at the time of testing. This confirms the configured
-key works. An authenticated `/v2/bank-accounts` request then returned HTTP
-200 with **zero registered receiving accounts**. Register the restaurant's
-receiving account in the same EasySlip branch before testing QR payments.
+key works. The configured key belongs to the `สาขาหลัก` branch of the Jodwai
+application. An authenticated `/v2/bank-accounts` request initially returned
+zero registered receiving accounts. After the owner added an account, a repeat
+request returned HTTP 200 with **one registered receiving account**.
 These checks do not prove a real transfer can be closed. The first EasySlip
 key was accidentally entered in a VPS terminal. The owner chose to keep using
 it for testing and declined rotation at this stage. Restrict access to terminal
-history and revisit key
-rotation before accepting live payments.
+history and revisit key rotation before accepting live payments.
 
 Keep `POSWAI_PREVIEW_ONLY=1` until the remaining live workflows are implemented
 and verified. The legacy kitchen status, CRM, purchasing, some inventory
