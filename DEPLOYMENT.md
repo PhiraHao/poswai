@@ -399,6 +399,35 @@ container; nothing else needs to change.
 | `POSWAI_ADMIN_KEY` | กุญแจเปิดหน้า `/admin` ต้องยาวอย่างน้อย 24 ตัว สุ่มใหม่ ห้ามใช้ซ้ำกับรหัสอื่น |
 | `POSWAI_MONTHLY_PRICE` | ราคาต่อเดือน ค่าเริ่มต้น 399 (ตรงกับราคาที่ประกาศในหน้าแรก) |
 
+### ตั้งค่าจริงบน VPS แล้ว 17 ตุลาคม 2569
+
+ค่าทั้งสามตัวตั้งไว้แล้วที่ `/docker/poswai` โดยใช้ `0895185188` รับค่าบริการ และใช้
+คีย์ EasySlip ตัวเดียวกับที่ร้านหลักใช้อยู่ กุญแจผู้ดูแลสุ่มมา 48 ตัว เก็บที่
+`/docker/poswai/admin-key.txt` (สิทธิ์ 600) เปิดดูด้วย `cat /docker/poswai/admin-key.txt`
+
+**กับดักสำคัญ: ปุ่ม "ปรับใช้" ใน Docker Manager เขียนทับไฟล์ `.env` ด้วยสำเนาของตัวเอง**
+ค่าทั้งสามตัวจะหายทุกครั้งที่กดปุ่มนั้น ซึ่งรวมถึงทุกครั้งที่ deploy ตามขั้นตอนข้างบน
+จึงเก็บต้นฉบับไว้ที่ `/docker/poswai/billing.env` (สิทธิ์ 600) พร้อมสคริปต์กู้คืน
+
+ลำดับ deploy ที่ถูกต้องจึงเป็น
+
+```
+cd /docker/poswai
+docker compose build poswai
+./apply-billing-env.sh
+```
+
+`apply-billing-env.sh` เติมค่าที่หายกลับเข้า `.env` แล้วสร้างคอนเทนเนอร์ใหม่ให้เอง
+ใช้แทน `docker compose up -d --force-recreate poswai` ได้เลย ตรวจว่าค่าเข้าแล้วด้วย
+
+```
+docker compose exec poswai sh -c 'echo ${#POSWAI_ADMIN_KEY}'
+```
+
+ได้ 48 แปลว่าใช้ได้ ถ้าได้ 0 แปลว่าค่าหาย ให้รัน `./apply-billing-env.sh` อีกครั้ง
+ดูจากนอกเซิร์ฟเวอร์ก็ได้ `curl -s -o /dev/null -w "%{http_code}" https://poswai.zzaxstudio.com/api/admin/shops`
+ต้องได้ 401 (กุญแจไม่ถูก) ถ้าได้ 503 แปลว่ายังไม่ได้ตั้งกุญแจ
+
 บัญชีรับเงินของ ZZAX Studio ต้องลงทะเบียนในสาขา EasySlip ของคีย์ที่ใช้ ไม่งั้น
 `matchedAccount` จะไม่ผ่านและระบบจะปฏิเสธสลิปทุกใบ ควรใช้คีย์ EasySlip คนละตัวกับ
 ของร้าน เพราะโควตาการตรวจสลิปนับรวมกัน ยังไม่ได้ทดสอบกับการโอนจริง ให้ทดสอบโอนจริง
