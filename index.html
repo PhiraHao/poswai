@@ -654,7 +654,7 @@
   <link rel="stylesheet" href="/sales-redesign.css?v=19">
   <link rel="stylesheet" href="/ops-redesign.css?v=19">
   <link rel="stylesheet" href="/people-redesign.css?v=19">
-  <link rel="stylesheet" href="/staff-admin.css?v=36">
+  <link rel="stylesheet" href="/staff-admin.css?v=38">
   <link rel="stylesheet" href="/reports-restore.css?v=19">
   <link rel="stylesheet" href="/reports-live.css?v=20">
   <link rel="stylesheet" href="/service-call.css?v=19">
@@ -4542,6 +4542,8 @@
           if (s.shiftStatus === "clocked_out") statusBadge = `<span class="badge">ออกงานแล้ว (clocked_out)</span>`;
           if (s.shiftStatus === "on_leave") statusBadge = `<span class="badge badge-verify">🟡 ลาได้รับอนุมัติ (on_leave)</span>`;
           if (s.shiftStatus === "absent") statusBadge = `<span class="badge badge-danger">🔴 ขาดงานอัตโนมัติ (absent)</span>`;
+          if (s.shiftStatus === "day_off") statusBadge = `<span class="badge">🏖️ วันหยุด (day_off)</span>`;
+          if (s.shiftStatus === "suspended") statusBadge = `<span class="badge badge-danger">⛔ ผู้จัดการระงับสิทธิ์ (suspended)</span>`;
 
           const pinBadge = s.posLocked
             ? `<span class="badge badge-danger">🔒 ระงับสิทธิ์ POS ชั่วคราว</span>`
@@ -4559,12 +4561,28 @@
             ? `<button type="button" class="staff-roster-action" onclick="recordAttendanceFor(${targetId}, '${nextAction}')">${actionLabel}</button>`
             : "—";
 
+          // A manager sets the shift and the POS access of their own team from this row.
+          const canManageRow = state.staffLiveOverview && actor && actor.staff_id !== targetId &&
+            ["manager", "owner"].includes(actor.role) && s.role !== "owner" &&
+            !(actor.role === "manager" && ["owner", "manager"].includes(s.role));
+          const templates = state.shiftTemplates || [];
+          const shiftFixed = ["on_leave", "absent"].includes(s.shiftStatus);
+          const shiftCell = canManageRow && templates.length && !shiftFixed
+            ? `<select class="staff-roster-select" aria-label="กะของ ${safeStaffText(s.name)}" onchange="poswaiAssignShift(${targetId}, this.value)">
+                <option value=""${s.shiftTemplateId ? "" : " selected"}>วันหยุด</option>
+                ${templates.map(t => `<option value="${t.id}"${s.shiftTemplateId === t.id ? " selected" : ""}>${safeStaffText(t.name)} ${safeStaffText(t.start_time)}–${safeStaffText(t.end_time)}</option>`).join("")}
+              </select>`
+            : safeStaffText(s.shift);
+          const pinCell = canManageRow && s.shiftStatus !== "on_leave"
+            ? `<button type="button" class="staff-pos-toggle ${s.posLocked ? "is-locked" : "is-open"}" onclick="poswaiTogglePosAccess(${targetId}, ${!s.posLocked})">${s.posLocked ? "🔒 ระงับอยู่ · กดคืนสิทธิ์" : "🔓 ใช้งานได้ · กดระงับ"}</button>`
+            : pinBadge;
+
           return `
             <tr>
               <td><strong>${safeStaffText(s.name)}</strong><br/><small style="color:var(--text-muted);">รหัส ${targetId} · ${safeStaffText(s.role)}</small></td>
-              <td>${safeStaffText(s.shift)}</td>
+              <td>${shiftCell}</td>
               <td>${statusBadge}</td>
-              <td>${pinBadge}</td>
+              <td>${pinCell}</td>
               <td>${actionButton}</td>
             </tr>
           `;
@@ -5006,12 +5024,12 @@
   <script src="/workspace.js?v=19"></script>
   <script src="/sales-redesign.js?v=19"></script>
   <script src="/ops-redesign.js?v=19"></script>
-  <script src="/people-redesign.js?v=36"></script>
-  <script src="/staff-admin.js?v=36"></script>
+  <script src="/people-redesign.js?v=38"></script>
+  <script src="/staff-admin.js?v=38"></script>
   <script src="/reports-restore.js?v=19"></script>
   <script src="/reports-live.js?v=31"></script>
   <script src="/service-call.js?v=19"></script>
-  <script src="/auth-ui.js?v=36"></script>
+  <script src="/auth-ui.js?v=38"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/live-data.js?v=24"></script>
   <script src="/inventory-live.js?v=23"></script>

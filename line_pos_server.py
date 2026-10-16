@@ -31,7 +31,7 @@ from typing import List, Optional
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -44,8 +44,8 @@ from easyslip import SlipVerificationError, verify_bank_slip
 from poswai_catalog import (CatalogError, deduct_inventory, init_catalog,
                             list_menu_items, quote_order, upsert_menu_item, STATIONS)
 from poswai_commerce import (create_order as create_commerce_order, init_commerce,
-                             list_customers as commerce_customers, mark_handed_off, segment_for,
-                             upsert_customer)
+                             list_customers as commerce_customers, mark_handed_off,
+                             restore_cancelled_inventory, segment_for, upsert_customer)
 from line_integration import (build_leave_flex, parse_leave_postback,
                               push_leave_request, verify_liff_id_token,
                               verify_webhook_signature)
@@ -56,7 +56,7 @@ async def _line_outbox_worker():
         try:
             if LINE_CHANNEL_ACCESS_TOKEN and (not PREVIEW_ONLY or STAFF_LIVE):
                 def send_due():
-                    with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn:
+                    with closing(connect_db()) as conn:
                         flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN)
                 await asyncio.to_thread(send_due)
         except (sqlite3.Error, OSError):
@@ -104,6 +104,56 @@ TABLE_QR_SECRET = os.getenv("POSWAI_TABLE_QR_SECRET", "")
 SONGWAI_WEBHOOK_SECRET = os.getenv("SONGWAI_WEBHOOK_SECRET", "")
 SONGWAI_RESTAURANT_ID = int(os.getenv("SONGWAI_RESTAURANT_ID", "0"))
 SESSION_LIFETIME = 12 * 60 * 60
+# A cashier may cancel small unpaid orders alone; anything above these limits,
+# and every refund of money already taken, needs a manager or the owner.
+VOID_CASHIER_MAX_AMOUNT = float(os.getenv("POSWAI_VOID_CASHIER_MAX_AMOUNT", "200"))
+VOID_CASHIER_DAILY_LIMIT = int(os.getenv("POSWAI_VOID_CASHIER_DAILY_LIMIT", "3"))
+if not math.isfinite(VOID_CASHIER_MAX_AMOUNT) or VOID_CASHIER_MAX_AMOUNT < 0 or VOID_CASHIER_DAILY_LIMIT < 0:
+    raise RuntimeError("Invalid cashier void limits")
+STAFF_ROLES = ("manager", "cashier", "kitchen", "service", "staff")
+LEAVE_TYPES = ("sick", "personal", "vacation")
+DEFAULT_LEAVE_QUOTA = {"sick": 30, "personal": 3, "vacation": 6}
+TAB_LABELS = {"customer": "สั่งอาหาร", "kitchen": "จอครัว", "cashier": "แคชเชียร์",
+              "inventory": "สต็อก", "crm": "สมาชิก", "staff": "พนักงาน", "analytics": "รายงาน"}
+ALL_TABS = tuple(TAB_LABELS)
+# One matrix for the whole app: the API enforces it per endpoint and the PWA hides
+# what a role may not open. Server rules stay authoritative; hiding a tab is cosmetic.
+ROLE_PERMISSIONS = {
+    "owner": {"label": "เจ้าของร้าน", "tabs": list(ALL_TABS),
+              "allowed": ["จัดการทุกส่วนของร้าน", "ตั้งค่าบัญชีรับเงินและค่าแรง",
+                          "แต่งตั้งผู้จัดการและกำหนดสิทธิ์", "ดูรายงานและเงินเดือนทั้งทีม"],
+              "restricted": []},
+    "manager": {"label": "ผู้จัดการร้าน", "tabs": list(ALL_TABS),
+                "allowed": ["อนุมัติหรือปฏิเสธใบลา", "จัดตารางกะและระงับสิทธิ์ POS",
+                            "ยกเลิกบิลทุกยอด และคืนเงินบิลที่ชำระแล้ว",
+                            "ตั้งเมนูของหมดและออกใบสั่งซื้อ", "ดูรายงานและเงินเดือนทั้งทีม"],
+                "restricted": ["แต่งตั้งผู้จัดการ", "แก้ไขหรือลบบัญชีเจ้าของร้าน"]},
+    "cashier": {"label": "แคชเชียร์", "tabs": ["customer", "cashier", "crm", "staff"],
+                "allowed": ["เปิด-ปิดกะและลิ้นชักเงินสด", "รับชำระเงิน แยกบิล ย้ายโต๊ะ",
+                            "พิมพ์ใบเสร็จและใบกำกับภาษี",
+                            f"ยกเลิกบิลที่ยังไม่รับเงิน ไม่เกิน {VOID_CASHIER_MAX_AMOUNT:,.0f} บาท "
+                            f"และไม่เกิน {VOID_CASHIER_DAILY_LIMIT} ครั้งต่อวัน (ต้องใส่เหตุผล)",
+                            "ลงเวลาและยื่นใบลาของตัวเอง"],
+                "restricted": ["คืนเงินบิลที่ชำระแล้ว", "ยกเลิกบิลใหญ่หรือเกินโควตาต่อวัน",
+                               "สต็อกและรายงาน", "ค่าแรงหรือเงินเดือนของคนอื่น",
+                               "จัดการบัญชีพนักงาน"]},
+    "kitchen": {"label": "ครัว / บาร์", "tabs": ["kitchen", "inventory", "staff"],
+                "allowed": ["รับคิวและกดพร้อมเสิร์ฟ", "บันทึกของเสียและเบิกของ",
+                            "ลงเวลาและยื่นใบลาของตัวเอง"],
+                "restricted": ["แคชเชียร์และยอดเงิน", "สมาชิกและรายงาน",
+                               "ค่าแรงหรือเงินเดือนของคนอื่น"]},
+    "service": {"label": "พนักงานเสิร์ฟ", "tabs": ["customer", "staff"],
+                "allowed": ["สั่งอาหารให้ลูกค้าและดูสถานะโต๊ะ", "ลงเวลาและยื่นใบลาของตัวเอง"],
+                "restricted": ["คิดเงินและลิ้นชักเงินสด", "สต็อก สมาชิก และรายงาน",
+                               "ค่าแรงหรือเงินเดือนของคนอื่น"]},
+    "staff": {"label": "พนักงานทั่วไป", "tabs": ["customer", "staff"],
+              "allowed": ["สั่งอาหารให้ลูกค้าและดูสถานะโต๊ะ", "ลงเวลาและยื่นใบลาของตัวเอง"],
+              "restricted": ["คิดเงินและลิ้นชักเงินสด", "สต็อก สมาชิก และรายงาน",
+                             "ค่าแรงหรือเงินเดือนของคนอื่น"]},
+    "guest": {"label": "ยังไม่เข้าสู่ระบบ", "tabs": ["customer", "staff"],
+              "allowed": ["ดูเมนูและสั่งอาหารผ่าน QR ของโต๊ะ"],
+              "restricted": ["ข้อมูลพนักงานและยอดขายทั้งหมด"]},
+}
 BANGKOK_TZ = datetime.timezone(datetime.timedelta(hours=7))
 PAYROLL_REGULAR_HOURS_PER_DAY = float(os.getenv("POSWAI_REGULAR_HOURS_PER_DAY", "8"))
 PAYROLL_OT_MULTIPLIER = float(os.getenv("POSWAI_OT_MULTIPLIER", "1.5"))
@@ -117,9 +167,22 @@ DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # =====================================================================
 # 1. RELATIONAL DATABASE SCHEMA (5 หมวดหลักตาม ER-Diagram)
+def connect_db(timeout: float = 10.0) -> sqlite3.Connection:
+    """Every connection shares the same concurrency settings.
+
+    WAL lets the kitchen display keep reading while the cashier writes, and the
+    busy timeout makes a locked database wait instead of failing a sale.
+    """
+    conn = sqlite3.connect(DB_PATH, timeout=timeout)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
 # =====================================================================
 def init_db() -> None:
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     cur = conn.cursor()
 
     # หมวดที่ 1: พนักงานและสาขา (branches & staffs)
@@ -312,12 +375,34 @@ def init_db() -> None:
     init_commerce(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
         staff_id INTEGER PRIMARY KEY, failures INTEGER NOT NULL, first_failed_at INTEGER NOT NULL)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS order_cancellations (
+        event_id TEXT PRIMARY KEY,
+        order_no TEXT NOT NULL UNIQUE REFERENCES order_events(order_no),
+        branch_id INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK(kind IN ('void','refund')),
+        amount REAL NOT NULL,
+        reason TEXT NOT NULL,
+        staff_id INTEGER NOT NULL REFERENCES staffs(id),
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+    cur.execute("CREATE INDEX IF NOT EXISTS order_cancellations_by_staff "
+                "ON order_cancellations(staff_id,created_at)")
+    cur.execute("""CREATE TABLE IF NOT EXISTS staff_leave_quotas (
+        staff_id INTEGER PRIMARY KEY REFERENCES staffs(id),
+        sick INTEGER NOT NULL DEFAULT 30,
+        personal INTEGER NOT NULL DEFAULT 3,
+        vacation INTEGER NOT NULL DEFAULT 6)""")
     if BOOTSTRAP_MANAGER_PIN and not cur.execute("SELECT 1 FROM staffs LIMIT 1").fetchone():
         if len(BOOTSTRAP_MANAGER_PIN) < 8:
             raise RuntimeError("POSWAI_BOOTSTRAP_MANAGER_PIN must contain at least 8 characters")
         cur.execute("INSERT OR IGNORE INTO branches (id, name) VALUES (1, 'Main branch')")
         cur.execute("INSERT INTO staffs (branch_id, name, role, pin_code_hash) VALUES (1, ?, 'owner', ?)",
                     (os.getenv("POSWAI_BOOTSTRAP_MANAGER_NAME", "Manager"), hash_pin(BOOTSTRAP_MANAGER_PIN)))
+
+    # Everyone on the payroll has a leave allowance; accounts made before this
+    # table existed start on the documented default instead of showing "not set".
+    cur.execute("INSERT OR IGNORE INTO staff_leave_quotas (staff_id,sick,personal,vacation) "
+                "SELECT id,?,?,? FROM staffs",
+                (DEFAULT_LEAVE_QUOTA["sick"], DEFAULT_LEAVE_QUOTA["personal"], DEFAULT_LEAVE_QUOTA["vacation"]))
 
     conn.commit()
     conn.close()
@@ -342,7 +427,57 @@ def verify_pin(pin: str, encoded: str) -> bool:
         return False
 
 
+def store_leave_quota(conn: sqlite3.Connection, staff_id: int, quota: dict | None) -> None:
+    """Every staff account carries a yearly leave allowance, defaulted on creation."""
+    merged = dict(DEFAULT_LEAVE_QUOTA)
+    for leave_type, days in (quota or {}).items():
+        if days is None:
+            continue
+        if leave_type not in LEAVE_TYPES or not isinstance(days, int) or not 0 <= days <= 365:
+            raise HTTPException(400, "Leave quota must be 0 to 365 days per leave type")
+        merged[leave_type] = days
+    conn.execute("INSERT INTO staff_leave_quotas (staff_id,sick,personal,vacation) VALUES (?,?,?,?) "
+                 "ON CONFLICT(staff_id) DO UPDATE SET sick=excluded.sick,"
+                 "personal=excluded.personal,vacation=excluded.vacation",
+                 (staff_id, merged["sick"], merged["personal"], merged["vacation"]))
+
+
+def leave_quota_map(conn: sqlite3.Connection, branch_id: int) -> dict:
+    """Remaining leave days this calendar year, after approved leave is deducted."""
+    year = str(datetime.datetime.now(BANGKOK_TZ).year)
+    totals = {row[0]: {"sick": row[1], "personal": row[2], "vacation": row[3]}
+              for row in conn.execute("SELECT q.staff_id,q.sick,q.personal,q.vacation "
+                                      "FROM staff_leave_quotas q JOIN staffs s ON s.id=q.staff_id "
+                                      "WHERE s.branch_id=?", (branch_id,))}
+    used: dict[int, dict[str, int]] = {}
+    for staff_id, leave_type, start_date, end_date in conn.execute(
+            "SELECT l.staff_id,l.leave_type,l.start_date,l.end_date FROM leave_requests l "
+            "JOIN staffs s ON s.id=l.staff_id WHERE s.branch_id=? AND l.status='approved' "
+            "AND substr(l.start_date,1,4)=?", (branch_id, year)):
+        if leave_type not in LEAVE_TYPES:
+            continue
+        try:
+            days = (datetime.date.fromisoformat(end_date) - datetime.date.fromisoformat(start_date)).days + 1
+        except ValueError:
+            continue
+        spent = used.setdefault(staff_id, {})
+        spent[leave_type] = spent.get(leave_type, 0) + max(days, 0)
+    quotas = {}
+    for staff_id, total in totals.items():
+        spent = used.get(staff_id, {})
+        quotas[staff_id] = {leave_type: {"total": total[leave_type], "used": spent.get(leave_type, 0),
+                                         "left": max(total[leave_type] - spent.get(leave_type, 0), 0)}
+                            for leave_type in LEAVE_TYPES}
+    return quotas
+
+
 init_db()
+
+
+@app.get("/api/permissions")
+def role_permission_matrix():
+    """The role matrix the staff workspace shows and the PWA uses to hide tabs."""
+    return {"tab_labels": TAB_LABELS, "roles": ROLE_PERMISSIONS}
 
 
 @app.middleware("http")
@@ -376,7 +511,7 @@ def require_staff(request: Request, roles: tuple[str, ...] = (), branch_id: int 
     token = request.cookies.get("poswai_session", "")
     if len(token) != 64 or not re.fullmatch(r"[0-9a-f]{64}", token):
         raise HTTPException(401, "Staff login required")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute(
             "SELECT s.id,s.branch_id,s.name,s.role,s.is_active,a.expires_at FROM auth_sessions a "
@@ -409,7 +544,7 @@ class LoginRequest(BaseModel):
 def staff_login(req: LoginRequest, request: Request, response: Response):
     if req.staff_id < 1 or len(req.pin) > 128:
         raise HTTPException(401, "Invalid staff credentials")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         now = int(time.time())
         attempt = conn.execute("SELECT failures,first_failed_at FROM auth_login_attempts WHERE staff_id=?",
@@ -457,10 +592,16 @@ def staff_session(request: Request):
 def staff_logout(request: Request, response: Response):
     token = request.cookies.get("poswai_session", "")
     if token:
-        with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        with closing(connect_db()) as conn, conn:
             conn.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
     response.delete_cookie("poswai_session", path="/")
     return {"status": "logged_out"}
+
+
+class LeaveQuotaInput(BaseModel):
+    sick: Optional[int] = None
+    personal: Optional[int] = None
+    vacation: Optional[int] = None
 
 
 class StaffCreate(BaseModel):
@@ -468,25 +609,37 @@ class StaffCreate(BaseModel):
     role: str
     pin: str
     line_user_id: Optional[str] = None
+    hourly_rate: Optional[float] = None
+    leave_quota: Optional[LeaveQuotaInput] = None
 
 
 @app.post("/api/staff")
 def create_staff(req: StaffCreate, request: Request):
     manager = require_staff(request, roles=("manager", "owner"))
-    if not req.name.strip() or len(req.name) > 100 or req.role not in ("manager", "cashier", "kitchen", "service", "staff"):
+    if not req.name.strip() or len(req.name) > 100 or req.role not in STAFF_ROLES:
         raise HTTPException(400, "Invalid staff profile")
     if req.role == "manager" and manager["role"] != "owner":
         raise HTTPException(403, "Only the owner can appoint a manager")
     if req.line_user_id is not None and (not req.line_user_id or len(req.line_user_id) > 100):
         raise HTTPException(400, "Invalid LINE user ID")
+    if req.hourly_rate is not None and (not math.isfinite(req.hourly_rate) or not 0 <= req.hourly_rate <= 100000):
+        raise HTTPException(400, "Invalid hourly rate")
     pin_hash = hash_pin(req.pin)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         try:
-            cur = conn.execute("INSERT INTO staffs (branch_id,line_user_id,name,role,pin_code_hash) VALUES (?,?,?,?,?)",
-                               (manager["branch_id"], req.line_user_id, req.name.strip(), req.role, pin_hash))
+            if req.hourly_rate is None:
+                cur = conn.execute("INSERT INTO staffs (branch_id,line_user_id,name,role,pin_code_hash) VALUES (?,?,?,?,?)",
+                                   (manager["branch_id"], req.line_user_id, req.name.strip(), req.role, pin_hash))
+            else:
+                cur = conn.execute("INSERT INTO staffs (branch_id,line_user_id,name,role,pin_code_hash,hourly_rate) "
+                                   "VALUES (?,?,?,?,?,?)",
+                                   (manager["branch_id"], req.line_user_id, req.name.strip(), req.role, pin_hash,
+                                    req.hourly_rate))
         except sqlite3.IntegrityError as exc:
             raise HTTPException(409, "Staff LINE identity already exists") from exc
-    return {"staff_id": cur.lastrowid, "branch_id": manager["branch_id"], "name": req.name.strip(), "role": req.role}
+        store_leave_quota(conn, cur.lastrowid, req.leave_quota.model_dump() if req.leave_quota else None)
+    return {"staff_id": cur.lastrowid, "branch_id": manager["branch_id"], "name": req.name.strip(),
+            "role": req.role, "hourly_rate": req.hourly_rate}
 
 
 def _can_manage_staff(actor: dict, target: sqlite3.Row) -> bool:
@@ -500,31 +653,39 @@ def _can_manage_staff(actor: dict, target: sqlite3.Row) -> bool:
 @app.get("/api/staff/directory")
 def staff_directory(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT id,name,role,is_active,hourly_rate FROM staffs WHERE branch_id=? ORDER BY is_active DESC,id",
                             (branch_id,)).fetchall()
+        quotas = leave_quota_map(conn, branch_id)
     return {"items": [{"id": row["id"], "name": row["name"], "role": row["role"],
-                       "is_active": bool(row["is_active"]), "hourly_rate": row["hourly_rate"]} for row in rows]}
+                       "is_active": bool(row["is_active"]), "hourly_rate": row["hourly_rate"],
+                       "leave_quota": quotas.get(row["id"])} for row in rows],
+            "default_leave_quota": DEFAULT_LEAVE_QUOTA}
 
 
 class StaffProfileUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    hourly_rate: Optional[float] = None
+    leave_quota: Optional[LeaveQuotaInput] = None
 
 
 @app.patch("/api/staff/{staff_id}/profile")
 def update_staff_profile(staff_id: int, req: StaffProfileUpdate, request: Request):
     actor = require_staff(request, roles=("manager", "owner"))
     updates = req.model_dump(exclude_none=True)
-    if not updates:
+    quota = updates.pop("leave_quota", None)
+    if not updates and quota is None:
         raise HTTPException(400, "No profile changes supplied")
     if "name" in updates and (not updates["name"].strip() or len(updates["name"]) > 100):
         raise HTTPException(400, "Invalid staff name")
-    if "role" in updates and updates["role"] not in ("manager", "cashier", "kitchen", "service", "staff"):
+    if "role" in updates and updates["role"] not in STAFF_ROLES:
         raise HTTPException(400, "Invalid staff role")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    if "hourly_rate" in updates and (not math.isfinite(updates["hourly_rate"]) or not 0 <= updates["hourly_rate"] <= 100000):
+        raise HTTPException(400, "Invalid hourly rate")
+    with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         target = conn.execute("SELECT id,branch_id,name,role,is_active FROM staffs WHERE id=?", (staff_id,)).fetchone()
         if not target or target["branch_id"] != actor["branch_id"]:
@@ -539,11 +700,49 @@ def update_staff_profile(staff_id: int, req: StaffProfileUpdate, request: Reques
             raise HTTPException(403, "Only the owner can appoint a manager")
         if "name" in updates:
             updates["name"] = updates["name"].strip()
-        sets = ",".join(f"{field}=?" for field in updates)
-        conn.execute(f"UPDATE staffs SET {sets} WHERE id=?", (*updates.values(), staff_id))
+        if updates:
+            sets = ",".join(f"{field}=?" for field in updates)
+            conn.execute(f"UPDATE staffs SET {sets} WHERE id=?", (*updates.values(), staff_id))
+        if quota is not None:
+            store_leave_quota(conn, staff_id, quota)
         if updates.get("is_active") is False or "role" in updates:
             conn.execute("DELETE FROM auth_sessions WHERE staff_id=?", (staff_id,))
     return {"staff_id": staff_id, "status": "updated"}
+
+
+class StaffPosAccess(BaseModel):
+    locked: bool
+
+
+@app.patch("/api/staff/{staff_id}/pos-access")
+def set_staff_pos_access(staff_id: int, req: StaffPosAccess, request: Request):
+    """Suspend or restore one person's POS sign-in for today, from the roster row."""
+    actor = require_staff(request, roles=("manager", "owner"))
+    today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
+    with closing(connect_db()) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        target = conn.execute("SELECT id,branch_id,role FROM staffs WHERE id=? AND is_active=1", (staff_id,)).fetchone()
+        if not target or target["branch_id"] != actor["branch_id"]:
+            raise HTTPException(404, "Staff not found")
+        if not _can_manage_staff(actor, target) or target["role"] == "owner":
+            raise HTTPException(403, "Cannot change POS access for this account")
+        if staff_id == actor["id"]:
+            raise HTTPException(403, "Cannot change your own POS access")
+        current = conn.execute("SELECT status FROM staff_shifts WHERE staff_id=? AND work_date=?",
+                               (staff_id, today)).fetchone()
+        if current and current["status"] == "on_leave":
+            raise HTTPException(409, "Approved leave controls POS access for this day")
+        # A manager suspending access is recorded as its own state, never as absence.
+        status = "suspended" if req.locked else (
+            "scheduled" if current and current["status"] in ("suspended", "absent")
+            else (current["status"] if current else "scheduled"))
+        conn.execute("INSERT INTO staff_shifts (staff_id,branch_id,work_date,status,pos_pin_locked) "
+                     "VALUES (?,?,?,?,?) ON CONFLICT(staff_id,work_date) DO UPDATE "
+                     "SET status=excluded.status,pos_pin_locked=excluded.pos_pin_locked",
+                     (staff_id, actor["branch_id"], today, status, 1 if req.locked else 0))
+        if req.locked:
+            conn.execute("DELETE FROM auth_sessions WHERE staff_id=?", (staff_id,))
+    return {"staff_id": staff_id, "pos_pin_locked": req.locked, "work_date": today}
 
 
 class StaffPinReset(BaseModel):
@@ -554,7 +753,7 @@ class StaffPinReset(BaseModel):
 def reset_staff_pin(staff_id: int, req: StaffPinReset, request: Request):
     actor = require_staff(request, roles=("manager", "owner"))
     pin_hash = hash_pin(req.pin)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         target = conn.execute("SELECT id,branch_id,role FROM staffs WHERE id=?", (staff_id,)).fetchone()
         if not target or target["branch_id"] != actor["branch_id"]:
@@ -582,7 +781,7 @@ def issue_table_token(req: TableTokenRequest, request: Request):
         raise HTTPException(503, "Table QR signing is not configured")
     if req.branch_id < 1 or not re.fullmatch(r"[\w\- ]{1,24}", req.table_no, re.UNICODE):
         raise HTTPException(400, "Invalid table")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         if not conn.execute("SELECT 1 FROM branches WHERE id=?", (req.branch_id,)).fetchone():
             raise HTTPException(404, "Branch not found")
     expires = int(time.time()) + 30 * 24 * 3600
@@ -653,7 +852,7 @@ def get_menu(request: Request, branch_id: int = 1, include_inactive: bool = Fals
     try:
         if include_inactive:
             require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
-        with closing(sqlite3.connect(DB_PATH)) as conn:
+        with closing(connect_db()) as conn:
             return {"branch_id": branch_id, "items": list_menu_items(conn, branch_id, active_only=not include_inactive)}
     except CatalogError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
@@ -663,7 +862,7 @@ def get_menu(request: Request, branch_id: int = 1, include_inactive: bool = Fals
 def put_menu_item(item_id: str, item: MenuUpsert, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
     try:
-        with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        with closing(connect_db()) as conn, conn:
             if item_id.startswith("songwai-") and item.active:
                 if not item.bom:
                     raise CatalogError("Add a BOM recipe before activating Songwai menu", 409)
@@ -684,7 +883,7 @@ class InventorySet(BaseModel):
 @app.get("/api/inventory")
 def get_inventory(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "kitchen"), branch_id=branch_id)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         rows = conn.execute("SELECT ingredient_id,stock FROM inventory WHERE branch_id=? ORDER BY ingredient_id", (branch_id,)).fetchall()
     return {"branch_id": branch_id, "items": [{"id": row[0], "stock": row[1]} for row in rows]}
 
@@ -694,7 +893,7 @@ def put_inventory(ingredient_id: str, item: InventorySet, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
     if not ingredient_id or len(ingredient_id) > 80 or not math.isfinite(item.stock) or item.stock < 0:
         raise HTTPException(400, "Invalid stock")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         try:
             conn.execute("INSERT INTO inventory(branch_id,ingredient_id,stock) VALUES(?,?,?)",
                          (item.branch_id, ingredient_id, item.stock))
@@ -718,7 +917,7 @@ def post_inventory_movement(item: InventoryMovementCreate, request: Request):
     roles = ("manager", "owner", "kitchen") if item.action == "waste" else ("manager", "owner")
     actor = require_staff(request, roles=roles, branch_id=item.branch_id)
     try:
-        with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        with closing(connect_db()) as conn, conn:
             conn.execute("BEGIN IMMEDIATE")
             return apply_inventory_movement(
                 conn, event_id=item.event_id, branch_id=item.branch_id,
@@ -734,7 +933,7 @@ def post_inventory_movement(item: InventoryMovementCreate, request: Request):
 def get_inventory_movements(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "kitchen"), branch_id=branch_id)
     try:
-        with closing(sqlite3.connect(DB_PATH)) as conn:
+        with closing(connect_db()) as conn:
             return {"branch_id": branch_id, "items": list_inventory_movements(conn, branch_id)}
     except InventoryError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
@@ -745,7 +944,7 @@ def create_service_call(req: ServiceCallCreate, request: Request):
     if not req.event_id or len(req.event_id) > 80 or req.branch_id < 1 or not req.table_no.strip() or len(req.table_no) > 24 or not req.call_type.strip() or len(req.call_type) > 80:
         raise HTTPException(400, "Invalid service call")
     require_table_or_staff(request, req.branch_id, req.table_no.strip())
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("INSERT OR IGNORE INTO service_calls (event_id, branch_id, table_no, call_type) VALUES (?, ?, ?, ?)",
                      (req.event_id, req.branch_id, req.table_no.strip(), req.call_type.strip()))
     return {"status": "pending", "event_id": req.event_id}
@@ -756,7 +955,7 @@ def list_service_calls(request: Request, branch_id: int = 1):
     if branch_id < 1:
         raise HTTPException(400, "Invalid branch")
     require_staff(request, roles=("owner", "manager", "cashier", "service"), branch_id=branch_id)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT event_id, branch_id, table_no, call_type, status, created_at FROM service_calls "
                             "WHERE branch_id=? AND status='pending' ORDER BY created_at DESC LIMIT 100", (branch_id,)).fetchall()
@@ -765,7 +964,7 @@ def list_service_calls(request: Request, branch_id: int = 1):
 
 @app.post("/api/service-calls/{event_id}/acknowledge")
 def acknowledge_service_call(event_id: str, request: Request):
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         found = conn.execute("SELECT branch_id FROM service_calls WHERE event_id=?", (event_id,)).fetchone()
         if not found:
             raise HTTPException(404, "Service call not found")
@@ -815,7 +1014,7 @@ def place_online_order(req: OnlineOrderCreate):
     if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
         raise HTTPException(400, "Invalid customer details")
     line_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute("""SELECT o.order_no,c.line_user_id FROM online_orders o
             LEFT JOIN crm_customers c ON c.id=o.customer_id
@@ -880,7 +1079,7 @@ async def intake_songwai_order(request: Request):
         raise HTTPException(400, "Invalid Songwai fulfillment or payment state")
     if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
         raise HTTPException(400, "Invalid customer details")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         external_id = str(req.order_id)
         existing = conn.execute("SELECT order_no FROM online_orders WHERE branch_id=1 AND source='songwai' AND external_id=?",
@@ -935,7 +1134,7 @@ def create_manual_channel_order(req: ManualChannelOrder, request: Request):
     if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
         raise HTTPException(400, "Invalid customer details")
     external_id = "manual:" + req.channel + ":" + req.external_order_id
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute("SELECT order_no FROM online_orders WHERE branch_id=? AND source='poswai' AND external_id=?",
                                 (req.branch_id, external_id)).fetchone()
@@ -964,7 +1163,7 @@ def map_songwai_menu(req: SongwaiMenuMap, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
     if req.restaurant_id != SONGWAI_RESTAURANT_ID or req.songwai_menu_id < 1 or not req.pos_item_id.strip():
         raise HTTPException(400, "Invalid Songwai menu mapping")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         item = conn.execute("SELECT 1 FROM menu_catalog WHERE branch_id=? AND item_id=? AND active=1",
                             (req.branch_id, req.pos_item_id.strip())).fetchone()
         if not item:
@@ -979,7 +1178,7 @@ def map_songwai_menu(req: SongwaiMenuMap, request: Request):
 @app.get("/api/integrations/songwai/menu-map")
 def list_songwai_menu_map(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         rows = conn.execute("""SELECT songwai_menu_id,pos_item_id FROM songwai_menu_map
             WHERE branch_id=? AND restaurant_id=? ORDER BY songwai_menu_id""",
             (branch_id, SONGWAI_RESTAURANT_ID)).fetchall()
@@ -1015,7 +1214,7 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
     if catalog["restaurant_id"] != 37 or not catalog["items"]:
         raise HTTPException(409, "Expected restaurant 37 catalog")
     imported = 0
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         for item in catalog["items"]:
             menu_id = item.get("id")
@@ -1042,7 +1241,7 @@ def list_online_orders(request: Request, branch_id: int = 1, status: str = "acti
     require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
     if status not in ("active", "all"):
         raise HTTPException(400, "Invalid order filter")
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         query = "SELECT order_no FROM online_orders WHERE branch_id=?"
         if status == "active":
             query += " AND status NOT IN ('handed_off','cancelled')"
@@ -1056,7 +1255,7 @@ class OnlineStatusUpdate(BaseModel):
 
 @app.patch("/api/online/orders/{order_no}")
 def update_online_order(order_no: str, req: OnlineStatusUpdate, request: Request):
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT branch_id,status FROM online_orders WHERE order_no=?", (order_no,)).fetchone()
         if not row:
@@ -1074,7 +1273,6 @@ def update_online_order(order_no: str, req: OnlineStatusUpdate, request: Request
             mark_handed_off(conn, order_no)
         else:
             if req.status == "cancelled":
-                from poswai_commerce import restore_cancelled_inventory
                 restore_cancelled_inventory(conn, row[0], order_no)
             conn.execute("UPDATE online_orders SET status=?,ready_at=CASE WHEN ?='ready' THEN CURRENT_TIMESTAMP ELSE ready_at END WHERE order_no=?",
                          (req.status, req.status, order_no))
@@ -1083,7 +1281,7 @@ def update_online_order(order_no: str, req: OnlineStatusUpdate, request: Request
 
 @app.patch("/api/online/orders/{order_no}/payment")
 def confirm_online_payment(order_no: str, request: Request):
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute("SELECT branch_id,payment_status FROM online_orders WHERE order_no=?", (order_no,)).fetchone()
         if not row:
@@ -1099,7 +1297,7 @@ def get_crm_customers(request: Request, branch_id: int = 1, segment: str = "all"
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     if segment not in ("all", "new", "returning", "dormant30"):
         raise HTTPException(400, "Invalid customer segment")
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         customers = commerce_customers(conn, branch_id, segment)
     return {"branch_id": branch_id, "segment": segment, "customers": customers}
 
@@ -1115,7 +1313,7 @@ def set_customer_consent(req: CustomerConsent):
     if req.branch_id < 1:
         raise HTTPException(400, "Invalid branch")
     line_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         customer_id = upsert_customer(conn, branch_id=req.branch_id, source="line",
             external_id=line_id, marketing_opt_in=req.marketing_opt_in)
@@ -1133,7 +1331,7 @@ def create_campaign(req: CampaignDraft, request: Request):
     manager = require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
     if req.segment not in ("new", "returning", "dormant30") or not 1 <= len(req.message.strip()) <= 500:
         raise HTTPException(400, "Invalid campaign")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         audience = [c for c in commerce_customers(conn, req.branch_id, req.segment)
                     if c["marketing_opt_in"] and c["line_linked"]]
         cursor = conn.execute("INSERT INTO crm_campaigns(branch_id,segment,message,created_by) VALUES(?,?,?,?)",
@@ -1143,7 +1341,7 @@ def create_campaign(req: CampaignDraft, request: Request):
 
 @app.get("/api/crm/campaigns/{campaign_id}")
 def get_campaign(campaign_id: int, request: Request):
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         conn.row_factory = sqlite3.Row
         row = conn.execute("SELECT id,branch_id,segment,message,status,created_at,sent_at FROM crm_campaigns WHERE id=?",
                            (campaign_id,)).fetchone()
@@ -1161,7 +1359,7 @@ def get_campaign(campaign_id: int, request: Request):
 def send_campaign(campaign_id: int, request: Request):
     if not LINE_CHANNEL_ACCESS_TOKEN:
         raise HTTPException(503, "LINE OA is not configured")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         conn.row_factory = sqlite3.Row
         campaign = conn.execute("SELECT id,branch_id,segment,message,status FROM crm_campaigns WHERE id=?",
@@ -1196,10 +1394,10 @@ def send_campaign(campaign_id: int, request: Request):
             except httpx.HTTPError:
                 status = "unknown"
             accepted += status == "accepted"
-            with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+            with closing(connect_db()) as conn, conn:
                 conn.execute("UPDATE crm_campaign_deliveries SET status=? WHERE campaign_id=? AND customer_id=?",
                              (status, campaign_id, recipient["id"]))
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("UPDATE crm_campaigns SET status='submitted' WHERE id=?", (campaign_id,))
     return {"campaign_id": campaign_id, "status": "submitted", "line_accepted": accepted,
             "attempted": len(recipients), "note": "LINE HTTP acceptance does not prove message delivery"}
@@ -1210,7 +1408,7 @@ def create_order(req: OrderCreate, request: Request):
     if not math.isfinite(req.total_amount) or req.total_amount < 0 or not req.items or any(not math.isfinite(item.price) for item in req.items):
         raise HTTPException(400, "Invalid order")
     require_table_or_staff(request, req.branch_id, req.table_no)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
         existing = cur.execute("SELECT event_id,order_no FROM order_events WHERE event_id=? OR order_no=?", (req.event_id, req.order_no)).fetchone()
         if existing:
@@ -1253,7 +1451,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
         query += " AND table_no=?"
         params.append(table_no)
     query += " ORDER BY created_at DESC LIMIT 200"
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         orders = []
         for row in conn.execute(query, params).fetchall():
             items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode FROM order_items WHERE order_no=?", (row[0],)).fetchall()
@@ -1268,7 +1466,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
 @app.get("/api/kds")
 def list_kds_tickets(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         rows = conn.execute(
             "SELECT k.order_no,k.station,k.status,k.created_at,k.fired_at,k.ready_at,oe.table_no "
             "FROM kds_station_tickets k JOIN order_events oe ON oe.order_no=k.order_no "
@@ -1291,7 +1489,7 @@ def list_kds_tickets(request: Request, branch_id: int = 1):
 def _advance_kds_ticket(request: Request, order_no: str, station: str, action: str) -> dict:
     if station not in STATIONS:
         raise HTTPException(400, "Invalid kitchen station")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         row = conn.execute("SELECT k.status,oe.branch_id FROM kds_station_tickets k "
                            "JOIN order_events oe ON oe.order_no=k.order_no "
                            "WHERE k.order_no=? AND k.station=?", (order_no, station)).fetchone()
@@ -1357,7 +1555,7 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
         raise HTTPException(503, "EasySlip is not configured")
     order_nos = sorted(req.order_nos)
     placeholders = ",".join("?" for _ in order_nos)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         prior = conn.execute("SELECT order_nos_json,amount,branch_id,table_no FROM table_payment_events WHERE event_id=?", (req.event_id,)).fetchone()
         if prior:
             if (json.loads(prior[0]) != order_nos or abs(float(prior[1]) - req.amount) > 0.01 or
@@ -1374,7 +1572,7 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
         slip_reference = verify_bank_slip(req.slip_image, expected_cents / 100, os.environ["EASYSLIP_API_KEY"])
     except SlipVerificationError as exc:
         raise HTTPException(422, str(exc)) from exc
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         prior = conn.execute("SELECT order_nos_json,amount,branch_id,table_no FROM table_payment_events WHERE event_id=?", (req.event_id,)).fetchone()
         if prior:
@@ -1406,7 +1604,7 @@ def close_payment(req: PaymentCreate, request: Request):
         raise HTTPException(400, "Invalid amount")
     if req.method != "เงินสด (Cash)" or req.slip_reference:
         raise HTTPException(501, "Use verified EasySlip flow for QR; other payment providers are not configured")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
         order = cur.execute("SELECT branch_id, status, total_amount FROM order_events WHERE order_no=?", (req.order_no,)).fetchone()
         if not order:
@@ -1430,6 +1628,106 @@ def close_payment(req: PaymentCreate, request: Request):
     return {"status": "paid", "order_no": req.order_no, "commission": commission}
 
 
+class OrderCancellation(BaseModel):
+    event_id: str
+    reason: str
+
+
+def _record_cancellation(conn: sqlite3.Connection, req: OrderCancellation, order_no: str,
+                         branch_id: int, kind: str, amount: float, staff: dict) -> None:
+    """Write the audit row and queue the manager's LINE alert in the same transaction."""
+    conn.execute("INSERT INTO order_cancellations (event_id,order_no,branch_id,kind,amount,reason,staff_id) "
+                 "VALUES (?,?,?,?,?,?,?)",
+                 (req.event_id, order_no, branch_id, kind, amount, req.reason.strip(), staff["id"]))
+    headline = "ยกเลิกบิลก่อนรับเงิน" if kind == "void" else "คืนเงินบิลที่ชำระแล้ว"
+    text = (f"⚠️ {headline}\nบิล {order_no} · {amount:,.2f} บาท\n"
+            f"โดย {staff['name']} ({staff['role']})\nเหตุผล: {req.reason.strip()}")
+    for (manager_line_id,) in conn.execute(
+            "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN ('manager','owner') "
+            "AND is_active=1 AND line_user_id IS NOT NULL", (branch_id,)):
+        enqueue_line_notification(conn, f"cancel:{kind}:{order_no}", manager_line_id, branch_id,
+                                  {"type": "text", "text": text})
+
+
+def _existing_cancellation(conn: sqlite3.Connection, req: OrderCancellation, order_no: str, kind: str):
+    prior = conn.execute("SELECT order_no,kind FROM order_cancellations WHERE event_id=?",
+                         (req.event_id,)).fetchone()
+    if not prior:
+        return None
+    if prior[0] != order_no or prior[1] != kind:
+        raise HTTPException(409, "Cancellation event already belongs to another bill")
+    return {"status": prior[1], "order_no": order_no, "existing": True}
+
+
+@app.post("/api/orders/{order_no}/void")
+def void_open_order(order_no: str, req: OrderCancellation, request: Request):
+    """Cancel an unpaid bill. Small ones are a cashier's call; the rest are a manager's."""
+    if not req.event_id or len(req.event_id) > 80 or not 3 <= len(req.reason.strip()) <= 200:
+        raise HTTPException(400, "A cancellation needs an event id and a reason of 3 to 200 characters")
+    with closing(connect_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        order = conn.execute("SELECT branch_id,status,total_amount FROM order_events WHERE order_no=?",
+                             (order_no,)).fetchone()
+        if not order:
+            raise HTTPException(404, "Order not found")
+        branch_id, status, amount = order[0], order[1], float(order[2])
+        staff = require_staff(request, roles=("manager", "owner", "cashier"), branch_id=branch_id)
+        done = _existing_cancellation(conn, req, order_no, "void")
+        if done:
+            return done
+        if status != "open":
+            raise HTTPException(409, "Only an open bill can be cancelled; use the refund flow once it is paid")
+        if staff["role"] == "cashier":
+            today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
+            used = conn.execute("SELECT COUNT(*) FROM order_cancellations WHERE staff_id=? AND kind='void' "
+                                "AND substr(created_at,1,10)=?", (staff["id"], today)).fetchone()[0]
+            if amount > VOID_CASHIER_MAX_AMOUNT:
+                raise HTTPException(403, f"บิลเกิน {VOID_CASHIER_MAX_AMOUNT:,.0f} บาท ต้องให้ผู้จัดการยกเลิก")
+            if used >= VOID_CASHIER_DAILY_LIMIT:
+                raise HTTPException(403, f"ยกเลิกเองครบ {VOID_CASHIER_DAILY_LIMIT} ครั้งแล้ววันนี้ ต้องให้ผู้จัดการยกเลิก")
+        restore_cancelled_inventory(conn, branch_id, order_no)
+        conn.execute("UPDATE order_events SET status='void' WHERE order_no=?", (order_no,))
+        conn.execute("DELETE FROM kds_station_tickets WHERE order_no=?", (order_no,))
+        _record_cancellation(conn, req, order_no, branch_id, "void", amount, staff)
+    return {"status": "void", "order_no": order_no, "amount": amount, "voided_by": staff["id"]}
+
+
+@app.post("/api/payments/{order_no}/refund")
+def refund_paid_order(order_no: str, req: OrderCancellation, request: Request):
+    """Give money back on a closed bill. Always a manager or the owner, never a cashier."""
+    if not req.event_id or len(req.event_id) > 80 or not 3 <= len(req.reason.strip()) <= 200:
+        raise HTTPException(400, "A refund needs an event id and a reason of 3 to 200 characters")
+    with closing(connect_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        order = conn.execute("SELECT branch_id,status,total_amount FROM order_events WHERE order_no=?",
+                             (order_no,)).fetchone()
+        if not order:
+            raise HTTPException(404, "Order not found")
+        branch_id, status, amount = order[0], order[1], float(order[2])
+        manager = require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+        done = _existing_cancellation(conn, req, order_no, "refund")
+        if done:
+            return done
+        if status != "paid":
+            raise HTTPException(409, "Only a paid bill can be refunded")
+        paid = conn.execute("SELECT id FROM pos_orders WHERE order_no=? AND status='paid'", (order_no,)).fetchone()
+        if not paid:
+            raise HTTPException(409, "No settled payment to refund")
+        restore_cancelled_inventory(conn, branch_id, order_no)
+        conn.execute("UPDATE order_events SET status='refunded' WHERE order_no=?", (order_no,))
+        conn.execute("UPDATE pos_orders SET status='refunded' WHERE id=?", (paid[0],))
+        # Commission earned on this bill is reversed with mirrored rows, so the
+        # payroll history keeps both the credit and the clawback.
+        reversed_rows = conn.execute(
+            "INSERT INTO commission_records (staff_id,order_id,period_date,base_sales_amount,"
+            "calculated_amount,pool_divisor) SELECT staff_id,order_id,period_date,-base_sales_amount,"
+            "-calculated_amount,pool_divisor FROM commission_records WHERE order_id=? AND calculated_amount>0",
+            (paid[0],)).rowcount
+        _record_cancellation(conn, req, order_no, branch_id, "refund", amount, manager)
+    return {"status": "refunded", "order_no": order_no, "amount": amount,
+            "refunded_by": manager["id"], "commission_entries_reversed": reversed_rows}
+
+
 class AttendanceCreate(BaseModel):
     event_id: str
     staff_id: int
@@ -1443,7 +1741,7 @@ def record_attendance(req: AttendanceCreate, request: Request):
     staff = require_staff(request)
     if staff["id"] != req.staff_id and staff["role"] not in ("manager", "owner"):
         raise HTTPException(403, "Cannot record attendance for another staff member")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         target = conn.execute("SELECT branch_id,is_active,role FROM staffs WHERE id=?", (req.staff_id,)).fetchone()
         if not target or not target[1]:
             raise HTTPException(404, "Active staff not found")
@@ -1456,7 +1754,7 @@ def record_attendance(req: AttendanceCreate, request: Request):
                               (req.staff_id, today)).fetchone()
         if locked:
             raise HTTPException(403, "Staff access is locked for this shift")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
         existing_event = cur.execute("SELECT staff_id,action FROM attendance_events WHERE event_id=?", (req.event_id,)).fetchone()
         if existing_event:
@@ -1491,7 +1789,7 @@ def set_staff_pay_rate(staff_id: int, req: StaffPayRate, request: Request):
     manager = require_staff(request, roles=("manager", "owner"))
     if not math.isfinite(req.hourly_rate) or req.hourly_rate < 0 or req.hourly_rate > 100000:
         raise HTTPException(400, "Invalid hourly rate")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         changed = conn.execute("UPDATE staffs SET hourly_rate=? WHERE id=? AND branch_id=? AND is_active=1",
                                (req.hourly_rate, staff_id, manager["branch_id"]))
         if not changed.rowcount:
@@ -1511,7 +1809,7 @@ def create_shift_template(req: ShiftTemplateCreate, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
     if not req.name.strip() or len(req.name) > 80 or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", req.start_time) or not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", req.end_time) or req.start_time == req.end_time:
         raise HTTPException(400, "Invalid shift template")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         cur = conn.execute("INSERT INTO shift_templates (branch_id,name,start_time,end_time) VALUES (?,?,?,?)",
                            (req.branch_id, req.name.strip(), req.start_time, req.end_time))
     return {"id": cur.lastrowid, **req.model_dump()}
@@ -1520,7 +1818,7 @@ def create_shift_template(req: ShiftTemplateCreate, request: Request):
 @app.get("/api/staff/shift-templates")
 def list_shift_templates(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute("SELECT id,name,start_time,end_time FROM shift_templates WHERE branch_id=? ORDER BY id",
                             (branch_id,)).fetchall()
@@ -1531,7 +1829,7 @@ class ShiftAssignment(BaseModel):
     staff_id: int
     branch_id: int
     work_date: str
-    shift_template_id: int
+    shift_template_id: Optional[int] = None  # None books the day off
 
 
 @app.post("/api/staff/shifts")
@@ -1541,22 +1839,24 @@ def assign_shift(req: ShiftAssignment, request: Request):
         datetime.date.fromisoformat(req.work_date)
     except ValueError as exc:
         raise HTTPException(400, "Invalid work date") from exc
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         staff = conn.execute("SELECT 1 FROM staffs WHERE id=? AND branch_id=? AND is_active=1",
                              (req.staff_id, req.branch_id)).fetchone()
-        template = conn.execute("SELECT 1 FROM shift_templates WHERE id=? AND branch_id=?",
-                                (req.shift_template_id, req.branch_id)).fetchone()
+        template = req.shift_template_id is None or conn.execute(
+            "SELECT 1 FROM shift_templates WHERE id=? AND branch_id=?",
+            (req.shift_template_id, req.branch_id)).fetchone()
         if not staff or not template:
             raise HTTPException(404, "Staff or shift template not found")
         current = conn.execute("SELECT status FROM staff_shifts WHERE staff_id=? AND work_date=?",
                                (req.staff_id, req.work_date)).fetchone()
         if current and current[0] in ("on_leave", "absent"):
             raise HTTPException(409, "Cannot replace leave or absence shift")
+        status = "day_off" if req.shift_template_id is None else "scheduled"
         conn.execute("INSERT INTO staff_shifts (staff_id,branch_id,work_date,shift_template_id,status) "
-                     "VALUES (?,?,?,?,'scheduled') ON CONFLICT(staff_id,work_date) DO UPDATE "
-                     "SET shift_template_id=excluded.shift_template_id,status='scheduled'",
-                     (req.staff_id, req.branch_id, req.work_date, req.shift_template_id))
-    return {"status": "scheduled", **req.model_dump()}
+                     "VALUES (?,?,?,?,?) ON CONFLICT(staff_id,work_date) DO UPDATE "
+                     "SET shift_template_id=excluded.shift_template_id,status=excluded.status",
+                     (req.staff_id, req.branch_id, req.work_date, req.shift_template_id, status))
+    return {"status": status, **req.model_dump()}
 
 
 @app.post("/api/staff/absence-check")
@@ -1566,7 +1866,7 @@ def check_staff_absences(request: Request, branch_id: int = 1):
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7)))
     today = now.date().isoformat()
     absent_ids = []
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         rows = conn.execute("SELECT ss.staff_id,st.start_time FROM staff_shifts ss "
                             "JOIN shift_templates st ON st.id=ss.shift_template_id AND st.branch_id=ss.branch_id "
                             "WHERE ss.branch_id=? AND ss.work_date=? AND ss.status='scheduled' "
@@ -1595,7 +1895,7 @@ def commissions(request: Request, work_date: str, branch_id: int = 1):
         datetime.date.fromisoformat(work_date)
     except ValueError:
         raise HTTPException(400, "work_date must be YYYY-MM-DD")
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         sales = conn.execute("SELECT COALESCE(SUM(net_amount),0) FROM pos_orders "
                              "WHERE branch_id=? AND status='paid' AND date(closed_at,'+7 hours')=?",
                              (branch_id, work_date)).fetchone()[0]
@@ -1621,7 +1921,7 @@ def staff_payroll(request: Request, month: str, branch_id: int = 1):
         raise HTTPException(400, "Invalid branch")
     start = datetime.date.fromisoformat(f"{month}-01")
     end = (start.replace(day=28) + datetime.timedelta(days=4)).replace(day=1)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         staff_rows = conn.execute(
             "SELECT id, name, role, hourly_rate FROM staffs WHERE branch_id=? AND is_active=1 ORDER BY name",
@@ -1704,10 +2004,10 @@ def staff_overview(request: Request, branch_id: int = 1):
     """Manager's live roster and leave inbox for one branch."""
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     today = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).date().isoformat()
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         conn.row_factory = sqlite3.Row
         staff_rows = conn.execute(
-            "SELECT s.id,s.name,s.role,s.branch_id,ss.status,ss.pos_pin_locked,"
+            "SELECT s.id,s.name,s.role,s.branch_id,ss.status,ss.pos_pin_locked,ss.shift_template_id,"
             "st.name AS shift_name,st.start_time,st.end_time,a.clock_in,a.clock_out "
             "FROM staffs s LEFT JOIN staff_shifts ss ON ss.staff_id=s.id AND ss.work_date=? "
             "LEFT JOIN shift_templates st ON st.id=ss.shift_template_id "
@@ -1727,13 +2027,16 @@ def staff_overview(request: Request, branch_id: int = 1):
             "FROM commission_records cr JOIN staffs s ON s.id=cr.staff_id "
             "WHERE s.branch_id=? AND cr.period_date=? GROUP BY cr.staff_id", (branch_id, today),
         ).fetchall()
+        quotas = leave_quota_map(conn, branch_id)
     by_staff_commission = {row["staff_id"]: round(float(row["amount"]), 2) for row in commissions}
     staff = [{"id": row["id"], "name": row["name"], "role": row["role"],
-              "shift": row["shift_name"] or (f"{row['start_time']}–{row['end_time']}" if row["start_time"] else "—"),
-              "status": row["status"] if row["status"] in ("on_leave", "absent") else
+              "shift": row["shift_name"] or (f"{row['start_time']}–{row['end_time']}" if row["start_time"] else
+                                             "วันหยุด" if row["status"] == "day_off" else "—"),
+              "shift_template_id": row["shift_template_id"],
+              "status": row["status"] if row["status"] in ("on_leave", "absent", "day_off", "suspended") else
                         ("clocked_out" if row["clock_out"] else "clocked_in" if row["clock_in"] else "scheduled"),
               "pos_pin_locked": bool(row["pos_pin_locked"]), "clock_in": row["clock_in"],
-              "clock_out": row["clock_out"],
+              "clock_out": row["clock_out"], "leave_quota": quotas.get(row["id"]),
               "commission_today": by_staff_commission.get(row["id"], 0.0)} for row in staff_rows]
     return {"branch_id": branch_id, "work_date": today, "staff": staff,
             "leave_requests": [dict(row) for row in leaves],
@@ -1744,17 +2047,19 @@ def staff_overview(request: Request, branch_id: int = 1):
 def my_staff_status(request: Request):
     actor = require_staff(request)
     today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         row = conn.execute("SELECT a.clock_in,a.clock_out,ss.status,ss.pos_pin_locked,st.name "
                            "FROM staffs s LEFT JOIN staff_shifts ss ON ss.staff_id=s.id AND ss.work_date=? "
                            "LEFT JOIN shift_templates st ON st.id=ss.shift_template_id "
                            "LEFT JOIN attendances a ON a.id=(SELECT id FROM attendances WHERE staff_id=s.id "
                            "AND substr(clock_in,1,10)=? ORDER BY id DESC LIMIT 1) WHERE s.id=?",
                            (today, today, actor["id"])).fetchone()
-    status = row[2] if row[2] in ("on_leave", "absent") else (
+        quota = leave_quota_map(conn, actor["branch_id"]).get(actor["id"])
+    status = row[2] if row[2] in ("on_leave", "absent", "day_off", "suspended") else (
         "clocked_out" if row[1] else "clocked_in" if row[0] else "scheduled")
     return {"id": actor["id"], "name": actor["name"], "role": actor["role"],
-            "shift": row[4] or "—", "status": status, "pos_pin_locked": bool(row[3]),
+            "shift": row[4] or ("วันหยุด" if status == "day_off" else "—"), "status": status,
+            "pos_pin_locked": bool(row[3]), "leave_quota": quota,
             "clock_in": row[0], "clock_out": row[1]}
 
 
@@ -1785,7 +2090,7 @@ class LineLinkRequest(BaseModel):
 def link_line_staff(req: LineLinkRequest, request: Request):
     staff = require_staff(request)
     line_user_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
-    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+    with closing(connect_db()) as conn, conn:
         owner = conn.execute("SELECT id FROM staffs WHERE line_user_id=?", (line_user_id,)).fetchone()
         if owner and owner[0] != staff["id"]:
             raise HTTPException(status_code=409, detail="LINE account is already linked to another staff member")
@@ -1799,7 +2104,7 @@ def link_line_staff(req: LineLinkRequest, request: Request):
 def _review_leave(leave_id: int, manager_staff_id: int, decision: str) -> dict:
     if decision not in ("approved", "rejected"):
         raise HTTPException(status_code=400, detail="Invalid leave decision")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("BEGIN IMMEDIATE")
@@ -1855,7 +2160,7 @@ def submit_leave_request(req: LeaveRequestCreate):
         raise HTTPException(status_code=400, detail="Invalid leave date range")
     if req.leave_type not in ("sick", "personal", "vacation", "swap_shift"):
         raise HTTPException(status_code=400, detail="Invalid leave type")
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
     staff = cur.execute("SELECT id, branch_id, name FROM staffs WHERE id=? AND line_user_id=? AND is_active=1",
@@ -1895,7 +2200,7 @@ def submit_leave_request(req: LeaveRequestCreate):
 @app.post("/api/line/notifications/retry")
 def retry_line_notifications(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
-    with closing(sqlite3.connect(DB_PATH)) as conn:
+    with closing(connect_db()) as conn:
         return flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN, branch_id, limit=100)
 
 
@@ -1928,7 +2233,7 @@ async def line_webhook(request: Request):
         line_user_id = event.get("source", {}).get("userId")
         if not parsed or not line_user_id:
             continue
-        with closing(sqlite3.connect(DB_PATH)) as conn:
+        with closing(connect_db()) as conn:
             manager = conn.execute(
                 "SELECT id FROM staffs WHERE line_user_id=? AND role IN ('manager','owner') AND is_active=1",
                 (line_user_id,),
@@ -1943,7 +2248,7 @@ def calculate_pooled_commission_divisor(work_date: str) -> int:
     คำนวณตัวหารจำนวนคนที่มาทำงานจริง (active_workers_count)
     โดยตัดคนที่สถานะเป็น 'on_leave' หรือ 'absent' ออกตาม SQL Logic
     """
-    conn = sqlite3.connect(DB_PATH)
+    conn = connect_db()
     cur = conn.cursor()
     cur.execute(
         """
@@ -2013,7 +2318,8 @@ def serve_index():
 
 @app.get("/line_pos_prototype.html")
 def serve_prototype():
-    return FileResponse(Path(__file__).parent / "line_pos_prototype.html")
+    """The old prototype copy is gone; keep saved links working on the real app."""
+    return RedirectResponse("/", status_code=301)
 
 
 @app.get("/manifest.json")

@@ -154,7 +154,9 @@
         const mine=await response.json();
         if(generation!==staffRefreshGeneration)return;
         state.staffStats=[{id:`ST${String(auth.staff_id).padStart(2,'0')}`,name:auth.name,role:auth.role,
-          shift:mine.shift,shiftStatus:mine.status,posLocked:mine.pos_pin_locked,commissionToday:0,quotas:null}];
+          shift:mine.shift,shiftStatus:mine.status,posLocked:mine.pos_pin_locked,commissionToday:0,
+          quotas:remainingLeave(mine.leave_quota),shiftTemplateId:null}];
+        state.shiftTemplates=[];state.staffWorkDate=null;
       }catch(error){if(generation!==staffRefreshGeneration)return;state.staffStats=[];if(notice)notice.textContent=error.message;}
       state.leaveRequests=[];state.staffLiveOverview=true;
       if(notice&&state.staffStats.length)notice.textContent='ข้อมูลบัญชีของคุณ • ลงเวลาทำงานได้จากหน้านี้';
@@ -167,7 +169,12 @@
         if(generation!==staffRefreshGeneration)return;
         state.staffStats=overview.staff.map(s=>({id:`ST${String(s.id).padStart(2,'0')}`,name:s.name,role:s.role,
           shift:s.shift,shiftStatus:s.status,posLocked:s.pos_pin_locked,commissionToday:s.commission_today,
-          sales:0,bills:0,quotas:null}));
+          sales:0,bills:0,quotas:remainingLeave(s.leave_quota),shiftTemplateId:s.shift_template_id}));
+        state.staffWorkDate=overview.work_date;
+        try{
+          const templates=await fetch(`/api/staff/shift-templates?branch_id=${encodeURIComponent(auth.branch_id)}`,{credentials:'same-origin',cache:'no-store'});
+          state.shiftTemplates=templates.ok?(await templates.json()).items:[];
+        }catch(error){state.shiftTemplates=[];}
         state.leaveRequests=overview.leave_requests.map(l=>({id:`LV-${l.id}`,serverLeaveId:l.id,
           staffId:`ST${String(l.staff_id).padStart(2,'0')}`,staffName:l.staff_name,leaveType:l.leave_type,
           leaveTypeLabel:({sick:'ลาป่วย',personal:'ลากิจ',vacation:'ลาพักร้อน',swap_shift:'สลับกะ'})[l.leave_type]||l.leave_type,
@@ -189,12 +196,46 @@
       payrollSelect.replaceChildren(...state.staffStats.map(s=>new Option(s.name,s.id)));
       payrollSelect.value=state.staffStats.some(s=>s.id===selected)?selected:payrollSelect.options[0]?.value||'';
     }
-    $('#staffQuotaBanner').textContent=state.staffStats.length?'ยังไม่ได้กำหนดโควตาวันลาในระบบ':'ไม่มีข้อมูลพนักงาน';
+    if(!state.staffStats.length)$('#staffQuotaBanner').textContent='ไม่มีข้อมูลพนักงาน';
+    else if(typeof onStaffSelectChange==='function')onStaffSelectChange();
     $('#view-staff button[onclick*="triggerAutoAbsenceDetection"]').hidden=true;
     $('#view-staff button[onclick*="testPosPinLoginModal"]').hidden=true;
     if(typeof renderStaffAndAnalyticsView==='function')renderStaffAndAnalyticsView();
     if(window.poswaiRefreshPayroll)window.poswaiRefreshPayroll();
   }
+  function remainingLeave(quota){
+    return quota?{sick:quota.sick.left,personal:quota.personal.left,vacation:quota.vacation.left}:null;
+  }
+  async function staffAction(path,body){
+    const response=await fetch(path,{method:'PATCH',credentials:'same-origin',cache:'no-store',
+      headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.detail||`HTTP ${response.status}`);
+    return data;
+  }
+  window.poswaiAssignShift=async(staffId,templateId)=>{
+    const auth=window.poswaiAuth?.current;
+    if(!auth||typeof state==='undefined')return;
+    const workDate=state.staffWorkDate||new Date().toLocaleDateString('en-CA');
+    try{
+      const response=await fetch('/api/staff/shifts',{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({branch_id:auth.branch_id,staff_id:staffId,work_date:workDate,
+          shift_template_id:templateId===''?null:Number(templateId)})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.detail||`HTTP ${response.status}`);
+      if(typeof showToast==='function')showToast(data.status==='day_off'?'บันทึกวันหยุดแล้ว':'จัดกะให้พนักงานแล้ว');
+    }catch(error){if(typeof showToast==='function')showToast(`จัดกะไม่สำเร็จ: ${error.message}`);}
+    refreshLiveStaff();
+  };
+  window.poswaiTogglePosAccess=async(staffId,locked)=>{
+    if(locked&&!confirm('ระงับสิทธิ์เข้าใช้ POS ของพนักงานคนนี้วันนี้?'))return;
+    try{
+      await staffAction(`/api/staff/${staffId}/pos-access`,{locked});
+      if(typeof showToast==='function')showToast(locked?'ระงับสิทธิ์ POS แล้ว':'คืนสิทธิ์ POS แล้ว');
+    }catch(error){if(typeof showToast==='function')showToast(`เปลี่ยนสิทธิ์ไม่สำเร็จ: ${error.message}`);}
+    refreshLiveStaff();
+  };
   window.addEventListener('poswai:auth-changed',refreshLiveStaff);
   window.addEventListener('poswai:staff-refresh',refreshLiveStaff);
   window.addEventListener('poswai:config-ready',refreshLiveStaff);

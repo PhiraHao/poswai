@@ -60,7 +60,7 @@ def allocate_commissions(conn: sqlite3.Connection, order_id: int) -> dict:
             "SELECT s.id FROM staffs s WHERE s.branch_id=? AND s.is_active=1 "
             "AND EXISTS (SELECT 1 FROM attendances a WHERE a.staff_id=s.id AND date(a.clock_in)=?) "
             "AND NOT EXISTS (SELECT 1 FROM staff_shifts sh WHERE sh.staff_id=s.id "
-            "AND sh.work_date=? AND sh.status IN ('on_leave','absent')) "
+            "AND sh.work_date=? AND sh.status IN ('on_leave','absent','suspended')) "
             "AND NOT EXISTS (SELECT 1 FROM leave_requests lr WHERE lr.staff_id=s.id "
             "AND lr.status='approved' AND lr.start_date<=? AND lr.end_date>=?) "
             "ORDER BY s.id",
@@ -70,7 +70,7 @@ def allocate_commissions(conn: sqlite3.Connection, order_id: int) -> dict:
         eligible = [row[0] for row in conn.execute(
             "SELECT s.id FROM staffs s WHERE s.id=? AND s.branch_id=? AND s.is_active=1 "
             "AND NOT EXISTS (SELECT 1 FROM staff_shifts sh WHERE sh.staff_id=s.id "
-            "AND sh.work_date=? AND sh.status IN ('on_leave','absent')) "
+            "AND sh.work_date=? AND sh.status IN ('on_leave','absent','suspended')) "
             "AND NOT EXISTS (SELECT 1 FROM leave_requests lr WHERE lr.staff_id=s.id "
             "AND lr.status='approved' AND lr.start_date<=? AND lr.end_date>=?)",
             (cashier_id, branch_id, period_date, period_date, period_date),

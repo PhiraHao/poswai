@@ -229,3 +229,71 @@ is not a Git repository. POS WAI's Hostinger Compose sets
 on 16 October 2026. The POS WAI bridge design and rollback instructions are in
 `integrations/SONGWAI.md`. Keep the shared webhook secret unset until the
 real catalog/BOM/stock and authenticated order test are ready.
+
+## Staff roles, leave allowance and database concurrency (16 October 2026)
+
+`GET /api/permissions` publishes one role matrix that the PWA uses to hide tabs
+and the staff workspace renders as a table. It is a convenience only: every
+endpoint still checks the signed-in role, so hiding a tab grants nothing.
+Owner and manager see all seven workspaces; a cashier sees ordering, cashier,
+members and their own staff card; kitchen sees the kitchen display, stock and
+their own card; service and general staff see ordering and their own card.
+
+Each staff account now carries a yearly leave allowance in `staff_leave_quotas`
+(30 sick, 3 personal, 6 vacation by default). Accounts created before this table
+existed are backfilled with those defaults on start-up, which is why the staff
+page no longer reports "ยังไม่ได้กำหนดโควตาวันลาในระบบ". Approved leave for the
+current calendar year is deducted when the remaining days are shown. A manager
+sets the name, role, PIN, hourly rate and allowance from the one staff dialog.
+PINs remain eight characters or longer; a four-digit PIN is not accepted,
+because the same credential opens payroll and sales data.
+
+Today's roster row is now the place shifts and access are set: the shift column
+is a dropdown (any configured shift, or วันหยุด, which stores `day_off` and is
+never auto-marked absent), and the POS column suspends or restores that person's
+sign-in for the day. A manager suspension stores `suspended`, which is separate
+from auto-detected `absent`, ends their open sessions, and takes them out of the
+pooled commission divisor. Nobody can change their own access, and a manager
+cannot touch an owner or another manager.
+
+Every SQLite connection now opens through `connect_db()`, which enables WAL and
+a ten-second busy timeout, so the kitchen display can read while the cashier
+writes instead of failing on a locked database. The duplicated
+`line_pos_prototype.html` copy was removed; that path now redirects to `/`, so
+saved links and home-screen shortcuts land on the current app.
+
+## Cancelling and refunding bills (16 October 2026)
+
+Taking a bill back is split in two, because the risk is not the same.
+
+`POST /api/orders/{order_no}/void` cancels a bill that has **not** been paid:
+the usual "pressed the wrong item, customer changed their mind" case. A cashier
+may do this alone while the bill is at most `POSWAI_VOID_CASHIER_MAX_AMOUNT`
+(default 200 baht) and they have used fewer than
+`POSWAI_VOID_CASHIER_DAILY_LIMIT` voids that day (default 3). Past either limit
+the API refuses and tells them to fetch a manager. Managers and the owner have
+no ceiling. Stock goes back, the kitchen ticket disappears, and the bill becomes
+`void`.
+
+`POST /api/payments/{order_no}/refund` gives money back on a bill that is
+already paid. This is manager or owner only, with no cashier exception, because
+it is the point where cash actually leaves the till. The bill and its
+`pos_orders` row become `refunded`, stock goes back, and the commission earned
+on it is reversed with mirrored negative rows, so payroll history shows both the
+credit and the clawback instead of silently losing a record.
+
+Both endpoints demand a reason of 3 to 200 characters, are idempotent on
+`event_id`, write an audit row to `order_cancellations` (who, when, how much,
+why), and queue a LINE message to every manager with a linked LINE account. The
+daily LINE alert is deliberate: it gives the owner the oversight that asking for
+a manager PIN at the counter is supposed to give, without stopping the queue.
+
+A manager PIN typed into the till was considered and rejected: in practice the
+PIN gets shared with the cashier for the shifts the manager is away, after which
+the audit trail records approvals that never happened. If an approval step is
+wanted later, send it through the existing LINE approval pipe (the one leave
+requests use) rather than a PIN prompt on the device.
+
+The cashier screen does not call these endpoints yet — the sales side is still
+sample data behind `POSWAI_PREVIEW_ONLY=1`. Wire the buttons when live sales are
+switched on; the rules above are enforced by the API either way.

@@ -7,17 +7,20 @@
   let current = null;
   let live = false;
   let preview = false;
+  /* Mirrors ROLE_PERMISSIONS in line_pos_server.py and is refreshed from /api/permissions.
+     Hiding a tab is only a convenience: every endpoint checks the role again. */
   const tabsByRole = {
     owner: ['customer','kitchen','cashier','inventory','crm','staff','analytics'],
     manager: ['customer','kitchen','cashier','inventory','crm','staff','analytics'],
-    cashier: ['customer','kitchen','cashier','staff'],
-    kitchen: ['customer','kitchen','inventory','staff'],
-    service: ['customer','kitchen','staff'],
+    cashier: ['customer','cashier','crm','staff'],
+    kitchen: ['kitchen','inventory','staff'],
+    service: ['customer','staff'],
     staff: ['customer','staff'],
     guest: ['customer','staff']
   };
+  let matrix = null;
   const canAccessTab = tab => (tabsByRole[current?.role || 'guest'] || tabsByRole.guest).includes(tab);
-  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; }, canAccessTab };
+  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; }, get permissions() { return matrix; }, canAccessTab };
   window.poswaiAuth = state;
 
   const accountButton = document.createElement('button');
@@ -163,6 +166,14 @@
   };
   window.poswaiAuth.logout = logout;
   window.poswaiAuth.openManager = () => { if (current?.role === 'manager' || current?.role === 'owner') open(true); };
+  fetch('/api/permissions', { cache: 'no-store' }).then(response => response.ok ? response.json() : null).then(result => {
+    if (!result?.roles) return;
+    matrix = result;
+    for (const [role, entry] of Object.entries(result.roles))
+      if (Array.isArray(entry.tabs)) tabsByRole[role] = entry.tabs;
+    update();
+    window.dispatchEvent(new Event('poswai:permissions-ready'));
+  }).catch(() => { /* The built-in matrix above keeps the offline shell usable. */ });
   fetch('/api/config', { cache: 'no-store' }).then(response => response.json()).then(async config => {
     preview = !!config.preview_only;
     live = !preview || !!config.staff_live;
