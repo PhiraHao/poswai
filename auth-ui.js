@@ -177,10 +177,17 @@
   });
   const enterPreview = (tab) => {
     sessionStorage.setItem('poswaiPreviewPeek', '1');
+    history.pushState({ poswaiPeek: 1 }, '', location.href);
     close();
     update();
     if (tab) document.querySelector(`.role-tab[onclick*="switchTab('${tab}'"]`)?.click();
   };
+  window.addEventListener('popstate', (event) => {
+    if (sessionStorage.getItem('poswaiPreviewPeek') === '1' && !event.state?.poswaiPeek) {
+      sessionStorage.removeItem('poswaiPreviewPeek');
+      update();
+    }
+  });
   landing.querySelector('#poswaiLandingLogin')?.addEventListener('click', () => open());
   landing.querySelector('#poswaiLandingPreview')?.addEventListener('click', () => enterPreview());
   $('#poswaiCloseLogin').addEventListener('click', close);

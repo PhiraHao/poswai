@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: sqlite:////data/poswai.db
-      POSWAI_PREVIEW_ONLY: "1"
+      POSWAI_PREVIEW_ONLY: "0"
       POSWAI_STAFF_LIVE: "1"
       PROMPTPAY_ID: ${PROMPTPAY_ID:-}
       LINE_LIFF_ID: ${LINE_LIFF_ID:-2012039182-4hwigCrL}

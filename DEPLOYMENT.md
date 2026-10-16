@@ -343,3 +343,15 @@ token. While `POSWAI_PREVIEW_ONLY=1`, the landing also offers
 "ดูตัวอย่างระบบโดยไม่เข้าสู่ระบบ" so the owner can still demo the app; that
 choice lives in sessionStorage and is forgotten when the tab closes or the
 person signs out.
+
+## Preview mode switched off (16 October 2026)
+
+At the owner's request POS WAI now runs as the official site:
+`POSWAI_PREVIEW_ONLY=0`. Sales, payments, menu and stock edits are accepted,
+and the PWA shows the real menu from the database instead of the built-in
+sample menu (live-data.js never mixes the two). The database had no menu
+items at the switch, so the ordering screen is empty until a manager adds the
+real menu from the stock workspace. The home page no longer offers a demo: its
+trial and demo buttons open the shop's LINE OA instead. To go back to a
+read-only showcase, set `POSWAI_PREVIEW_ONLY` to `"1"` and recreate the
+container; nothing else needs to change.
