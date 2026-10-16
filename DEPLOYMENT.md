@@ -159,6 +159,12 @@ POS order.
 The existing Songwai restaurant's eight menu IDs are `480`–`483` and
 `1490`–`1493`. A manager must first enter the real POS menu, ingredient stocks,
 and BOM recipes, then map each Songwai item on the **ช่องทางขาย** tab. The public
+manager screen now has **เตรียมเมนูทั้ง 8 รายการ**: it imports current Songwai
+names and prices as inactive drafts and links their IDs without overwriting
+any existing POS recipe. Drafts are excluded from ordering. A Songwai draft
+cannot be activated until its BOM is nonempty and each ingredient has a stock
+record. The owner chose to provide recipes and initial stock later.
+The public
 POS WAI deployment still has `POSWAI_PREVIEW_ONLY=1`, and Songwai's live order
 route currently has no pickup mode or POS webhook. Do not call the integration
 live or claim that either pickup flow is operating until those changes and an

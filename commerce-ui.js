@@ -28,7 +28,7 @@
     <section class="commerce-pane" data-pane="orders"><div class="commerce-card"><div class="commerce-toolbar"><h2>รับออเดอร์ออนไลน์</h2><select id="commerceOrderFilter" aria-label="กรองออเดอร์"><option value="active">กำลังดำเนินการ</option><option value="all">ทั้งหมด</option></select><button id="commerceRefresh" class="commerce-btn secondary">รีเฟรช</button></div><div id="commerceOrders" class="commerce-list"></div></div></section>
     <section class="commerce-pane" data-pane="members" hidden><div class="commerce-stats" id="commerceStats"></div><div class="commerce-card"><div class="commerce-toolbar"><h2>ลูกค้าร้าน</h2><select id="commerceSegment" aria-label="กลุ่มลูกค้า"><option value="all">ทั้งหมด</option><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></div><div id="commerceMembers" class="commerce-list"></div></div></section>
     <section class="commerce-pane" data-pane="campaigns" hidden><div class="commerce-card"><h2>ส่งโปรโมชันผ่าน LINE OA</h2><p class="commerce-muted">ส่งเฉพาะผู้ที่ยินยอมรับข่าวสารและเชื่อม LINE แล้ว ตรวจข้อความและจำนวนผู้รับก่อนส่งทุกครั้ง</p><form id="commerceCampaignForm" class="commerce-form"><label>กลุ่มเป้าหมาย<select name="segment"><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></label><label class="wide">ข้อความ<textarea name="message" rows="4" maxlength="500" required></textarea></label><button class="commerce-btn" type="submit">สร้างฉบับร่าง</button></form><div id="commerceCampaignDraft" class="commerce-muted"></div></div></section>
-    <section class="commerce-pane" data-pane="connectors" hidden><div class="commerce-card"><h2>Songwai · ร้านโคตรเนื้อ</h2><p class="commerce-muted">จับคู่เมนูของร้านกับ POS WAI ก่อนรับออเดอร์ ระบบใช้ราคาและสต็อกจาก POS WAI</p><div id="commerceMap" class="commerce-list"></div></div><div class="commerce-card"><h3>ช่องทางอื่น</h3><p class="commerce-muted">GrabFood, LINE MAN, ShopeeFood และ TikTok Shop ยังไม่ได้เชื่อมบัญชีหรือรับออเดอร์จริง</p></div></section>`;
+    <section class="commerce-pane" data-pane="connectors" hidden><div class="commerce-card"><h2>Songwai · ร้านโคตรเนื้อ</h2><p class="commerce-muted">เตรียมเมนูจาก Songwai เป็นฉบับร่างก่อน เมนูจะยังไม่เปิดขายจนกว่าจะใส่สูตรและสต็อกจริง</p><button id="commerceImport" class="commerce-btn" type="button">เตรียมเมนูทั้ง 8 รายการ</button><div id="commerceMap" class="commerce-list"></div></div><div class="commerce-card"><h3>ช่องทางอื่น</h3><p class="commerce-muted">GrabFood, LINE MAN, ShopeeFood และ TikTok Shop ยังไม่ได้เชื่อมบัญชีหรือรับออเดอร์จริง</p></div></section>`;
   crm.querySelector('.module-intro')?.after(shell);
   const notice = message => { document.querySelector('#commerceNotice').textContent = message; };
   const panes = [...shell.querySelectorAll('.commerce-pane')];
@@ -93,8 +93,8 @@
     const box = shell.querySelector('#commerceMap');
     if (!manager()) { box.textContent='ผู้จัดการเท่านั้นที่จับคู่เมนูได้'; return; }
     try {
-      const [catalog, mapping, pos] = await Promise.all([api(`/api/integrations/songwai/catalog?branch_id=${branch()}`),api(`/api/integrations/songwai/menu-map?branch_id=${branch()}`),api(`/api/menu?branch_id=${branch()}`)]);
-      box.innerHTML = catalog.items.length ? catalog.items.map(item=>`<div class="commerce-map-row"><span>${escapeHtml(item.name)} · ${money(item.price)}</span><select aria-label="เมนู POS สำหรับ ${escapeHtml(item.name)}" data-menu="${Number(item.id)}"><option value="">ยังไม่จับคู่</option>${pos.items.filter(p=>p.active).map(p=>`<option value="${escapeHtml(p.id)}" ${mapping.mappings.some(m=>m.songwai_menu_id===item.id && m.pos_item_id===p.id)?'selected':''}>${escapeHtml(p.name)} · ${money(p.price)}</option>`).join('')}</select><button class="commerce-btn secondary" data-save="${Number(item.id)}">บันทึก</button></div>`).join('') : 'ร้าน Songwai ยังไม่มีเมนู';
+      const [catalog, mapping, pos] = await Promise.all([api(`/api/integrations/songwai/catalog?branch_id=${branch()}`),api(`/api/integrations/songwai/menu-map?branch_id=${branch()}`),api(`/api/menu?branch_id=${branch()}&include_inactive=true`)]);
+      box.innerHTML = catalog.items.length ? catalog.items.map(item=>{const mapped=mapping.mappings.find(m=>m.songwai_menu_id===item.id);const selected=pos.items.find(p=>p.id===mapped?.pos_item_id);return `<div class="commerce-map-row"><span>${escapeHtml(item.name)} · ${money(item.price)}${selected&&!selected.active?' · รอสูตรและสต็อก':''}</span><select aria-label="เมนู POS สำหรับ ${escapeHtml(item.name)}" data-menu="${Number(item.id)}"><option value="">ยังไม่จับคู่</option>${pos.items.map(p=>`<option value="${escapeHtml(p.id)}" ${mapped?.pos_item_id===p.id?'selected':''}>${escapeHtml(p.name)} · ${p.active?'เปิดขาย':'ฉบับร่าง'}</option>`).join('')}</select><button class="commerce-btn secondary" data-save="${Number(item.id)}" ${selected&&!selected.active?'disabled title="ใส่สูตรและสต็อกก่อน"':''}>บันทึก</button></div>`;}).join('') : 'ร้าน Songwai ยังไม่มีเมนู';
     } catch(error) { box.textContent=`โหลดเมนู Songwai ไม่ได้: ${error.message}`; }
   }
   shell.querySelector('#commerceMap').addEventListener('click', async event => {
@@ -102,6 +102,11 @@
     const menuId=Number(button.dataset.save); const value=shell.querySelector(`select[data-menu="${menuId}"]`)?.value;
     if (!value) { notice('เลือกเมนู POS WAI ก่อน'); return; }
     try { await post('/api/integrations/songwai/menu-map',{branch_id:branch(),restaurant_id:37,songwai_menu_id:menuId,pos_item_id:value},'PUT'); notice('จับคู่เมนูแล้ว'); }
+    catch(error) { notice(error.message); }
+  });
+  shell.querySelector('#commerceImport').addEventListener('click', async () => {
+    if (preview()) { notice('โหมดตัวอย่างยังบันทึกเมนูไม่ได้'); return; }
+    try { const result=await post(`/api/integrations/songwai/import-drafts?branch_id=${branch()}`,{}); notice(`เตรียมเมนูใหม่ ${result.imported} จาก ${result.total} รายการแล้ว ยังไม่เปิดขาย`); await loadMap(); }
     catch(error) { notice(error.message); }
   });
   const customer=document.querySelector('#view-customer .module-intro');

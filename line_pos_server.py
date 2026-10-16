@@ -530,10 +530,12 @@ class MenuUpsert(BaseModel):
 
 
 @app.get("/api/menu")
-def get_menu(branch_id: int = 1):
+def get_menu(request: Request, branch_id: int = 1, include_inactive: bool = False):
     try:
+        if include_inactive:
+            require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
         with closing(sqlite3.connect(DB_PATH)) as conn:
-            return {"branch_id": branch_id, "items": list_menu_items(conn, branch_id)}
+            return {"branch_id": branch_id, "items": list_menu_items(conn, branch_id, active_only=not include_inactive)}
     except CatalogError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
@@ -543,6 +545,13 @@ def put_menu_item(item_id: str, item: MenuUpsert, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
     try:
         with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+            if item_id.startswith("songwai-") and item.active:
+                if not item.bom:
+                    raise CatalogError("Add a BOM recipe before activating Songwai menu", 409)
+                for part in item.bom:
+                    if not conn.execute("SELECT 1 FROM inventory WHERE branch_id=? AND ingredient_id=?",
+                                        (item.branch_id, part.get("ingId"))).fetchone():
+                        raise CatalogError("Add ingredient stock before activating Songwai menu", 409)
             return upsert_menu_item(conn, item.branch_id, item_id, item.name, item.price, item.bom, item.active, item.station)
     except CatalogError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
@@ -835,6 +844,36 @@ def get_songwai_catalog(request: Request, branch_id: int = 1):
          "price": item.get("price")}
         for item in items if isinstance(item, dict) and item.get("restaurant_id") == SONGWAI_RESTAURANT_ID
     ]}
+
+
+@app.post("/api/integrations/songwai/import-drafts")
+def import_songwai_drafts(request: Request, branch_id: int = 1):
+    """Create inactive POS menu placeholders; never overwrite an existing recipe."""
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    catalog = get_songwai_catalog(request, branch_id)
+    if catalog["restaurant_id"] != 37 or not catalog["items"]:
+        raise HTTPException(409, "Expected restaurant 37 catalog")
+    imported = 0
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        for item in catalog["items"]:
+            menu_id = item.get("id")
+            if isinstance(menu_id, bool) or not isinstance(menu_id, int) or menu_id < 1:
+                raise HTTPException(502, "Invalid Songwai menu ID")
+            pos_id = f"songwai-{menu_id}"
+            existing = conn.execute("SELECT 1 FROM menu_catalog WHERE branch_id=? AND item_id=?",
+                                    (branch_id, pos_id)).fetchone()
+            if not existing:
+                try:
+                    upsert_menu_item(conn, branch_id, pos_id, item["name"], item["price"], [], False)
+                except (CatalogError, KeyError) as exc:
+                    raise HTTPException(502, "Invalid Songwai catalog item") from exc
+                imported += 1
+            conn.execute("""INSERT INTO songwai_menu_map(branch_id,restaurant_id,songwai_menu_id,pos_item_id)
+                VALUES(?,?,?,?) ON CONFLICT(branch_id,restaurant_id,songwai_menu_id) DO NOTHING""",
+                (branch_id, SONGWAI_RESTAURANT_ID, menu_id, pos_id))
+    return {"restaurant_id": SONGWAI_RESTAURANT_ID, "imported": imported,
+            "total": len(catalog["items"]), "status": "drafts_inactive"}
 
 
 @app.get("/api/online/orders")

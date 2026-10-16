@@ -97,6 +97,24 @@ class CommerceTest(unittest.TestCase):
         with closing(sqlite3.connect(self.db)) as conn:
             self.assertEqual(conn.execute("SELECT stock FROM inventory WHERE ingredient_id='meat'").fetchone()[0], 10)
 
+    def test_songwai_draft_import_does_not_activate_or_overwrite_recipe(self):
+        self._login()
+        payload = [{"id": 480, "name": "เนื้อวัวผัดขึ้นฉ่าย", "price": 50, "restaurant_id": 37}]
+        with patch.object(server.httpx, "get") as get:
+            get.return_value.status_code = 200
+            get.return_value.json.return_value = payload
+            first = self.client.post("/api/integrations/songwai/import-drafts")
+            second = self.client.post("/api/integrations/songwai/import-drafts")
+        self.assertEqual(first.json()["imported"], 1)
+        self.assertEqual(second.json()["imported"], 0)
+        items = self.client.get("/api/menu?include_inactive=true").json()["items"]
+        draft = next(item for item in items if item["id"] == "songwai-480")
+        self.assertFalse(draft["active"])
+        self.assertEqual(draft["bom"], [])
+        self.assertEqual(self.client.put("/api/menu/songwai-480", json={
+            "name": draft["name"], "price": 50, "bom": [], "active": True}).status_code, 409)
+        self.assertEqual(self.client.get("/api/menu").json()["items"][0]["id"], "beef")
+
     def test_pickup_requires_verified_line_and_consent_for_campaign(self):
         payload = {"event_id": "test-online-123", "branch_id": 1,
                    "fulfillment": "self_pickup", "items": [{"id": "beef", "qty": 1}],
