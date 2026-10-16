@@ -66,6 +66,22 @@
     </div>
   </section>`;
   document.body.append(overlay);
+
+  /* The front door. A phone that scanned a table QR goes straight to ordering;
+     anyone else is asked who they are before the workspace appears. */
+  const landing = document.createElement('div');
+  landing.className = 'poswai-landing';
+  landing.hidden = true;
+  landing.innerHTML = `<section class="poswai-landing-card">
+    <img src="/assets/brand-logo.webp" alt="POS WAI" class="poswai-landing-logo" width="96" height="96">
+    <h1>POS WAI</h1>
+    <p class="poswai-landing-lead">ระบบจัดการร้านอาหารและคาเฟ่</p>
+    <button type="button" class="poswai-auth-primary" id="poswaiLandingLogin">เข้าสู่ระบบพนักงาน</button>
+    <p class="poswai-landing-note">ลูกค้า: สแกน QR ที่โต๊ะเพื่อดูเมนูและสั่งอาหารได้เลย ไม่ต้องเข้าสู่ระบบ</p>
+    <button type="button" class="poswai-landing-preview" id="poswaiLandingPreview" hidden>ดูตัวอย่างระบบโดยไม่เข้าสู่ระบบ</button>
+  </section>`;
+  document.body.append(landing);
+
   const $ = (selector) => overlay.querySelector(selector);
   const showCreateForm = () => {
     $('#poswaiStaffForm').hidden = false;
@@ -94,6 +110,10 @@
     return result;
   };
   const update = () => {
+    const locked = live && !current && !tableToken && sessionStorage.getItem('poswaiPreviewPeek') !== '1';
+    landing.hidden = !locked;
+    document.body.classList.toggle('poswai-locked', locked);
+    landing.querySelector('#poswaiLandingPreview').hidden = !preview;
     document.body.classList.toggle('poswai-guest', live && !preview && !current);
     accountButton.hidden = !live;
     accountButton.textContent = current ? `${current.name} ▾` : 'เข้าสู่ระบบ';
@@ -154,6 +174,12 @@
     showCreateForm();
     $('#poswaiNewName').focus();
   });
+  landing.querySelector('#poswaiLandingLogin').addEventListener('click', () => open());
+  landing.querySelector('#poswaiLandingPreview').addEventListener('click', () => {
+    sessionStorage.setItem('poswaiPreviewPeek', '1');
+    close();
+    update();
+  });
   $('#poswaiCloseLogin').addEventListener('click', close);
   $('#poswaiCloseManager').addEventListener('click', close);
   $('#poswaiLogoutManager').addEventListener('click', async () => {
@@ -162,6 +188,7 @@
   overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && !overlay.hidden) close(); });
   const logout = async () => {
+    sessionStorage.removeItem('poswaiPreviewPeek');
     await api('/api/auth/logout', {}); current = null; update(); if (!tableToken) open();
   };
   window.poswaiAuth.logout = logout;
@@ -185,6 +212,6 @@
       if (response.ok) current = await response.json();
     } catch (_) { /* Offline pages retain local functionality without storing credentials. */ }
     update();
-    if (!current && !tableToken && !preview) open();
+    if (!current && !tableToken && sessionStorage.getItem('poswaiPreviewPeek') !== '1') open();
   }).catch(() => {});
 })();

@@ -330,3 +330,16 @@ themselves (read-only) or a manager or owner of the same branch, who may edit it
 The endpoints are `GET/PATCH /api/staff/{id}/dossier`,
 `PUT /api/staff/{id}/documents/{doc_type}`, `POST/PATCH /api/staff/{id}/assets`
 and `POST /api/staff/{id}/timeline`.
+
+## The front door (16 October 2026)
+
+Opening the site no longer drops a visitor straight into the ordering screen.
+Until someone signs in, a landing page covers the workspace with one action,
+เข้าสู่ระบบพนักงาน, and a line telling customers to scan the QR on their table.
+A phone that arrives with `table_token` in the URL skips all of it and lands on
+the menu for that table, which is the only way a customer should reach ordering
+anyway — the API refuses an order without a staff session or a signed table
+token. While `POSWAI_PREVIEW_ONLY=1`, the landing also offers
+"ดูตัวอย่างระบบโดยไม่เข้าสู่ระบบ" so the owner can still demo the app; that
+choice lives in sessionStorage and is forgotten when the tab closes or the
+person signs out.

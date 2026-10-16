@@ -30,3 +30,20 @@
   .poswai-auth-button { max-width:110px; overflow:hidden; text-overflow:ellipsis; padding:5px 8px; font-size:11px; }
   .poswai-auth-card { padding:20px; }
 }
+
+/* Front door shown until a staff member signs in or a table QR is scanned */
+.poswai-landing { position: fixed; inset: 0; z-index: 900; display: grid; place-items: center; padding: 24px;
+  background: linear-gradient(160deg, #ffcb28 0%, #ffd964 45%, #fff6d8 100%); overflow: auto; }
+.poswai-landing[hidden] { display: none; }
+.poswai-landing-card { width: min(420px, 100%); display: grid; justify-items: center; gap: 14px; padding: 32px 26px;
+  background: #fff; border-radius: 22px; box-shadow: 0 18px 50px rgba(23,33,50,.18); text-align: center; }
+.poswai-landing-logo { width: 96px; height: 96px; object-fit: contain; }
+.poswai-landing-card h1 { margin: 0; font-size: 1.5rem; color: #172132; letter-spacing: .01em; }
+.poswai-landing-lead { margin: -8px 0 4px; color: #64748b; font-size: .88rem; }
+.poswai-landing-card .poswai-auth-primary { width: 100%; padding: 13px 16px; font-size: 1rem; }
+.poswai-landing-note { margin: 0; padding: 11px 13px; background: #fffaf0; border: 1px solid #f7e4ac;
+  border-radius: 12px; color: #6b5720; font-size: .82rem; line-height: 1.7; }
+.poswai-landing-preview { border: 0; background: none; color: #34536c; font-size: .8rem; font-weight: 700;
+  text-decoration: underline; cursor: pointer; padding: 4px; }
+.poswai-landing-preview[hidden] { display: none; }
+body.poswai-locked { overflow: hidden; }
