@@ -160,6 +160,31 @@ class VoidAndRefundTest(unittest.TestCase):
         self.assertEqual(self.manager.post("/api/payments/B-404/refund",
                                            json={"event_id": "refund-4", "reason": "ไม่มีบิลนี้"}).status_code, 404)
 
+    def test_the_daily_ceiling_still_counts_voids_made_after_midnight(self):
+        """Shop time, not UTC: a void at 00:30 belongs to the day that is starting.
+
+        The audit rows carry SQLite's UTC timestamp, so a count that compared them
+        with the Bangkok date missed every void made between midnight and 07:00 —
+        the hours a late shift is open — and left the cashier without a ceiling.
+        """
+        early = datetime.datetime.now(server.BANGKOK_TZ).replace(hour=0, minute=30, second=0, microsecond=0)
+        stored = early.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        self.assertNotEqual(stored[:10], early.date().isoformat())  # the two dates really do differ
+        with sqlite3.connect(server.DB_PATH) as conn:
+            for index in range(server.VOID_CASHIER_DAILY_LIMIT):
+                conn.execute("INSERT INTO order_events(event_id,order_no,branch_id,table_no,total_amount,status) "
+                             "VALUES(?,?,1,'T1',50,'void')", (f"early-{index}", f"B-EARLY{index}"))
+                conn.execute("INSERT INTO order_cancellations(event_id,order_no,branch_id,kind,amount,reason,"
+                             "staff_id,created_at) VALUES(?,?,1,'void',50,'กดผิดเมนู',2,?)",
+                             (f"void-early-{index}", f"B-EARLY{index}", stored))
+        self._open_order("B-NIGHT")
+        blocked = self.cashier.post("/api/orders/B-NIGHT/void",
+                                    json={"event_id": "void-night", "reason": "ลูกค้ายกเลิก"})
+        self.assertEqual(blocked.status_code, 403, blocked.text)
+        self.assertIn("ผู้จัดการ", blocked.json()["detail"])
+        self.assertEqual(self.manager.post("/api/orders/B-NIGHT/void",
+                                           json={"event_id": "void-night-mgr", "reason": "ลูกค้ายกเลิก"}).status_code, 200)
+
     def test_managers_are_alerted_on_LINE_when_a_bill_is_cancelled(self):
         with sqlite3.connect(server.DB_PATH) as conn:
             conn.execute("UPDATE staffs SET line_user_id='U-manager' WHERE id=1")

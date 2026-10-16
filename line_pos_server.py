@@ -178,6 +178,9 @@ ROLE_PERMISSIONS = {
               "restricted": ["ข้อมูลพนักงานและยอดขายทั้งหมด"]},
 }
 BANGKOK_TZ = datetime.timezone(datetime.timedelta(hours=7))
+# SQLite stores CURRENT_TIMESTAMP in UTC; this shifts such a column to shop time
+# so "today" in a query means the same day the staff are working.
+BANGKOK_SQL_OFFSET = f"{BANGKOK_TZ.utcoffset(None) // datetime.timedelta(hours=1):+d} hours"
 PAYROLL_REGULAR_HOURS_PER_DAY = float(os.getenv("POSWAI_REGULAR_HOURS_PER_DAY", "8"))
 PAYROLL_OT_MULTIPLIER = float(os.getenv("POSWAI_OT_MULTIPLIER", "1.5"))
 if PAYROLL_REGULAR_HOURS_PER_DAY <= 0 or PAYROLL_OT_MULTIPLIER < 0:
@@ -1836,8 +1839,13 @@ def void_open_order(order_no: str, req: OrderCancellation, request: Request):
             raise HTTPException(409, "Only an open bill can be cancelled; use the refund flow once it is paid")
         if staff["role"] == "cashier":
             today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
+            # created_at is SQLite's UTC CURRENT_TIMESTAMP, so it has to be shifted to
+            # Bangkok before the dates are compared. Without the shift the count was
+            # always zero between midnight and 07:00 local time — exactly when a late
+            # shift runs — so the daily ceiling quietly disappeared every night.
             used = conn.execute("SELECT COUNT(*) FROM order_cancellations WHERE staff_id=? AND kind='void' "
-                                "AND substr(created_at,1,10)=?", (staff["id"], today)).fetchone()[0]
+                                "AND date(created_at,?)=?",
+                                (staff["id"], BANGKOK_SQL_OFFSET, today)).fetchone()[0]
             if amount > VOID_CASHIER_MAX_AMOUNT:
                 raise HTTPException(403, f"บิลเกิน {VOID_CASHIER_MAX_AMOUNT:,.0f} บาท ต้องให้ผู้จัดการยกเลิก")
             if used >= VOID_CASHIER_DAILY_LIMIT:
