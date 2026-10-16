@@ -57,6 +57,7 @@ from line_integration import (build_leave_flex, parse_leave_postback,
 from line_notifications import enqueue as enqueue_line_notification, flush as flush_line_notifications, init_notifications
 import poswai_shops as shops
 from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
+import poswai_billing as billing
 
 async def _line_outbox_worker():
     while True:
@@ -112,6 +113,20 @@ SONGWAI_WEBHOOK_SECRET = os.getenv("SONGWAI_WEBHOOK_SECRET", "")
 SONGWAI_RESTAURANT_ID = int(os.getenv("SONGWAI_RESTAURANT_ID", "0"))
 SESSION_LIFETIME = 12 * 60 * 60
 MAX_SHOPS = int(os.getenv("POSWAI_MAX_SHOPS", "500"))
+# Monthly service fee the hosted shops pay ZZAX Studio. The receiving PromptPay
+# account and its EasySlip key belong to ZZAX Studio, never to a shop, so they are
+# separate settings from PROMPTPAY_ID and EASYSLIP_API_KEY above.
+MONTHLY_PRICE = float(os.getenv("POSWAI_MONTHLY_PRICE", "399"))
+SERVICE_PROMPTPAY_ID = re.sub(r"[\s-]", "", os.getenv("POSWAI_SERVICE_PROMPTPAY_ID", ""))
+SERVICE_EASYSLIP_API_KEY = os.getenv("POSWAI_SERVICE_EASYSLIP_API_KEY", "")
+# The ZZAX Studio billing page is not a staff account: it opens with this key alone.
+ADMIN_KEY = os.getenv("POSWAI_ADMIN_KEY", "")
+if not math.isfinite(MONTHLY_PRICE) or MONTHLY_PRICE <= 0:
+    raise RuntimeError("Invalid POSWAI_MONTHLY_PRICE")
+if SERVICE_PROMPTPAY_ID and not re.fullmatch(r"\d{10}|\d{13}|\d{15}", SERVICE_PROMPTPAY_ID):
+    raise RuntimeError("POSWAI_SERVICE_PROMPTPAY_ID must be a 10, 13 or 15 digit PromptPay target")
+if ADMIN_KEY and len(ADMIN_KEY) < 24:
+    raise RuntimeError("POSWAI_ADMIN_KEY must be at least 24 characters")
 # A cashier may cancel small unpaid orders alone; anything above these limits,
 # and every refund of money already taken, needs a manager or the owner.
 VOID_CASHIER_MAX_AMOUNT = float(os.getenv("POSWAI_VOID_CASHIER_MAX_AMOUNT", "200"))
@@ -540,6 +555,31 @@ def _known_shop(slug: str) -> bool:
         shops.get_shop(DB_PATH, slug) or {}).get("status") == "active"
 
 
+def current_billing() -> dict:
+    """The open shop's service-fee state. "main" and "demo" are never billed."""
+    return billing.billing_state(DB_PATH, CURRENT_SHOP.get(), price=MONTHLY_PRICE)
+
+
+def require_paid_subscription() -> None:
+    """New orders stop when the service fee is overdue; reading never does.
+
+    Reports, sales history, stock and the staff pages stay open, and no shop data
+    is ever removed — the shop only has to pay before it can ring up another sale.
+    """
+    state = current_billing()
+    if state["blocked"]:
+        raise HTTPException(402, state["message"])
+
+
+def require_admin_key(request: Request) -> None:
+    """The ZZAX Studio billing page, guarded by a shared key instead of a staff PIN."""
+    if not ADMIN_KEY:
+        raise HTTPException(503, "ยังไม่ได้ตั้งค่ากุญแจผู้ดูแลระบบ (POSWAI_ADMIN_KEY)")
+    supplied = request.headers.get("x-poswai-admin-key", "")
+    if not secrets.compare_digest(supplied, ADMIN_KEY):
+        raise HTTPException(401, "กุญแจผู้ดูแลระบบไม่ถูกต้อง")
+
+
 def _secure(request: Request) -> bool:
     return request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").split(",")[0] == "https"
 
@@ -569,7 +609,12 @@ async def protect_preview(request: Request, call_next):
     if is_preview() and request.url.path.startswith("/api/") and request.method not in ("GET", "HEAD"):
         staff_path = request.url.path
         # Signing in and opening a new shop work from the demo page too.
-        allowed_staff_write = (slug == DEMO_SHOP and staff_path in ("/api/auth/login", "/api/shops")) or STAFF_LIVE and slug != DEMO_SHOP and (
+        # The ZZAX Studio billing page works on the registry rather than on a shop's
+        # records, so it keeps working while a shop is in preview; paying the service
+        # fee has to keep working for the same reason.
+        allowed_staff_write = staff_path.startswith("/api/admin/") or (
+            slug == DEMO_SHOP and staff_path in ("/api/auth/login", "/api/shops")) or STAFF_LIVE and slug != DEMO_SHOP and (
+            staff_path.startswith("/api/billing/") or
             staff_path.startswith("/api/auth/") or staff_path == "/api/staff" or
             staff_path.startswith("/api/staff/") or staff_path == "/api/attendance" or
             staff_path.startswith("/api/line-liff/") or staff_path.startswith("/api/line-webhook") or
@@ -1121,6 +1166,7 @@ def place_online_order(req: OnlineOrderCreate):
         raise HTTPException(400, "Invalid online order")
     if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
         raise HTTPException(400, "Invalid customer details")
+    require_paid_subscription()
     line_id = verify_liff_id_token(req.line_id_token, LINE_LOGIN_CHANNEL_ID)
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -1166,6 +1212,7 @@ class SongwaiOrderCreate(BaseModel):
 async def intake_songwai_order(request: Request):
     if len(SONGWAI_WEBHOOK_SECRET) < 32 or SONGWAI_RESTAURANT_ID < 1:
         raise HTTPException(503, "Songwai integration is not configured")
+    require_paid_subscription()
     body = await request.body()
     if len(body) > 64_000:
         raise HTTPException(413, "Order payload too large")
@@ -1241,6 +1288,7 @@ def create_manual_channel_order(req: ManualChannelOrder, request: Request):
         raise HTTPException(400, "Invalid partner order ID")
     if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
         raise HTTPException(400, "Invalid customer details")
+    require_paid_subscription()
     external_id = "manual:" + req.channel + ":" + req.external_order_id
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -1516,6 +1564,7 @@ def create_order(req: OrderCreate, request: Request):
     if not math.isfinite(req.total_amount) or req.total_amount < 0 or not req.items or any(not math.isfinite(item.price) for item in req.items):
         raise HTTPException(400, "Invalid order")
     require_table_or_staff(request, req.branch_id, req.table_no)
+    require_paid_subscription()
     with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
         existing = cur.execute("SELECT event_id,order_no FROM order_events WHERE event_id=? OR order_no=?", (req.event_id, req.order_no)).fetchone()
@@ -2541,14 +2590,14 @@ def serve_worker():
 
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
-    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing"}:
+    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui"}:
         raise HTTPException(404, "Stylesheet not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.css", media_type="text/css")
 
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
@@ -2598,7 +2647,18 @@ def public_config():
             "staff_live": STAFF_LIVE and slug != DEMO_SHOP,
             "shop": {"slug": slug, "name": shop["name"] if shop else "",
                      "is_demo": slug == DEMO_SHOP, "trial_ends_at": shop["trial_ends_at"] if shop else None},
+            "billing": _billing_notice(slug),
             "point_baht": POINT_BAHT}
+
+
+def _billing_notice(slug: str) -> dict:
+    """Just enough for the app to show its own notice before anyone signs in."""
+    if slug in (MAIN_SHOP, DEMO_SHOP) or not shops.get_shop(DB_PATH, slug):
+        return {"applicable": False, "state": billing.STATE_HOSTED}
+    state = billing.billing_state(DB_PATH, slug, price=MONTHLY_PRICE)
+    return {"applicable": True, "state": state["state"], "blocked": state["blocked"],
+            "days_left": state["days_left"], "due_date": state["due_date"],
+            "on_trial": state["on_trial"], "price": MONTHLY_PRICE, "message": state["message"]}
 
 
 # =====================================================================
@@ -2693,6 +2753,115 @@ def save_shop_settings(req: ShopSettings, request: Request):
         with closing(connect_db()) as conn, conn:
             conn.execute("UPDATE branches SET name=? WHERE id=1", (name,))
     return {"slug": slug, "name": shop["name"], "promptpay_id": shop["promptpay_id"]}
+
+
+# =====================================================================
+# The monthly service fee a hosted shop pays ZZAX Studio
+class ServicePayment(BaseModel):
+    event_id: str
+    amount: float
+    slip_image: str
+    months: int = 1
+
+
+class AdminPaymentEntry(BaseModel):
+    event_id: str
+    amount: float
+    months: int = 1
+    note: str = ""
+
+
+@app.get("/api/billing")
+def read_billing(request: Request):
+    """What this shop owes, for the notice the app shows every signed-in user."""
+    staff = require_staff(request)
+    state = current_billing()
+    body = {"billing": state, "price": MONTHLY_PRICE,
+            "service_promptpay_id": SERVICE_PROMPTPAY_ID if state["applicable"] else "",
+            "slip_check_ready": bool(SERVICE_EASYSLIP_API_KEY),
+            "may_pay": staff["role"] in ("owner", "manager")}
+    if state["applicable"] and body["may_pay"]:
+        body["payments"] = billing.payment_history(DB_PATH, CURRENT_SHOP.get())
+    return body
+
+
+@app.post("/api/billing/pay")
+def pay_service_fee(req: ServicePayment, request: Request):
+    """Close one month of service against a slip paid to ZZAX Studio's account."""
+    require_staff(request, roles=("owner", "manager"))
+    slug = CURRENT_SHOP.get()
+    if not current_billing()["applicable"]:
+        raise HTTPException(409, "ร้านนี้ไม่มีค่าบริการรายเดือนในระบบ")
+    if not re.fullmatch(r"[A-Za-z0-9_:-]{4,80}", req.event_id):
+        raise HTTPException(400, "รหัสรายการชำระเงินไม่ถูกต้อง")
+    if req.months < 1 or req.months > billing.MAX_MONTHS:
+        raise HTTPException(400, f"ชำระล่วงหน้าได้ 1–{billing.MAX_MONTHS} เดือน")
+    if not SERVICE_PROMPTPAY_ID:
+        raise HTTPException(503, "ยังไม่ได้ตั้งค่าบัญชีพร้อมเพย์ของผู้ให้บริการ กรุณาติดต่อ ZZAX Studio")
+    if not SERVICE_EASYSLIP_API_KEY:
+        raise HTTPException(503, "ยังไม่ได้เปิดระบบตรวจสลิปของผู้ให้บริการ "
+                                 "กรุณาส่งสลิปให้ทีมงาน ZZAX Studio ยืนยันให้")
+    expected = round(MONTHLY_PRICE * req.months, 2)
+    if not math.isfinite(req.amount) or round(req.amount, 2) != expected:
+        raise HTTPException(409, f"ยอดโอนต้องเท่ากับ {expected:,.2f} บาท สำหรับ {req.months} เดือน")
+    try:
+        slip_reference = verify_bank_slip(req.slip_image, expected, SERVICE_EASYSLIP_API_KEY)
+    except SlipVerificationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    try:
+        result = billing.record_payment(DB_PATH, slug, amount=expected, method="promptpay_slip",
+                                        event_id=req.event_id, confirmed_by="easyslip",
+                                        slip_reference=slip_reference, months=req.months,
+                                        price=MONTHLY_PRICE)
+    except ShopError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    return {**result, "slip_reference": slip_reference}
+
+
+# =====================================================================
+# The ZZAX Studio billing page. It is opened with POSWAI_ADMIN_KEY, never with a
+# shop's staff account, and it can read every shop but never a shop's own records.
+@app.get("/admin", response_class=HTMLResponse)
+def serve_admin_page():
+    return (Path(__file__).parent / "admin.html").read_text(encoding="utf-8")
+
+
+@app.get("/api/admin/shops")
+def admin_list_shops(request: Request):
+    require_admin_key(request)
+    return {"price": MONTHLY_PRICE, "service_promptpay_id": SERVICE_PROMPTPAY_ID,
+            "today": billing.today_date().isoformat(), "warn_days": billing.WARN_DAYS,
+            "shops": billing.all_shops_billing(DB_PATH, price=MONTHLY_PRICE)}
+
+
+@app.get("/api/admin/shops/{slug}/payments")
+def admin_shop_payments(slug: str, request: Request):
+    require_admin_key(request)
+    slug = slug.strip().lower()
+    if not shops.get_shop(DB_PATH, slug):
+        raise HTTPException(404, "ไม่พบร้านนี้")
+    return {"slug": slug, "payments": billing.payment_history(DB_PATH, slug),
+            "billing": billing.billing_state(DB_PATH, slug, price=MONTHLY_PRICE)}
+
+
+@app.post("/api/admin/shops/{slug}/payments")
+def admin_confirm_payment(slug: str, req: AdminPaymentEntry, request: Request):
+    """Record a transfer the team checked by hand and move the due date on."""
+    require_admin_key(request)
+    slug = slug.strip().lower()
+    if not shops.get_shop(DB_PATH, slug):
+        raise HTTPException(404, "ไม่พบร้านนี้")
+    if not re.fullmatch(r"[A-Za-z0-9_:-]{4,80}", req.event_id):
+        raise HTTPException(400, "รหัสรายการชำระเงินไม่ถูกต้อง")
+    if len(req.note) > 300:
+        raise HTTPException(400, "บันทึกช่วยจำยาวเกิน 300 ตัวอักษร")
+    try:
+        return billing.record_payment(DB_PATH, slug, amount=req.amount, method="manual",
+                                      event_id=req.event_id, confirmed_by="zzax-admin",
+                                      note=req.note.strip(), months=req.months,
+                                      price=MONTHLY_PRICE)
+    except ShopError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
 
 
 # =====================================================================

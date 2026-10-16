@@ -63,7 +63,28 @@ def _connect(main_db: Path) -> sqlite3.Connection:
         ip_hash TEXT NOT NULL,
         created_at INTEGER NOT NULL)""")
     conn.execute("CREATE INDEX IF NOT EXISTS shop_signups_ip ON shop_signups(ip_hash,created_at)")
+    # Monthly service payments to ZZAX Studio. poswai_billing.py owns the rules;
+    # the table is created here so the registry file always carries it.
+    conn.execute("""CREATE TABLE IF NOT EXISTS shop_payments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT NOT NULL REFERENCES shops(slug),
+        event_id TEXT NOT NULL,
+        amount REAL NOT NULL,
+        method TEXT NOT NULL,
+        slip_reference TEXT UNIQUE,
+        confirmed_by TEXT NOT NULL DEFAULT '',
+        period_start TEXT NOT NULL,
+        period_end TEXT NOT NULL,
+        note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(slug,event_id))""")
+    conn.execute("CREATE INDEX IF NOT EXISTS shop_payments_slug ON shop_payments(slug,id)")
     return conn
+
+
+def connect_registry(main_db: Path) -> sqlite3.Connection:
+    """The registry connection with every table created. Billing shares it."""
+    return _connect(main_db)
 
 
 def valid_slug(slug: str) -> bool:

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>ค่าบริการร้าน · ZZAX Studio</title>
+<link rel="stylesheet" href="/assets/fonts.css">
+<style>
+  :root{--ink:#17222e;--muted:#5d6b7a;--line:#dfe5ec;--ok:#128a52;--warn:#b26b00;--late:#c0372b;--bg:#f3f5f8}
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px;background:var(--bg);color:var(--ink);font-family:"Noto Sans Thai","Prompt",system-ui,sans-serif;font-size:16px;line-height:1.5}
+  h1{margin:0 0 4px;font-size:1.5rem}
+  p.lead{margin:0 0 18px;color:var(--muted);font-size:.95rem}
+  .panel{max-width:1100px;margin:0 auto 16px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px}
+  label{display:block;font-weight:700;font-size:.9rem;margin-bottom:6px}
+  input,button,textarea{font:inherit}
+  input,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  button{padding:10px 16px;border:0;border-radius:10px;background:#1f6feb;color:#fff;font-weight:700;cursor:pointer}
+  button.ghost{background:#eef2f7;color:var(--ink)}
+  button:disabled{opacity:.55;cursor:wait}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+  .row>div{flex:1 1 180px}
+  table{width:100%;border-collapse:collapse;font-size:.92rem}
+  th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#f7f9fc;font-size:.85rem}
+  .tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.78rem;font-weight:700;white-space:nowrap}
+  .tag.ok{background:#e3f6ec;color:var(--ok)}
+  .tag.due_soon{background:#fdf1dc;color:var(--warn)}
+  .tag.overdue{background:#fdeae7;color:var(--late)}
+  .msg{margin:10px 0 0;font-size:.9rem;min-height:1.2em}
+  .msg.bad{color:var(--late)}
+  .msg.good{color:var(--ok)}
+  .totals{display:flex;flex-wrap:wrap;gap:18px;margin:0 0 12px;font-size:.92rem;color:var(--muted)}
+  .totals strong{color:var(--ink);font-size:1.15rem;display:block}
+  .history{font-size:.85rem;color:var(--muted)}
+  @media (max-width:640px){td,th{font-size:.84rem;padding:7px 5px}}
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>ค่าบริการร้าน POS WAI</h1>
+  <p class="lead">หน้านี้สำหรับทีม ZZAX Studio เท่านั้น เปิดด้วยกุญแจผู้ดูแลระบบ ไม่ใช่บัญชีพนักงานของร้าน</p>
+  <div class="row" id="keyRow">
+    <div>
+      <label for="adminKey">กุญแจผู้ดูแลระบบ</label>
+      <input id="adminKey" type="password" autocomplete="off" placeholder="POSWAI_ADMIN_KEY">
+    </div>
+    <div style="flex:0 0 auto"><button id="openButton" type="button">เปิดรายชื่อร้าน</button></div>
+    <div style="flex:0 0 auto"><button id="forgetButton" class="ghost" type="button" hidden>ลืมกุญแจ</button></div>
+  </div>
+  <p class="msg" id="keyMessage"></p>
+</div>
+
+<div class="panel" id="listPanel" hidden>
+  <div class="totals" id="totals"></div>
+  <table>
+    <thead><tr><th>ร้าน</th><th>เจ้าของ / เบอร์</th><th>สถานะ</th><th>ใช้ได้ถึง</th><th>ชำระแล้ว</th><th>ยืนยันการชำระ</th></tr></thead>
+    <tbody id="shopRows"></tbody>
+  </table>
+  <p class="msg" id="listMessage"></p>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const STATE_LABEL = {ok: 'ปกติ', due_soon: 'ใกล้ครบกำหนด', overdue: 'เลยกำหนดชำระ'};
+  const baht = value => Number(value || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  let key = sessionStorage.getItem('poswaiAdminKey') || '';
+  let price = 399;
+
+  const say = (element, text, kind) => { element.textContent = text; element.className = 'msg' + (kind ? ' ' + kind : ''); };
+
+  async function call(path, options = {}) {
+    const response = await fetch(path, {
+      ...options, cache: 'no-store',
+      headers: {...(options.body ? {'Content-Type': 'application/json'} : {}), 'x-poswai-admin-key': key}
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    return body;
+  }
+
+  function renderRows(shops) {
+    const rows = $('shopRows');
+    rows.textContent = '';
+    for (const shop of shops) {
+      const tr = document.createElement('tr');
+      const name = document.createElement('td');
+      name.innerHTML = `<strong></strong><br><span class="history"></span>`;
+      name.querySelector('strong').textContent = shop.name;
+      name.querySelector('span').textContent = '/?shop=' + shop.slug;
+      const owner = document.createElement('td');
+      owner.innerHTML = '<span></span><br><span class="history"></span>';
+      owner.children[0].textContent = shop.owner_name;
+      owner.children[2].textContent = shop.phone;
+      const status = document.createElement('td');
+      status.innerHTML = `<span class="tag ${shop.state}">${STATE_LABEL[shop.state] || shop.state}</span>`
+        + `<br><span class="history">${shop.on_trial ? 'ยังอยู่ช่วงทดลอง' : 'ลูกค้าที่ชำระแล้ว'}</span>`;
+      const due = document.createElement('td');
+      due.innerHTML = `${shop.due_date}<br><span class="history">${shop.days_left < 0
+        ? 'เลยมา ' + Math.abs(shop.days_left) + ' วัน' : 'เหลือ ' + shop.days_left + ' วัน'}</span>`;
+      const paid = document.createElement('td');
+      paid.innerHTML = `${baht(shop.paid_total)} บาท<br><span class="history">${shop.payments} ครั้ง`
+        + `${shop.last_payment ? ' · ล่าสุด ' + String(shop.last_payment.created_at).slice(0, 10) : ''}</span>`;
+
+      const action = document.createElement('td');
+      const amount = document.createElement('input');
+      amount.type = 'number'; amount.step = '0.01'; amount.min = '1';
+      amount.value = Number(price).toFixed(2);
+      amount.setAttribute('aria-label', 'ยอดที่ได้รับ (บาท)');
+      const months = document.createElement('input');
+      months.type = 'number'; months.min = '1'; months.max = '12'; months.value = '1';
+      months.setAttribute('aria-label', 'จำนวนเดือน');
+      months.style.maxWidth = '72px';
+      const note = document.createElement('input');
+      note.type = 'text'; note.placeholder = 'บันทึกช่วยจำ เช่น โอนมา 17 ต.ค.';
+      note.setAttribute('aria-label', 'บันทึกช่วยจำ');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'ยืนยันว่าได้รับเงินแล้ว';
+      const result = document.createElement('p');
+      result.className = 'msg';
+      const box = document.createElement('div');
+      box.style.display = 'grid';
+      box.style.gap = '6px';
+      box.append(amount, months, note, button, result);
+      action.append(box);
+
+      button.addEventListener('click', async () => {
+        const total = Number(amount.value);
+        const monthCount = Number(months.value);
+        if (!(total > 0)) { say(result, 'กรอกยอดเงินที่ได้รับก่อน', 'bad'); return; }
+        if (!Number.isInteger(monthCount) || monthCount < 1 || monthCount > 12) {
+          say(result, 'จำนวนเดือนต้องเป็น 1–12', 'bad'); return;
+        }
+        if (!confirm(`ยืนยันว่าได้รับเงิน ${baht(total)} บาท จากร้าน ${shop.name} และต่ออายุ ${monthCount} เดือน?`)) return;
+        button.disabled = true;
+        say(result, 'กำลังบันทึก...');
+        try {
+          const body = await call(`/api/admin/shops/${encodeURIComponent(shop.slug)}/payments`, {
+            method: 'POST',
+            body: JSON.stringify({event_id: 'manual-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+              amount: Number(total.toFixed(2)), months: monthCount, note: note.value.trim()})
+          });
+          say(result, `บันทึกแล้ว ใช้งานได้ถึง ${body.paid_until}`, 'good');
+          await load();
+        } catch (error) {
+          say(result, error.message, 'bad');
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      tr.append(name, owner, status, due, paid, action);
+      rows.append(tr);
+    }
+  }
+
+  async function load() {
+    say($('listMessage'), 'กำลังโหลด...');
+    const body = await call('/api/admin/shops');
+    price = body.price;
+    const shops = body.shops || [];
+    const counts = shops.reduce((acc, shop) => { acc[shop.state] = (acc[shop.state] || 0) + 1; return acc; }, {});
+    const income = shops.reduce((sum, shop) => sum + Number(shop.paid_total || 0), 0);
+    $('totals').innerHTML = `<div><strong>${shops.length}</strong>ร้านทั้งหมด</div>`
+      + `<div><strong>${counts.overdue || 0}</strong>เลยกำหนดชำระ</div>`
+      + `<div><strong>${counts.due_soon || 0}</strong>ใกล้ครบกำหนด</div>`
+      + `<div><strong>${baht(income)} บาท</strong>รับมาแล้วรวม</div>`
+      + `<div><strong>${baht(price)} บาท</strong>ราคาต่อเดือน</div>`;
+    renderRows(shops);
+    say($('listMessage'), `ข้อมูลวันที่ ${body.today} · บัญชีรับเงิน `
+      + (body.service_promptpay_id || 'ยังไม่ได้ตั้งค่าในเซิร์ฟเวอร์'));
+    $('listPanel').hidden = false;
+  }
+
+  async function open() {
+    key = $('adminKey').value.trim() || key;
+    if (!key) { say($('keyMessage'), 'กรอกกุญแจผู้ดูแลระบบก่อน', 'bad'); return; }
+    $('openButton').disabled = true;
+    say($('keyMessage'), 'กำลังตรวจกุญแจ...');
+    try {
+      await load();
+      sessionStorage.setItem('poswaiAdminKey', key);
+      $('adminKey').value = '';
+      $('adminKey').placeholder = 'บันทึกไว้ในแท็บนี้แล้ว';
+      $('forgetButton').hidden = false;
+      say($('keyMessage'), 'เปิดรายชื่อร้านแล้ว กุญแจถูกเก็บไว้เฉพาะแท็บนี้', 'good');
+    } catch (error) {
+      say($('keyMessage'), error.message, 'bad');
+      $('listPanel').hidden = true;
+    } finally {
+      $('openButton').disabled = false;
+    }
+  }
+
+  $('openButton').addEventListener('click', open);
+  $('adminKey').addEventListener('keydown', event => { if (event.key === 'Enter') open(); });
+  $('forgetButton').addEventListener('click', () => {
+    sessionStorage.removeItem('poswaiAdminKey');
+    key = '';
+    $('listPanel').hidden = true;
+    $('forgetButton').hidden = true;
+    $('adminKey').placeholder = 'POSWAI_ADMIN_KEY';
+    say($('keyMessage'), 'ลืมกุญแจแล้ว');
+  });
+  if (key) { $('forgetButton').hidden = false; open(); }
+})();
+</script>
+</body>
+</html>
