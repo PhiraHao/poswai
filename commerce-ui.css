@@ -1,4 +1,4 @@
-.commerce-ready > .grid-2 { display:none }
+#view-crm.commerce-ready > :not(.module-intro):not(.commerce-shell) { display:none!important }
 .commerce-shell { display:grid; gap:18px; color:#17212b }
 .commerce-tabs { display:flex; gap:6px; padding:5px; background:#f2f4f7; border-radius:14px; width:max-content; max-width:100%; overflow:auto }
 .commerce-tabs button { border:0; border-radius:10px; background:transparent; color:#596579; padding:10px 15px; font:inherit; font-weight:700; white-space:nowrap; cursor:pointer }
