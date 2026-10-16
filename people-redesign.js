@@ -51,7 +51,8 @@
         <div class="people-payroll-toolbar"><label>พนักงาน<select id="payrollStaffSelect" class="input"></select></label><label>เดือน<input id="payrollMonth" class="input" type="month"></label><button id="payrollRefresh" class="btn btn-outline" type="button">ดูข้อมูล</button></div>
         <div id="payrollSource" class="people-payroll-source"></div><div id="payrollSummary" class="people-payroll-summary"></div><div id="payrollHistory" class="people-payroll-history"></div>`;
       audit.classList.add('people-audit-card');
-      tabs(staff,[['ภาพรวมทีม',[main]],['คำขอลา',[approval]],['คอมมิชชัน',[commission]],['ประวัติและเงินเดือน',[payroll,audit]]]);old.remove();
+      const dossierHost=document.createElement('div');dossierHost.id='staffDossierHost';
+      tabs(staff,[['ภาพรวมทีม',[main]],['แฟ้มประวัติ',[dossierHost]],['คำขอลา',[approval]],['คอมมิชชัน',[commission]],['ประวัติและเงินเดือน',[payroll,audit]]]);old.remove();
       const sample=document.createElement('div');sample.className='people-sample';sample.textContent='ข้อมูลตัวอย่าง • การลงเวลาและใบลายังไม่เปิดใช้งานจริง';staff.insertBefore(sample,$('.people-tabs',staff));
       const short=()=>{
         all('#staffShiftRosterBody .badge').forEach(n=>{const t=n.textContent;n.textContent=t.includes('clocked_out')?'ออกงานแล้ว':t.includes('clocked_in')||t.includes('completed')?'เข้างานแล้ว':t.includes('scheduled')?'รอเข้างาน':t.includes('on_leave')?'ลา':t.includes('absent')?'ขาดงาน':t.includes('ระงับ')?'ระงับ':'ใช้งานได้';});

@@ -43,6 +43,9 @@ from poswai_inventory import (InventoryError, apply_inventory_movement,
 from easyslip import SlipVerificationError, verify_bank_slip
 from poswai_catalog import (CatalogError, deduct_inventory, init_catalog,
                             list_menu_items, quote_order, upsert_menu_item, STATIONS)
+from poswai_dossier import (DossierError, add_asset, add_timeline_entry, branch_summary,
+                            init_dossier, read_dossier, return_asset, set_document,
+                            update_profile)
 from poswai_commerce import (create_order as create_commerce_order, init_commerce,
                              list_customers as commerce_customers, mark_handed_off,
                              restore_cancelled_inventory, segment_for, upsert_customer)
@@ -371,6 +374,7 @@ def init_db() -> None:
         expires_at INTEGER NOT NULL)""")
     cur.execute("CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at)")
     init_catalog(conn)
+    init_dossier(conn)
     init_inventory_movements(conn)
     init_commerce(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
@@ -1728,6 +1732,148 @@ def refund_paid_order(order_no: str, req: OrderCancellation, request: Request):
             "refunded_by": manager["id"], "commission_entries_reversed": reversed_rows}
 
 
+# =====================================================================
+# แฟ้มประวัติพนักงาน: ข้อมูลการจ้าง เอกสาร ทรัพย์สินของร้าน และไทม์ไลน์
+# =====================================================================
+class DossierProfileUpdate(BaseModel):
+    nickname: Optional[str] = None
+    phone: Optional[str] = None
+    line_display: Optional[str] = None
+    start_date: Optional[str] = None
+    employment_type: Optional[str] = None
+    probation_end_date: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    emergency_phone: Optional[str] = None
+    medical_note: Optional[str] = None
+
+
+class DocumentUpdate(BaseModel):
+    received: bool
+    expires_on: Optional[str] = None
+    note: str = ""
+
+
+class AssetCreate(BaseModel):
+    item: str
+    issued_on: Optional[str] = None
+
+
+class AssetReturn(BaseModel):
+    returned: bool
+
+
+class TimelineCreate(BaseModel):
+    kind: str
+    detail: str
+    event_date: Optional[str] = None
+
+
+def _dossier_reader(request: Request, staff_id: int, conn: sqlite3.Connection) -> dict:
+    """A dossier holds pay, bank and health notes: the person or their manager only."""
+    actor = require_staff(request)
+    owner_row = conn.execute("SELECT branch_id,role FROM staffs WHERE id=?", (staff_id,)).fetchone()
+    if not owner_row:
+        raise HTTPException(404, "Staff not found")
+    if actor["id"] == staff_id:
+        return actor
+    if actor["role"] not in ("manager", "owner") or actor["branch_id"] != owner_row[0]:
+        raise HTTPException(403, "Only this staff member or a manager can open the dossier")
+    return actor
+
+
+def _dossier_editor(request: Request, staff_id: int, conn: sqlite3.Connection) -> dict:
+    actor = require_staff(request, roles=("manager", "owner"))
+    conn.row_factory = sqlite3.Row
+    target = conn.execute("SELECT id,branch_id,role FROM staffs WHERE id=?", (staff_id,)).fetchone()
+    if not target or target["branch_id"] != actor["branch_id"]:
+        raise HTTPException(404, "Staff not found")
+    if not _can_manage_staff(actor, target) and actor["id"] != staff_id:
+        raise HTTPException(403, "Cannot edit this staff dossier")
+    return actor
+
+
+def _today() -> datetime.date:
+    return datetime.datetime.now(BANGKOK_TZ).date()
+
+
+@app.get("/api/staff/dossier-summary")
+def dossier_summary(request: Request, branch_id: int = 1):
+    """The manager's checklist: who still owes paperwork, whose card is expiring."""
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(connect_db()) as conn, conn:
+        return {"branch_id": branch_id, "work_date": _today().isoformat(),
+                "staff": branch_summary(conn, branch_id, _today())}
+
+
+@app.get("/api/staff/{staff_id}/dossier")
+def get_staff_dossier(staff_id: int, request: Request):
+    with closing(connect_db()) as conn, conn:
+        _dossier_reader(request, staff_id, conn)
+        try:
+            return read_dossier(conn, staff_id, _today())
+        except DossierError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.patch("/api/staff/{staff_id}/dossier")
+def update_staff_dossier(staff_id: int, req: DossierProfileUpdate, request: Request):
+    with closing(connect_db()) as conn, conn:
+        _dossier_editor(request, staff_id, conn)
+        try:
+            update_profile(conn, staff_id, req.model_dump(exclude_none=True))
+            return read_dossier(conn, staff_id, _today())
+        except DossierError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.put("/api/staff/{staff_id}/documents/{doc_type}")
+def set_staff_document(staff_id: int, doc_type: str, req: DocumentUpdate, request: Request):
+    """Records that a document was handed in and when it expires, not the file itself."""
+    with closing(connect_db()) as conn, conn:
+        actor = _dossier_editor(request, staff_id, conn)
+        try:
+            set_document(conn, staff_id, doc_type, req.received, req.expires_on, req.note, actor["id"])
+            return read_dossier(conn, staff_id, _today())
+        except DossierError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/staff/{staff_id}/assets")
+def add_staff_asset(staff_id: int, req: AssetCreate, request: Request):
+    with closing(connect_db()) as conn, conn:
+        _dossier_editor(request, staff_id, conn)
+        try:
+            add_asset(conn, staff_id, req.item, req.issued_on, _today())
+            return read_dossier(conn, staff_id, _today())
+        except DossierError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.patch("/api/staff/{staff_id}/assets/{asset_id}")
+def return_staff_asset(staff_id: int, asset_id: int, req: AssetReturn, request: Request):
+    with closing(connect_db()) as conn, conn:
+        _dossier_editor(request, staff_id, conn)
+        try:
+            return_asset(conn, staff_id, asset_id, req.returned, _today())
+            return read_dossier(conn, staff_id, _today())
+        except DossierError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/staff/{staff_id}/timeline")
+def add_staff_timeline(staff_id: int, req: TimelineCreate, request: Request):
+    with closing(connect_db()) as conn, conn:
+        actor = _dossier_editor(request, staff_id, conn)
+        try:
+            add_timeline_entry(conn, staff_id, req.event_date, req.kind, req.detail,
+                               actor["id"], _today())
+            return read_dossier(conn, staff_id, _today())
+        except DossierError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+
 class AttendanceCreate(BaseModel):
     event_id: str
     staff_id: int
@@ -2291,14 +2437,14 @@ def serve_worker():
 
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
-    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
+    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
         raise HTTPException(404, "Stylesheet not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.css", media_type="text/css")
 
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

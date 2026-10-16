@@ -297,3 +297,36 @@ requests use) rather than a PIN prompt on the device.
 The cashier screen does not call these endpoints yet — the sales side is still
 sample data behind `POSWAI_PREVIEW_ONLY=1`. Wire the buttons when live sales are
 switched on; the rules above are enforced by the API either way.
+
+## Staff dossier (16 October 2026)
+
+The staff workspace has a fifth tab, แฟ้มประวัติ, holding one file per person:
+employment facts (nickname, phone, LINE, first working day with the length of
+service worked out from it, employment type and the probation review date),
+payroll and emergency details (bank, account number, next of kin, a note for
+allergies or conditions the kitchen should know about), the hiring document
+checklist, store assets the person is holding, and a history of raises,
+milestones and written warnings.
+
+The document checklist covers the seven papers a Thai restaurant is asked for,
+including the two an inspector checks the date on — the annual medical
+certificate and the food handler card — plus the work permit, which counts as
+optional because it only applies to foreign staff. Each row records whether the
+document was handed in, when it expires and a free note (where the paper copy is
+filed). Anything inside 30 days of expiry shows as ใกล้หมดอายุ and anything past
+it as หมดอายุแล้ว, and `GET /api/staff/dossier-summary` rolls that up per branch
+so the manager can see at a glance who still owes paperwork.
+
+**The server stores facts about documents, not the documents.** No ID card
+scans, no uploads. Copies of national ID cards are personal data under the PDPA,
+and keeping them on this VPS would mean retention rules, encryption at rest and
+a breach plan that this deployment does not have yet. Decide that separately
+before adding uploads. For the same reason the dossier never displays a PIN —
+PINs are stored only as PBKDF2 hashes and are set, never shown, from the team
+overview tab.
+
+A dossier holds pay, bank and health details, so it opens only for the person
+themselves (read-only) or a manager or owner of the same branch, who may edit it.
+The endpoints are `GET/PATCH /api/staff/{id}/dossier`,
+`PUT /api/staff/{id}/documents/{doc_type}`, `POST/PATCH /api/staff/{id}/assets`
+and `POST /api/staff/{id}/timeline`.
