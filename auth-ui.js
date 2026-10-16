@@ -22,7 +22,7 @@
   overlay.hidden = true;
   overlay.innerHTML = `<section class="poswai-auth-card" role="dialog" aria-modal="true" aria-labelledby="poswaiAuthTitle">
     <h2 id="poswaiAuthTitle">เข้าสู่ระบบ POS WAI</h2>
-    <p id="poswaiAuthDescription">ใช้รหัสพนักงานและ PIN ของสาขา</p>
+    <p id="poswaiAuthDescription">ใช้รหัสพนักงานและ PIN ส่วนตัว</p>
     <div id="poswaiLoginPanel">
       <form id="poswaiLoginForm">
         <label for="poswaiStaffId">รหัสพนักงาน</label><input id="poswaiStaffId" name="staff_id" type="number" min="1" inputmode="numeric" autocomplete="username" required>
@@ -36,7 +36,7 @@
         <strong>เพิ่มพนักงาน</strong>
         <label for="poswaiNewName">ชื่อ</label><input id="poswaiNewName" maxlength="100" required>
         <label for="poswaiNewRole">สิทธิ์</label><select id="poswaiNewRole"><option value="staff">พนักงาน</option><option value="cashier">แคชเชียร์</option><option value="kitchen">ครัว</option><option value="service">บริการ</option><option value="manager">ผู้จัดการ</option></select>
-        <label for="poswaiNewPin">PIN อย่างน้อย 8 ตัวอักษร</label><input id="poswaiNewPin" type="password" minlength="8" autocomplete="new-password" required>
+        <label for="poswaiNewPin">ตั้ง PIN ให้พนักงานคนนี้ (อย่างน้อย 8 ตัวอักษร)</label><input id="poswaiNewPin" type="password" minlength="8" autocomplete="new-password" placeholder="ห้ามใช้ PIN ของผู้จัดการ" required>
         <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">สร้างบัญชี</button></div>
       </form>
       <p class="poswai-auth-result" id="poswaiManagerResult" hidden></p>
@@ -50,6 +50,7 @@
     $('#poswaiLoginPanel').hidden = manager;
     $('#poswaiManagerPanel').hidden = !manager;
     $('#poswaiAuthTitle').textContent = manager ? 'จัดการบัญชีพนักงาน' : 'เข้าสู่ระบบ POS WAI';
+    $('#poswaiAuthDescription').textContent = manager ? 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ' : 'ใช้รหัสพนักงานและ PIN ส่วนตัว';
     overlay.hidden = false;
     (manager ? $('#poswaiNewName') : $('#poswaiStaffId')).focus();
   };
