@@ -47,6 +47,9 @@ def init_commerce(conn: sqlite3.Connection) -> None:
         UNIQUE(branch_id,source,external_id)
     )""")
     conn.execute("CREATE INDEX IF NOT EXISTS online_orders_queue ON online_orders(branch_id,status,created_at)")
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(online_orders)")}
+    if "channel" not in columns:
+        conn.execute("ALTER TABLE online_orders ADD COLUMN channel TEXT NOT NULL DEFAULT 'POS WAI'")
     conn.execute("""CREATE TABLE IF NOT EXISTS songwai_menu_map (
         branch_id INTEGER NOT NULL,
         restaurant_id INTEGER NOT NULL,
@@ -77,6 +80,7 @@ def create_order(
     conn: sqlite3.Connection, *, branch_id: int, source: str, external_id: str,
     fulfillment: str, items: list[dict], customer_id: int | None,
     customer_name: str = "", contact_phone: str = "", payment_status: str = "pending",
+    channel: str = "POS WAI",
 ) -> dict:
     existing = conn.execute(
         "SELECT order_no,status FROM online_orders WHERE branch_id=? AND source=? AND external_id=?",
@@ -102,9 +106,9 @@ def create_order(
                      (order_no, station))
     conn.execute("""INSERT INTO online_orders
         (order_no,branch_id,source,external_id,fulfillment,customer_id,customer_name,
-         contact_phone,pickup_code,payment_status) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+         contact_phone,pickup_code,payment_status,channel) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
         (order_no, branch_id, source, external_id, fulfillment, customer_id,
-         customer_name, contact_phone, pickup_code, payment_status))
+         customer_name, contact_phone, pickup_code, payment_status, channel))
     return {"order_no": order_no, "status": "new", "existing": False,
             "pickup_code": pickup_code, "total_amount": quote["total_amount"]}
 

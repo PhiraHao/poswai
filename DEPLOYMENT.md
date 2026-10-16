@@ -172,3 +172,12 @@ end-to-end order with a real menu are verified. Other delivery platforms remain
 unconnected. The existing staff features remain incomplete for live payroll:
 the overview, attendance, leave, commission, and payroll estimate APIs exist,
 but shift/rate setup and full live payroll checks are outstanding.
+
+Staff can also enter a received GrabFood, LINE MAN, ShopeeFood, TikTok Shop,
+or telephone order manually with the provider's order ID. It joins the same
+kitchen queue, uses POS WAI menu prices and BOM stock, and is idempotent per
+provider/order ID. This is **manual intake**, not automatic partner API access.
+Do not advertise an automatic integration until the provider has granted API
+access, provided its webhook contract, and an authenticated end-to-end order
+has been tested. The incoming Songwai webhook is likewise dormant until its
+secret is configured on both services and Songwai sends persisted orders.

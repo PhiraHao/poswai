@@ -115,6 +115,21 @@ class CommerceTest(unittest.TestCase):
             "name": draft["name"], "price": 50, "bom": [], "active": True}).status_code, 409)
         self.assertEqual(self.client.get("/api/menu").json()["items"][0]["id"], "beef")
 
+    def test_manual_partner_order_is_labeled_idempotent_and_uses_stock(self):
+        payload = {"branch_id": 1, "channel": "GrabFood", "external_order_id": "GF-123",
+                   "fulfillment": "rider_pickup", "items": [{"id": "beef", "qty": 2}]}
+        self.assertEqual(self.client.post("/api/online/manual-orders", json=payload).status_code, 401)
+        self._login()
+        first = self.client.post("/api/online/manual-orders", json=payload)
+        self.assertEqual(first.status_code, 200, first.text)
+        self.assertEqual(first.json()["channel"], "GrabFood")
+        second = self.client.post("/api/online/manual-orders", json=payload)
+        self.assertEqual(second.json()["order_no"], first.json()["order_no"])
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT stock FROM inventory WHERE ingredient_id='meat'").fetchone()[0], 6)
+        payload["channel"] = "FakeFood"
+        self.assertEqual(self.client.post("/api/online/manual-orders", json=payload).status_code, 400)
+
     def test_pickup_requires_verified_line_and_consent_for_campaign(self):
         payload = {"event_id": "test-online-123", "branch_id": 1,
                    "fulfillment": "self_pickup", "items": [{"id": "beef", "qty": 1}],

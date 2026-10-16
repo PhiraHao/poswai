@@ -28,7 +28,7 @@
     <section class="commerce-pane" data-pane="orders"><div class="commerce-card"><div class="commerce-toolbar"><h2>รับออเดอร์ออนไลน์</h2><select id="commerceOrderFilter" aria-label="กรองออเดอร์"><option value="active">กำลังดำเนินการ</option><option value="all">ทั้งหมด</option></select><button id="commerceRefresh" class="commerce-btn secondary">รีเฟรช</button></div><div id="commerceOrders" class="commerce-list"></div></div></section>
     <section class="commerce-pane" data-pane="members" hidden><div class="commerce-stats" id="commerceStats"></div><div class="commerce-card"><div class="commerce-toolbar"><h2>ลูกค้าร้าน</h2><select id="commerceSegment" aria-label="กลุ่มลูกค้า"><option value="all">ทั้งหมด</option><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></div><div id="commerceMembers" class="commerce-list"></div></div></section>
     <section class="commerce-pane" data-pane="campaigns" hidden><div class="commerce-card"><h2>ส่งโปรโมชันผ่าน LINE OA</h2><p class="commerce-muted">ส่งเฉพาะผู้ที่ยินยอมรับข่าวสารและเชื่อม LINE แล้ว ตรวจข้อความและจำนวนผู้รับก่อนส่งทุกครั้ง</p><form id="commerceCampaignForm" class="commerce-form"><label>กลุ่มเป้าหมาย<select name="segment"><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></label><label class="wide">ข้อความ<textarea name="message" rows="4" maxlength="500" required></textarea></label><button class="commerce-btn" type="submit">สร้างฉบับร่าง</button></form><div id="commerceCampaignDraft" class="commerce-muted"></div></div></section>
-    <section class="commerce-pane" data-pane="connectors" hidden><div class="commerce-card"><h2>Songwai · ร้านโคตรเนื้อ</h2><p class="commerce-muted">เตรียมเมนูจาก Songwai เป็นฉบับร่างก่อน เมนูจะยังไม่เปิดขายจนกว่าจะใส่สูตรและสต็อกจริง</p><button id="commerceImport" class="commerce-btn" type="button">เตรียมเมนูทั้ง 8 รายการ</button><div id="commerceMap" class="commerce-list"></div></div><div class="commerce-card"><h3>ช่องทางอื่น</h3><p class="commerce-muted">GrabFood, LINE MAN, ShopeeFood และ TikTok Shop ยังไม่ได้เชื่อมบัญชีหรือรับออเดอร์จริง</p></div></section>`;
+    <section class="commerce-pane" data-pane="connectors" hidden><div class="commerce-card"><h2>Songwai · ร้านโคตรเนื้อ</h2><p class="commerce-muted">เตรียมเมนูจาก Songwai เป็นฉบับร่างก่อน เมนูจะยังไม่เปิดขายจนกว่าจะใส่สูตรและสต็อกจริง</p><button id="commerceImport" class="commerce-btn" type="button">เตรียมเมนูทั้ง 8 รายการ</button><div id="commerceMap" class="commerce-list"></div></div><div class="commerce-card"><h3>ออเดอร์จากแอปอื่น · พนักงานบันทึก</h3><p class="commerce-muted">ใช้เมื่อร้านได้รับออเดอร์ในแอปแล้ว จึงบันทึกเข้าคิวครัว POS WAI ช่องทางเหล่านี้ยังไม่ได้ดึงออเดอร์อัตโนมัติ</p><form id="commerceManualForm" class="commerce-form"><label>ช่องทาง<select name="channel"><option>GrabFood</option><option>LINE MAN</option><option>ShopeeFood</option><option>TikTok Shop</option><option>โทรศัพท์</option></select></label><label>เลขออเดอร์ในแอป<input name="external_order_id" required maxlength="80" pattern="[A-Za-z0-9_-]{2,80}"></label><label>วิธีรับอาหาร<select name="fulfillment"><option value="rider_pickup">ไรเดอร์มารับ</option><option value="self_pickup">ลูกค้ามารับเอง</option></select></label><label>ชื่อลูกค้า<input name="customer_name" maxlength="100"></label><label>เบอร์โทร<input name="contact_phone" maxlength="30"></label><div class="wide commerce-menu-lines" id="commerceManualMenu"></div><button class="commerce-btn" type="submit">บันทึกเข้าคิวครัว</button></form><p id="commerceManualResult" role="status"></p></div></section>`;
   crm.querySelector('.module-intro')?.after(shell);
   const notice = message => { document.querySelector('#commerceNotice').textContent = message; };
   const panes = [...shell.querySelectorAll('.commerce-pane')];
@@ -37,7 +37,7 @@
     for (const button of shell.querySelectorAll('.commerce-tabs button')) button.setAttribute('aria-selected', button.dataset.pane === name);
     if (name === 'orders') loadOrders();
     if (name === 'members') loadMembers();
-    if (name === 'connectors') loadMap();
+    if (name === 'connectors') { loadMap(); loadManualMenu(); }
   };
   shell.querySelector('.commerce-tabs').addEventListener('click', event => { const name = event.target.closest('button')?.dataset.pane; if (name) openPane(name); });
   if (preview()) notice('โหมดตัวอย่าง · การรับออเดอร์และส่งข้อความจริงยังไม่เปิดใช้งาน');
@@ -50,7 +50,7 @@
       if (!orders.length) { box.textContent = 'ยังไม่มีออเดอร์ในรายการนี้'; return; }
       const next = {new:['accepted','cancelled'],accepted:['preparing','cancelled'],preparing:['ready','cancelled'],ready:['handed_off']};
       const labels = {accepted:'รับออเดอร์',preparing:'เริ่มทำ',ready:'พร้อมรับ',handed_off:'ส่งมอบแล้ว',cancelled:'ยกเลิก'};
-      box.innerHTML = orders.map(o => `<article class="commerce-row"><div class="commerce-row-head"><strong>${escapeHtml(o.order_no)} · ${escapeHtml(o.source === 'songwai' ? 'Songwai' : 'POS WAI')}</strong><span class="commerce-pill">${escapeHtml(o.fulfillment === 'rider_pickup' ? 'ไรเดอร์รับ' : 'ลูกค้ารับเอง')}</span></div><small>${escapeHtml(o.customer_name || 'ลูกค้า')} · ${escapeHtml(o.contact_phone || 'ไม่ระบุโทรศัพท์')} · รหัสรับ ${escapeHtml(o.pickup_code)}</small><div>${o.items.map(i => `${escapeHtml(i.name)} × ${Number(i.qty)}`).join(' · ')}</div><strong>${money(o.total_amount)}</strong><small>สถานะ ${escapeHtml(o.status)} · ชำระเงิน ${escapeHtml(o.payment_status)}</small><div class="commerce-row-actions">${o.payment_status !== 'paid' && manager() ? `<button class="commerce-btn secondary" data-pay="${escapeHtml(o.order_no)}">ยืนยันรับเงิน</button>` : ''}${(next[o.status] || []).map(s => `<button class="commerce-btn ${s==='cancelled'?'secondary':''}" data-order="${escapeHtml(o.order_no)}" data-status="${s}" ${s==='handed_off' && o.payment_status!=='paid'?'disabled':''}>${labels[s]}</button>`).join('')}</div></article>`).join('');
+      box.innerHTML = orders.map(o => `<article class="commerce-row"><div class="commerce-row-head"><strong>${escapeHtml(o.order_no)} · ${escapeHtml(o.channel || (o.source === 'songwai' ? 'Songwai' : 'POS WAI'))}</strong><span class="commerce-pill">${escapeHtml(o.fulfillment === 'rider_pickup' ? 'ไรเดอร์รับ' : 'ลูกค้ารับเอง')}</span></div><small>${escapeHtml(o.customer_name || 'ลูกค้า')} · ${escapeHtml(o.contact_phone || 'ไม่ระบุโทรศัพท์')} · รหัสรับ ${escapeHtml(o.pickup_code)}</small><div>${o.items.map(i => `${escapeHtml(i.name)} × ${Number(i.qty)}`).join(' · ')}</div><strong>${money(o.total_amount)}</strong><small>สถานะ ${escapeHtml(o.status)} · ชำระเงิน ${escapeHtml(o.payment_status)}</small><div class="commerce-row-actions">${o.payment_status !== 'paid' && manager() ? `<button class="commerce-btn secondary" data-pay="${escapeHtml(o.order_no)}">ยืนยันรับเงิน</button>` : ''}${(next[o.status] || []).map(s => `<button class="commerce-btn ${s==='cancelled'?'secondary':''}" data-order="${escapeHtml(o.order_no)}" data-status="${s}" ${s==='handed_off' && o.payment_status!=='paid'?'disabled':''}>${labels[s]}</button>`).join('')}</div></article>`).join('');
     } catch (error) { box.textContent = `โหลดออเดอร์ไม่ได้: ${error.message}`; }
   }
   shell.querySelector('#commerceOrderFilter').addEventListener('change', loadOrders);
@@ -108,6 +108,27 @@
     if (preview()) { notice('โหมดตัวอย่างยังบันทึกเมนูไม่ได้'); return; }
     try { const result=await post(`/api/integrations/songwai/import-drafts?branch_id=${branch()}`,{}); notice(`เตรียมเมนูใหม่ ${result.imported} จาก ${result.total} รายการแล้ว ยังไม่เปิดขาย`); await loadMap(); }
     catch(error) { notice(error.message); }
+  });
+  async function loadManualMenu() {
+    const box = shell.querySelector('#commerceManualMenu');
+    if (!staff()) { box.textContent='เข้าสู่ระบบพนักงานก่อนบันทึกออเดอร์'; return; }
+    try {
+      const {items}=await api(`/api/menu?branch_id=${branch()}`);
+      box.innerHTML=items.length ? items.map(item=>`<label class="commerce-menu-line"><span>${escapeHtml(item.name)}</span><small>${money(item.price)}</small><input type="number" min="0" max="99" value="0" data-manual-item="${escapeHtml(item.id)}" aria-label="จำนวน ${escapeHtml(item.name)}"></label>`).join('') : 'ยังไม่มีเมนูจริงที่เปิดขาย';
+    } catch(error) { box.textContent=error.message; }
+  }
+  shell.querySelector('#commerceManualForm').addEventListener('submit',async event=>{
+    event.preventDefault();
+    const result=shell.querySelector('#commerceManualResult');
+    if (preview()) { result.textContent='โหมดตัวอย่างยังบันทึกออเดอร์จริงไม่ได้'; return; }
+    const items=[...shell.querySelectorAll('[data-manual-item]')].map(input=>({id:input.dataset.manualItem,qty:Number(input.value)})).filter(item=>item.qty>0);
+    if (!items.length) { result.textContent='เลือกอาหารอย่างน้อยหนึ่งรายการ'; return; }
+    const data=new FormData(event.currentTarget);
+    try {
+      const order=await post('/api/online/manual-orders',{branch_id:branch(),channel:data.get('channel'),external_order_id:String(data.get('external_order_id')).trim(),fulfillment:data.get('fulfillment'),items,customer_name:data.get('customer_name'),contact_phone:data.get('contact_phone')});
+      result.textContent=`เข้าคิวครัวแล้ว ${order.order_no} · ${money(order.total_amount)}`;
+      await loadOrders();
+    } catch(error) { result.textContent=error.message; }
   });
   const customer=document.querySelector('#view-customer .module-intro');
   if (customer) {

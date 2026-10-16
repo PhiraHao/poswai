@@ -678,7 +678,7 @@ class OnlineOrderCreate(BaseModel):
 def _online_order_record(conn: sqlite3.Connection, order_no: str) -> dict:
     conn.row_factory = sqlite3.Row
     row = conn.execute("""SELECT o.order_no,o.branch_id,o.source,o.external_id,o.fulfillment,
-        o.customer_name,o.contact_phone,o.pickup_code,o.payment_status,o.status,o.created_at,
+        o.customer_name,o.contact_phone,o.pickup_code,o.payment_status,o.status,o.created_at,o.channel,
         e.total_amount FROM online_orders o JOIN order_events e ON e.order_no=o.order_no
         WHERE o.order_no=?""", (order_no,)).fetchone()
     if not row:
@@ -713,7 +713,8 @@ def place_online_order(req: OnlineOrderCreate):
             result = create_commerce_order(conn, branch_id=req.branch_id, source="poswai",
                 external_id=req.event_id, fulfillment="self_pickup",
                 items=[line.model_dump() for line in req.items], customer_id=customer_id,
-                customer_name=req.customer_name.strip(), contact_phone=req.contact_phone.strip())
+                customer_name=req.customer_name.strip(), contact_phone=req.contact_phone.strip(),
+                channel="POS WAI")
         except CatalogError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
         return _online_order_record(conn, result["order_no"])
@@ -785,7 +786,48 @@ async def intake_songwai_order(request: Request):
                 external_id=external_id,
                 fulfillment="self_pickup" if req.delivery_mode == "pickup" else "rider_pickup",
                 items=mapped, customer_id=customer_id, customer_name=req.customer_name.strip(),
-                contact_phone=req.contact_phone.strip(), payment_status=req.payment_status)
+                contact_phone=req.contact_phone.strip(), payment_status=req.payment_status,
+                channel="Songwai")
+        except CatalogError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        return _online_order_record(conn, result["order_no"])
+
+
+class ManualChannelOrder(BaseModel):
+    branch_id: int = 1
+    channel: str
+    external_order_id: str
+    fulfillment: str
+    items: list[OnlineOrderLine]
+    customer_name: str = ""
+    contact_phone: str = ""
+
+
+@app.post("/api/online/manual-orders")
+def create_manual_channel_order(req: ManualChannelOrder, request: Request):
+    """Staff-entered partner orders; never represented as an API connection."""
+    require_staff(request, roles=("manager", "owner", "cashier"), branch_id=req.branch_id)
+    if req.channel not in ("GrabFood", "LINE MAN", "ShopeeFood", "TikTok Shop", "โทรศัพท์"):
+        raise HTTPException(400, "Unsupported manual channel")
+    if req.fulfillment not in ("self_pickup", "rider_pickup"):
+        raise HTTPException(400, "Invalid fulfillment")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{2,80}", req.external_order_id):
+        raise HTTPException(400, "Invalid partner order ID")
+    if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
+        raise HTTPException(400, "Invalid customer details")
+    external_id = "manual:" + req.channel + ":" + req.external_order_id
+    with closing(sqlite3.connect(DB_PATH)) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        existing = conn.execute("SELECT order_no FROM online_orders WHERE branch_id=? AND source='poswai' AND external_id=?",
+                                (req.branch_id, external_id)).fetchone()
+        if existing:
+            return _online_order_record(conn, existing[0])
+        try:
+            result = create_commerce_order(conn, branch_id=req.branch_id, source="poswai",
+                external_id=external_id, fulfillment=req.fulfillment,
+                items=[line.model_dump() for line in req.items], customer_id=None,
+                customer_name=req.customer_name.strip(), contact_phone=req.contact_phone.strip(),
+                channel=req.channel)
         except CatalogError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
         return _online_order_record(conn, result["order_no"])
