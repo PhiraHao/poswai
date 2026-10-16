@@ -1674,6 +1674,31 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
     return {"branch_id": branch_id, "orders": orders}
 
 
+@app.get("/api/orders/settled")
+def list_settled_orders(request: Request, branch_id: int = 1, limit: int = 20):
+    """Bills that are already closed, so the till can find the one to refund.
+
+    /api/orders only carries open bills; a refund needs the paid ones, and the
+    refunded ones stay in the list so the same bill is not given back twice.
+    """
+    if branch_id < 1 or not 1 <= limit <= 100:
+        raise HTTPException(400, "คำขอไม่ถูกต้อง")
+    require_staff(request, roles=("owner", "manager", "cashier"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT p.order_no,p.net_amount,p.payment_method,p.status,p.closed_at,"
+            "e.table_no,s.name AS closed_by FROM pos_orders p "
+            "JOIN order_events e ON e.order_no=p.order_no "
+            "LEFT JOIN staffs s ON s.id=p.closed_by_staff_id "
+            "WHERE p.branch_id=? ORDER BY p.id DESC LIMIT ?", (branch_id, limit)).fetchall()
+        reasons = {row[0]: row[1] for row in conn.execute(
+            "SELECT order_no,reason FROM order_cancellations WHERE branch_id=? AND kind='refund'",
+            (branch_id,))}
+    return {"branch_id": branch_id,
+            "orders": [{**dict(row), "refund_reason": reasons.get(row["order_no"], "")} for row in rows]}
+
+
 @app.get("/api/kds")
 def list_kds_tickets(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
@@ -2663,7 +2688,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
@@ -2708,7 +2733,8 @@ def serve_icon(size: int):
 def public_config():
     slug = CURRENT_SHOP.get()
     shop = shops.get_shop(DB_PATH, slug) if slug not in (MAIN_SHOP, DEMO_SHOP) else None
-    return {"promptpay_id": shop["promptpay_id"] if shop else (PROMPTPAY_ID if slug == MAIN_SHOP else ""),
+    return {"void_limits": {"max_amount": VOID_CASHIER_MAX_AMOUNT, "daily_limit": VOID_CASHIER_DAILY_LIMIT},
+            "promptpay_id": shop["promptpay_id"] if shop else (PROMPTPAY_ID if slug == MAIN_SHOP else ""),
             "line_liff_id": LINE_LIFF_ID, "preview_only": is_preview(),
             "staff_live": STAFF_LIVE and slug != DEMO_SHOP,
             "shop": {"slug": slug, "name": shop["name"] if shop else "",

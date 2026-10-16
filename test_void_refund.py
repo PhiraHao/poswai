@@ -110,6 +110,33 @@ class VoidAndRefundTest(unittest.TestCase):
         self.assertEqual(self.manager.post("/api/orders/B-S3/void",
                                            json={"event_id": "void-s4", "reason": "กดผิดเมนู"}).status_code, 200)
 
+    def test_the_till_lists_closed_bills_so_a_refund_can_be_found(self):
+        """/api/orders carries open bills only, so the refund list has its own endpoint."""
+        self._open_order("B-SETTLED")
+        self.assertEqual(self.cashier.get("/api/orders/settled").json()["orders"], [])
+        self._pay("B-SETTLED")
+
+        listed = self.cashier.get("/api/orders/settled")
+        self.assertEqual(listed.status_code, 200, listed.text)
+        row = listed.json()["orders"][0]
+        self.assertEqual((row["order_no"], row["status"], row["table_no"]), ("B-SETTLED", "paid", "T1"))
+        self.assertEqual(row["closed_by"], "cashier")
+        self.assertEqual(row["refund_reason"], "")
+
+        self.assertEqual(self.manager.post("/api/payments/B-SETTLED/refund",
+                                           json={"event_id": "ref-list", "reason": "ลูกค้าได้อาหารผิด"}).status_code, 200)
+        after = self.cashier.get("/api/orders/settled").json()["orders"][0]
+        self.assertEqual(after["status"], "refunded")
+        self.assertEqual(after["refund_reason"], "ลูกค้าได้อาหารผิด")
+        # An open bill never appears here, and a guest never sees the list at all.
+        self.assertNotIn("B-SETTLED-OPEN", [item["order_no"] for item in self.cashier.get("/api/orders/settled").json()["orders"]])
+        self.assertEqual(TestClient(server.app).get("/api/orders/settled").status_code, 401)
+        self.assertEqual(self.cashier.get("/api/orders/settled?limit=0").status_code, 400)
+
+    def test_the_till_is_told_the_cashier_limits(self):
+        limits = self.cashier.get("/api/config").json()["void_limits"]
+        self.assertEqual((limits["max_amount"], limits["daily_limit"]), (200.0, 2))
+
     def _pay(self, order_no):
         paid = self.cashier.post("/api/payments/close", json={"event_id": f"pay-{order_no}", "order_no": order_no,
                                                               "amount": 50, "method": "เงินสด (Cash)"})
