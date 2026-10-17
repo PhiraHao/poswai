@@ -35,6 +35,7 @@ from contextlib import closing
 from contextvars import ContextVar
 from typing import List, Optional
 from pathlib import Path
+from urllib.parse import urlencode
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -50,6 +51,8 @@ from easyslip import SlipVerificationError, verify_bank_slip
 from poswai_catalog import (CatalogError, deduct_inventory, delete_menu_item, init_catalog,
                             list_menu_categories, list_menu_items, quote_order,
                             set_menu_photo, upsert_menu_item, STATIONS, TAX_MODES)
+from poswai_tables import (TableError, add_table, delete_table, init_tables, list_tables,
+                           reissue_code, resolve_code, set_active)
 from poswai_dossier import (DossierError, add_asset, add_timeline_entry, branch_summary,
                             init_dossier, read_dossier, return_asset, set_document,
                             update_profile)
@@ -459,6 +462,7 @@ def init_db() -> None:
         expires_at INTEGER NOT NULL)""")
     cur.execute("CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at)")
     init_catalog(conn)
+    init_tables(conn)
     init_dossier(conn)
     init_inventory_movements(conn)
     init_commerce(conn)
@@ -999,8 +1003,23 @@ def _table_signature(payload: bytes) -> str:
     return hmac.new(TABLE_QR_SECRET.encode(), payload, hashlib.sha256).hexdigest()
 
 
+# A scanned sticker is good for one sitting, not for a month. Long enough that
+# a slow meal never logs the guest out, short enough that a screenshotted link
+# passed around afterwards is worthless.
+TABLE_SCAN_TTL_SECONDS = 12 * 3600
+
+
+def _mint_table_token(branch_id: int, table_no: str, ttl_seconds: int) -> str:
+    expires = int(time.time()) + ttl_seconds
+    payload = json.dumps({"b": branch_id, "t": table_no, "e": expires, "s": CURRENT_SHOP.get()},
+                         sort_keys=True, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
+    return encoded + "." + _table_signature(payload)
+
+
 @app.post("/api/tables/token")
 def issue_table_token(req: TableTokenRequest, request: Request):
+    """A one-off token for staff, for a table with no sticker yet."""
     require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
     if len(TABLE_QR_SECRET) < 32:
         raise HTTPException(503, "ยังไม่ได้ตั้งค่ากุญแจ QR โต๊ะ")
@@ -1009,14 +1028,132 @@ def issue_table_token(req: TableTokenRequest, request: Request):
     with closing(connect_db()) as conn, conn:
         if not conn.execute("SELECT 1 FROM branches WHERE id=?", (req.branch_id,)).fetchone():
             raise HTTPException(404, "ไม่พบสาขานี้")
-    expires = int(time.time()) + 30 * 24 * 3600
-    payload = json.dumps({"b": req.branch_id, "t": req.table_no, "e": expires, "s": CURRENT_SHOP.get()},
-                         sort_keys=True, separators=(",", ":")).encode()
-    encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
-    token = encoded + "." + _table_signature(payload)
-    from urllib.parse import urlencode
-    return {"token": token, "expires_at": expires,
+    token = _mint_table_token(req.branch_id, req.table_no, TABLE_SCAN_TTL_SECONDS)
+    return {"token": token, "expires_at": int(time.time()) + TABLE_SCAN_TTL_SECONDS,
             "url": "/?" + urlencode({"shop": CURRENT_SHOP.get(), "table_token": token})}
+
+
+class TableCreate(BaseModel):
+    branch_id: int = 1
+    table_no: str
+    seats: int = 0
+    note: str = ""
+
+
+class TableActive(BaseModel):
+    branch_id: int = 1
+    active: bool
+
+
+def _table_link(code: str) -> str:
+    """What gets printed. Relative, so a shop on another domain still works."""
+    return "/t/" + code + "?" + urlencode({"shop": CURRENT_SHOP.get()})
+
+
+def _with_links(table: dict) -> dict:
+    return {**table, "link": _table_link(table["code"])}
+
+
+@app.get("/api/tables")
+def get_tables(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn:
+            return {"branch_id": branch_id, "shop": CURRENT_SHOP.get(),
+                    "tables": [_with_links(table) for table in list_tables(conn, branch_id)]}
+    except TableError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/tables")
+def post_table(req: TableCreate, request: Request):
+    require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return _with_links(add_table(conn, req.branch_id, req.table_no, req.seats, req.note))
+    except TableError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.patch("/api/tables/{table_no}")
+def patch_table(table_no: str, req: TableActive, request: Request):
+    """Revoke the sticker on one table, or put it back in service."""
+    require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return set_active(conn, req.branch_id, table_no, req.active)
+    except TableError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/tables/{table_no}/reissue")
+def post_table_reissue(table_no: str, request: Request, branch_id: int = 1):
+    """New code for one table. Every sticker printed for it stops working."""
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return _with_links(reissue_code(conn, branch_id, table_no))
+    except TableError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.delete("/api/tables/{table_no}")
+def remove_table(table_no: str, request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            delete_table(conn, branch_id, table_no)
+    except TableError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    return {"branch_id": branch_id, "table_no": table_no, "deleted": True}
+
+
+@app.get("/t/{code}")
+def open_table(code: str, request: Request):
+    """What a scanned sticker reaches. The printed paper holds no token at all;
+    one is minted here, for this scan, and lives only hours."""
+    if len(TABLE_QR_SECRET) < 32:
+        raise HTTPException(503, "ยังไม่ได้ตั้งค่ากุญแจ QR โต๊ะ")
+    try:
+        with closing(connect_db()) as conn:
+            table = resolve_code(conn, code)
+    except TableError as exc:
+        return _table_link_problem(str(exc), exc.status_code)
+    token = _mint_table_token(table["branch_id"], table["table_no"], TABLE_SCAN_TTL_SECONDS)
+    # The page reads the table and branch from the query, not from the token,
+    # so the redirect carries them. The token is still what proves the claim.
+    return RedirectResponse("/?" + urlencode(
+        {"shop": CURRENT_SHOP.get(), "table_token": token,
+         "table": table["table_no"], "branch_id": table["branch_id"]}), status_code=303)
+
+
+def _table_link_problem(message: str, status_code: int) -> HTMLResponse:
+    """A guest with a phone, not a developer: say what to do, in Thai."""
+    return HTMLResponse(
+        "<!doctype html><html lang=\"th\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+        "<title>QR โต๊ะใช้ไม่ได้</title><style>body{margin:0;display:grid;place-items:center;"
+        "min-height:100vh;background:#f5f7fa;color:#17222e;font-family:\"Noto Sans Thai\",system-ui,sans-serif;"
+        "padding:24px;line-height:1.8}div{max-width:420px;background:#fff;border:1px solid #e4e9f0;"
+        "border-radius:18px;padding:28px;text-align:center}h1{font-size:1.25rem;margin:0 0 10px}"
+        "p{margin:0;color:#5d6b7a}</style></head><body><div><h1>QR โต๊ะนี้ใช้ไม่ได้</h1>"
+        f"<p>{html.escape(message)}</p></div></body></html>", status_code=status_code)
+
+
+def _staff_or_table_guest(request: Request, branch_id: int, table_no: str) -> Optional[dict]:
+    """The signed-in member of staff, or None for a guest holding this table's
+    token. Anyone else is turned away by require_table_or_staff below.
+
+    Not signed in is the ordinary case for a guest, so it falls through; a
+    signed-in account without the right role still gets its 403.
+    """
+    try:
+        return require_staff(request, roles=("manager", "owner", "cashier"), branch_id=branch_id)
+    except HTTPException as exc:
+        if exc.status_code != 401:
+            raise
+    require_table_or_staff(request, branch_id, table_no)
+    return None
 
 
 def require_table_or_staff(request: Request, branch_id: int, table_no: str) -> None:
@@ -2009,7 +2146,11 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
         raise HTTPException(400, "Invalid payment event")
     if not req.order_nos or len(req.order_nos) > 100 or len(set(req.order_nos)) != len(req.order_nos):
         raise HTTPException(400, "Invalid order list")
-    cashier = require_staff(request, roles=("manager", "owner", "cashier"), branch_id=req.branch_id)
+    # A guest at the table may settle their own bill. Everything that makes this
+    # safe is below and unchanged: the slip is verified against the exact total,
+    # a slip reference is spent once, and the orders must still be open and on
+    # this very table. The table token already proves which table that is.
+    cashier = _staff_or_table_guest(request, req.branch_id, req.table_no.strip())
     if not os.getenv("EASYSLIP_API_KEY", ""):
         raise HTTPException(503, "EasySlip is not configured")
     order_nos = sorted(req.order_nos)
@@ -2051,8 +2192,11 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
             conn.execute("INSERT INTO payment_events(event_id,order_no,amount,method,slip_reference) VALUES (?,?,?,?,?)",
                          (f"{req.event_id}:{order_no}", order_no, amount, "QR PromptPay", slip_reference))
             conn.execute("UPDATE order_events SET status='paid' WHERE order_no=?", (order_no,))
+            # No staff id when the guest paid: nobody rang this one up, and the
+            # commission rules read that column to decide who earned it.
             cursor = conn.execute("INSERT INTO pos_orders(branch_id,order_no,closed_by_staff_id,total_amount,net_amount,payment_method) VALUES (?,?,?,?,?,?)",
-                                  (req.branch_id, order_no, cashier["id"], amount, amount, "QR PromptPay"))
+                                  (req.branch_id, order_no, cashier["id"] if cashier else None,
+                                   amount, amount, "QR PromptPay"))
             allocate_commissions(conn, cursor.lastrowid)
     return {"status": "paid", "order_nos": order_nos, "slip_reference": slip_reference}
 
@@ -2911,7 +3055,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
