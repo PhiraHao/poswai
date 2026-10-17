@@ -56,8 +56,12 @@
       <div class="void-col paid-bills"><h4>บิลที่รับเงินแล้ว</h4><ul class="void-list" id="voidPaidList"></ul></div>
     </div>
     <p class="void-note" id="voidNote" role="status"></p>`;
-  host.querySelector('.module-intro')?.after(panel);
-  if (!panel.parentElement) host.prepend(panel);
+  /* Below the table map and the payment buttons. Cancelling a bill happens a
+     few times a day; those two are worked every few minutes. */
+  const grid = host.querySelector('.grid-2');
+  if (grid) grid.after(panel);
+  else host.querySelector('.module-intro')?.after(panel);
+  if (!panel.parentElement) host.append(panel);
 
   const note = (message, kind = '') => {
     const target = panel.querySelector('#voidNote');
