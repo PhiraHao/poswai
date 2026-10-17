@@ -69,7 +69,9 @@
         <dt>ย้ายข้อมูลจากระบบเดิมได้ไหม</dt><dd>ได้ ส่งไฟล์เมนูเดิมมาให้ทีมงานทาง LINE เราช่วยนำเข้าให้</dd>
         <dt>ยกเลิกแล้วข้อมูลหายไหม</dt><dd>แจ้งก่อนยกเลิก เราส่งไฟล์ข้อมูลร้านคุณกลับให้</dd>
       </dl>
-      <p class="lp-panel-note">ติดปัญหาเร่งด่วน ทักทีมงานทาง LINE ได้ทุกวัน <a href="${LINE_OA}" target="_blank" rel="noopener">เปิดแชท LINE</a></p>`],
+      <p class="lp-panel-note">ติดปัญหาเร่งด่วน ทักทีมงานทาง LINE ได้ทุกวัน <a href="${LINE_OA}" target="_blank" rel="noopener">เปิดแชท LINE</a></p>
+      <p class="lp-panel-note">เอกสารของบริการ <a href="/terms" target="_blank" rel="noopener">ข้อตกลงการใช้งาน</a> ·
+      <a href="/privacy" target="_blank" rel="noopener">นโยบายความเป็นส่วนตัว</a></p>`],
   };
   const panel = document.createElement('div');
   panel.className = 'lp-panel';

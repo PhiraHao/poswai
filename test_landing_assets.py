@@ -40,6 +40,23 @@ class LandingAssetsTest(unittest.TestCase):
             self.assertEqual(photo, f"/assets/menu/menu-{item_id}.webp")
             self.assertTrue((ROOT / photo.lstrip("/")).exists(), photo)
 
+    def test_the_policy_pages_are_public_and_linked_where_consent_is_asked(self):
+        """The sign-up box asks people to accept these, so they have to open."""
+        with TestClient(server.app) as client:
+            for path in ("/privacy", "/terms", "/privacy.html", "/terms.html"):
+                page = client.get(path)
+                self.assertEqual(page.status_code, 200, path)
+                self.assertIn("ZZAX Studio", page.text)
+            self.assertEqual(client.get("/legal.css").status_code, 200)
+            privacy = client.get("/privacy").text
+            self.assertIn("/terms", privacy)       # each page links to the other
+            self.assertIn("กัวลาลัมเปอร์", privacy)  # where the data actually sits
+        auth = (ROOT / "auth-ui.js").read_text(encoding="utf-8")
+        self.assertIn('href="/terms"', auth)
+        self.assertIn('href="/privacy"', auth)
+        landing = (ROOT / "landing.js").read_text(encoding="utf-8")
+        self.assertIn("/privacy", landing)
+
     def test_index_loads_landing_after_auth_and_worker_caches_it(self):
         index = (ROOT / "index.html").read_text(encoding="utf-8")
         self.assertLess(index.index("/auth-ui.js"), index.index("/landing.js"))

@@ -113,7 +113,7 @@
         <label for="poswaiOwnerName">ชื่อเจ้าของร้าน</label><input id="poswaiOwnerName" maxlength="100" required>
         <label for="poswaiOwnerPhone">เบอร์โทร</label><input id="poswaiOwnerPhone" type="tel" maxlength="20" required>
         <label for="poswaiOwnerPin">ตั้ง PIN เจ้าของร้าน (อย่างน้อย 8 ตัวอักษร)</label><input id="poswaiOwnerPin" type="password" minlength="8" autocomplete="new-password" required>
-        <label class="poswai-auth-check"><input type="checkbox" id="poswaiAcceptTerms" required> ยอมรับเงื่อนไขการใช้งานและนโยบายข้อมูลส่วนบุคคล</label>
+        <label class="poswai-auth-check"><input type="checkbox" id="poswaiAcceptTerms" required> <span>ยอมรับ<a href="/terms" target="_blank" rel="noopener">ข้อตกลงการใช้งาน</a>และ<a href="/privacy" target="_blank" rel="noopener">นโยบายความเป็นส่วนตัว</a></span></label>
         <p class="poswai-auth-error" id="poswaiSignupError" role="alert"></p>
         <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiSignupSubmit">เปิดร้าน</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseSignup">ปิด</button></div>
       </form>

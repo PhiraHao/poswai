@@ -2696,7 +2696,7 @@ def serve_worker():
 
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
-    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui"}:
+    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "legal"}:
         raise HTTPException(404, "Stylesheet not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.css", media_type="text/css")
 
@@ -2719,6 +2719,19 @@ def serve_v3_prototype():
 @app.get("/index.html")
 def serve_index():
     return FileResponse(Path(__file__).parent / "index.html")
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+@app.get("/privacy.html", response_class=HTMLResponse)
+def serve_privacy():
+    """Public, and linked wherever consent is asked for."""
+    return (Path(__file__).parent / "privacy.html").read_text(encoding="utf-8")
+
+
+@app.get("/terms", response_class=HTMLResponse)
+@app.get("/terms.html", response_class=HTMLResponse)
+def serve_terms():
+    return (Path(__file__).parent / "terms.html").read_text(encoding="utf-8")
 
 
 @app.get("/line_pos_prototype.html")
