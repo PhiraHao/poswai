@@ -1993,6 +1993,34 @@
   <div id="toastContainer"></div>
 
   <script>
+    /* The table sticker's token travels in the link, and a round trip through
+       LINE or Google comes back without it: the provider returns the browser
+       to this page, not to the one the guest scanned. The guest was then told
+       to sign in as staff or scan again, having just done neither wrong. The
+       tab keeps the scan for as long as it is open. */
+    (() => {
+      const query = new URLSearchParams(location.search);
+      const key = `poswaiTableScan:${(query.get('shop') || '').trim().toLowerCase()}`;
+      try {
+        if (query.get('table_token')) {
+          sessionStorage.setItem(key, JSON.stringify({
+            token: query.get('table_token'),
+            table: query.get('table') || '',
+            branch_id: query.get('branch_id') || '1',
+          }));
+          return;
+        }
+        const scanned = JSON.parse(sessionStorage.getItem(key) || 'null');
+        if (!scanned || !scanned.token) return;
+        query.set('table_token', scanned.token);
+        if (scanned.table) query.set('table', scanned.table);
+        if (scanned.branch_id) query.set('branch_id', scanned.branch_id);
+        history.replaceState(history.state, '', `${location.pathname}?${query}`);
+      } catch (_) { /* private browsing: the guest scans the sticker again */ }
+    })();
+  </script>
+
+  <script>
     /* =========================================================================
        1. ENTERPRISE DATA & BOM INVENTORY DEFINITIONS
        ========================================================================= */
