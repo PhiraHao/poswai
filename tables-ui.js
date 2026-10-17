@@ -363,8 +363,14 @@
 
   /* ---- mounting -------------------------------------------------------- */
   const mount = () => {
-    const stock = document.querySelector('#view-inventory');
-    if (stock && !panel.parentElement) stock.prepend(panel);
+    /* Tables live where tables are worked with. The stock tab is ingredients
+       and dishes; a table is neither, and the cashier screen is where the
+       shop already looks at its tables all day. */
+    const home = document.querySelector('#view-cashier') || document.querySelector('#view-inventory');
+    if (home && !panel.parentElement) {
+      const intro = home.querySelector('.module-intro');
+      if (intro) intro.after(panel); else home.prepend(panel);
+    }
     if (!openButton.parentElement) document.body.append(openButton, sheet);
   };
 
