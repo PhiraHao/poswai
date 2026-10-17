@@ -21,6 +21,57 @@ class SlipVerificationError(ValueError):
     pass
 
 
+# What EasySlip's own error codes mean, said in words a shop can act on.
+# Collapsing all of these into "could not reach EasySlip" sent a shop whose
+# subscription had quietly expired off to check its internet connection.
+EASYSLIP_ERRORS = {
+    "MISSING_API_KEY": "ยังไม่ได้ตั้งค่า EasySlip API key",
+    "INVALID_API_KEY": "EasySlip API key ไม่ถูกต้อง ตรวจสอบค่าที่ตั้งไว้",
+    "SERVICE_EXPIRED": "แพ็กเกจ EasySlip หมดอายุแล้ว ต่ออายุก่อนจึงจะตรวจสลิปอัตโนมัติได้",
+    "QUOTA_EXCEEDED": "โควตาตรวจสลิปของ EasySlip หมดแล้ว ต้องอัปเกรดแพ็กเกจหรือรอรอบถัดไป",
+    "BRANCH_INACTIVE": "สาขาที่ตั้งไว้ใน EasySlip ถูกปิดใช้งาน",
+    "SERVICE_BANNED": "บริการ EasySlip นี้ถูกระงับ ติดต่อ EasySlip",
+    "SERVICE_DELETED": "บริการ EasySlip นี้ถูกลบแล้ว ต้องสร้างใหม่",
+    "USER_BANNED": "บัญชี EasySlip ถูกระงับ ติดต่อ EasySlip",
+    "IP_NOT_ALLOWED": "EasySlip ไม่อนุญาต IP ของเซิร์ฟเวอร์นี้",
+    "SLIP_NOT_FOUND": "อ่านสลิปนี้ไม่ออก ใช้รูปสลิปโอนเงินจริงที่เห็น QR ชัดเจน",
+    "SLIP_PENDING": "สลิปเพิ่งโอน ธนาคารยังไม่อัปเดต รอสักครู่แล้วลองใหม่",
+    "IMAGE_SIZE_TOO_LARGE": "รูปสลิปใหญ่เกินไป",
+    "INVALID_IMAGE_FORMAT": "ไฟล์สลิปเสียหรือเป็นรูปแบบที่ไม่รองรับ",
+    "INVALID_IMAGE_TYPE": "ไฟล์ที่แนบมาไม่ใช่รูปภาพ",
+    "RATE_LIMIT_EXCEEDED": "ส่งตรวจสลิปถี่เกินไป รอสักครู่แล้วลองใหม่",
+    "API_SERVER_ERROR": "ระบบ EasySlip ขัดข้องชั่วคราว ลองใหม่อีกครั้ง",
+    "INTERNAL_SERVER_ERROR": "ระบบ EasySlip ขัดข้องชั่วคราว ลองใหม่อีกครั้ง",
+    "VALIDATION_ERROR": "EasySlip ปฏิเสธคำขอตรวจสลิป",
+}
+
+
+def _refused(response: httpx.Response) -> SlipVerificationError:
+    """Turn EasySlip's refusal into something the shop can act on.
+
+    Match on the code, never the message: that is what EasySlip's own
+    documentation asks for, and the message is not stable. An unknown code is
+    passed through rather than hidden, so a new one is diagnosable from the
+    screen instead of only from the server log.
+    """
+    code = ""
+    detail = ""
+    try:
+        body = response.json()
+        error = body.get("error") if isinstance(body, dict) else None
+        if isinstance(error, dict):
+            code = str(error.get("code") or "")
+            detail = str(error.get("message") or "")
+    except ValueError:
+        pass
+    known = EASYSLIP_ERRORS.get(code)
+    if known:
+        return SlipVerificationError(known)
+    if code:
+        return SlipVerificationError(f"EasySlip ปฏิเสธคำขอ ({code}{': ' + detail if detail else ''})")
+    return SlipVerificationError(f"EasySlip ตอบกลับผิดปกติ (HTTP {response.status_code})")
+
+
 def _validated_image(image: str) -> str:
     if not isinstance(image, str) or not image.startswith("data:") or ";base64," not in image:
         raise SlipVerificationError("กรุณาแนบรูปสลิป JPEG, PNG, GIF หรือ WebP")
@@ -69,10 +120,15 @@ def verify_bank_slip(image: str, expected_amount: Decimal, api_key: str, client:
                 response = own_client.post(EASYSLIP_VERIFY_URL, headers={"Authorization": f"Bearer {api_key}"}, json=payload)
         else:
             response = client.post(EASYSLIP_VERIFY_URL, headers={"Authorization": f"Bearer {api_key}"}, json=payload)
-        response.raise_for_status()
-        data = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
+    except httpx.HTTPError as exc:
+        # Only a real transport failure gets the "could not reach" message.
         raise SlipVerificationError("ติดต่อ EasySlip ไม่สำเร็จ กรุณาลองใหม่") from exc
+    if response.status_code >= 400:
+        raise _refused(response)
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise SlipVerificationError("EasySlip ตอบกลับในรูปแบบที่อ่านไม่ได้") from exc
     if data.get("success") is not True or not isinstance(data.get("data"), dict):
         raise SlipVerificationError("EasySlip ไม่ยืนยันสลิปนี้")
     slip = data["data"]
