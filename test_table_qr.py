@@ -228,6 +228,64 @@ class TableQrTest(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         verify.assert_not_called()
 
+    # ---- joining the shop's member list from the table -------------------
+
+    def test_a_guest_joins_with_a_name_and_a_number_and_no_line_account(self):
+        """Membership used to need a LINE id token, which a phone that scanned
+        the sticker does not have; the customer was pushed to the staff login."""
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        response = self.guest.post("/api/members/self", headers={"X-Table-Token": token},
+                                   json={"branch_id": 1, "table_no": "1",
+                                         "display_name": "คุณเก่ง", "phone": "0812345678",
+                                         "marketing_opt_in": True})
+        self.assertEqual(response.status_code, 200, response.text)
+        card = response.json()
+        self.assertEqual(card["display_name"], "คุณเก่ง")
+        self.assertEqual(card["phone"], "0812345678")
+        with sqlite3.connect(server.DB_PATH) as conn:
+            stored = conn.execute("SELECT display_name,phone,marketing_opt_in"
+                                  " FROM crm_customers WHERE phone=?", ("0812345678",)).fetchone()
+        self.assertEqual(stored, ("คุณเก่ง", "0812345678", 1))
+
+    def test_a_number_already_on_the_list_cannot_be_taken_over(self):
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        body = {"branch_id": 1, "table_no": "1", "display_name": "คนแรก", "phone": "0812345678"}
+        self.assertEqual(self.guest.post("/api/members/self", headers={"X-Table-Token": token},
+                                         json=body).status_code, 200)
+        again = self.guest.post("/api/members/self", headers={"X-Table-Token": token},
+                                json={**body, "display_name": "คนที่สอง"})
+        self.assertEqual(again.status_code, 409)
+        self.assertIn("เป็นสมาชิกอยู่แล้ว", again.json()["detail"])
+
+    def test_joining_needs_a_real_name_and_number(self):
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        for body in ({"display_name": "", "phone": "0812345678"},
+                     {"display_name": "คุณเก่ง", "phone": "123"},
+                     {"display_name": "คุณเก่ง", "phone": "ไม่ใช่เบอร์"}):
+            with self.subTest(body=body):
+                response = self.guest.post("/api/members/self", headers={"X-Table-Token": token},
+                                           json={"branch_id": 1, "table_no": "1", **body})
+                self.assertEqual(response.status_code, 400)
+
+    def test_someone_with_no_table_token_cannot_join_the_member_list(self):
+        self._add("1")
+        response = self.guest.post("/api/members/self",
+                                   json={"branch_id": 1, "table_no": "1",
+                                         "display_name": "คนนอก", "phone": "0899999999"})
+        self.assertEqual(response.status_code, 401)
+
+    def test_a_guest_cannot_join_on_behalf_of_another_table(self):
+        first = self._add("1").json()["code"]
+        self._add("2")
+        _, token = self._scan(first)
+        response = self.guest.post("/api/members/self", headers={"X-Table-Token": token},
+                                   json={"branch_id": 1, "table_no": "2",
+                                         "display_name": "คนโต๊ะอื่น", "phone": "0899999999"})
+        self.assertEqual(response.status_code, 403)
+
     def test_a_stranger_with_no_token_cannot_pay_anything_off(self):
         code = self._add("1").json()["code"]
         _, token = self._scan(code)

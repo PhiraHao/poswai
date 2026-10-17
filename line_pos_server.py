@@ -3799,12 +3799,9 @@ class CounterMember(BaseModel):
     marketing_opt_in: bool = False
 
 
-@app.post("/api/members")
-def register_member_at_counter(req: CounterMember, request: Request):
-    """Staff sign a walk-in customer up at the till, for customers who do not use LINE."""
-    require_staff(request, roles=("cashier", "manager", "owner"), branch_id=req.branch_id)
-    name = req.display_name.strip()
-    phone = re.sub(r"[\s-]", "", req.phone)
+def _add_member(branch_id: int, display_name: str, phone: str, marketing_opt_in: bool) -> dict:
+    name = display_name.strip()
+    phone = re.sub(r"[\s-]", "", phone)
     if not name or len(name) > 100:
         raise HTTPException(400, "กรุณากรอกชื่อลูกค้า")
     if not re.fullmatch(r"\+?\d{9,15}", phone):
@@ -3812,11 +3809,38 @@ def register_member_at_counter(req: CounterMember, request: Request):
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         if conn.execute("SELECT 1 FROM crm_customers WHERE branch_id=? AND phone=?",
-                        (req.branch_id, phone)).fetchone():
+                        (branch_id, phone)).fetchone():
             raise HTTPException(409, "เบอร์นี้เป็นสมาชิกอยู่แล้ว")
         cur = conn.execute("INSERT INTO crm_customers(branch_id,display_name,phone,marketing_opt_in) "
-                           "VALUES(?,?,?,?)", (req.branch_id, name, phone, int(req.marketing_opt_in)))
+                           "VALUES(?,?,?,?)", (branch_id, name, phone, int(marketing_opt_in)))
         return _member_card(conn, cur.lastrowid)
+
+
+@app.post("/api/members")
+def register_member_at_counter(req: CounterMember, request: Request):
+    """Staff sign a walk-in customer up at the till, for customers who do not use LINE."""
+    require_staff(request, roles=("cashier", "manager", "owner"), branch_id=req.branch_id)
+    return _add_member(req.branch_id, req.display_name, req.phone, req.marketing_opt_in)
+
+
+class SelfMember(CounterMember):
+    table_no: str
+
+
+@app.post("/api/members/self")
+def register_member_from_table(req: SelfMember, request: Request):
+    """A guest at a table signs themselves up, with no LINE account needed.
+
+    Membership used to require a LINE id token, which a phone that simply
+    scanned the table sticker does not have; the customer was pushed to the
+    shop's own staff sign-in and reasonably gave up. Being at the table is
+    proof enough to leave a name and a number.
+
+    A number already on the shop's list is refused, so nobody can take over
+    someone else's points by claiming their phone.
+    """
+    require_table_or_staff(request, req.branch_id, req.table_no.strip())
+    return _add_member(req.branch_id, req.display_name, req.phone, req.marketing_opt_in)
 
 
 class PointChange(BaseModel):

@@ -126,9 +126,9 @@
         <form id="poswaiMemberForm">
           <label for="poswaiMemberName">ชื่อที่ให้ร้านเรียก</label><input id="poswaiMemberName" maxlength="100">
           <label for="poswaiMemberPhone">เบอร์โทร (ใช้บอกพนักงานตอนสะสมแต้ม)</label><input id="poswaiMemberPhone" type="tel" maxlength="20" required>
-          <label class="poswai-auth-check"><input type="checkbox" id="poswaiMemberConsent"> ยินยอมรับข่าวสารและโปรโมชันทาง LINE</label>
+          <label class="poswai-auth-check"><input type="checkbox" id="poswaiMemberConsent"> ยินยอมรับข่าวสารและโปรโมชันจากร้าน</label>
           <p class="poswai-auth-error" id="poswaiMemberError" role="alert"></p>
-          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiMemberSubmit">สมัครด้วย LINE</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseMember">ปิด</button></div>
+          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiMemberSubmit">สมัครสมาชิก</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseMember">ปิด</button></div>
         </form>
       </div>
       <div class="poswai-member-card" id="poswaiMemberCard" hidden>
@@ -281,8 +281,10 @@
   };
   const close = () => { overlay.hidden = true; };
   const api = async (url, body) => {
+    const headers = { 'Content-Type': 'application/json' };
+    if (tableToken) headers['X-Table-Token'] = tableToken;
     const response = await fetch(url, { method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      headers, body: JSON.stringify(body) });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
     return result;
@@ -581,13 +583,36 @@
     }));
     try { localStorage.setItem('poswaiMemberPhone', card.phone || ''); } catch (_) { /* private browsing */ }
   };
+  /* Two ways in. Opened from inside LINE the account itself identifies the
+     customer. Scanned from a table sticker there is no LINE account, so the
+     name and number are enough: being at the table is the proof. Sending the
+     customer to the shop's own staff sign-in, which is what used to happen,
+     asked them to log in to a till they have no business in. */
   const joinMember = async () => {
-    const token = typeof getLineIdToken === 'function' ? await getLineIdToken() : '';
-    if (!token) throw new Error('เปิดหน้านี้จาก LINE แล้วเข้าสู่ระบบ LINE ก่อน จึงจะสมัครสมาชิกได้');
-    return api('/api/members/me', {
-      branch_id: state.branchId, line_id_token: token,
-      display_name: $('#poswaiMemberName').value.trim() || undefined,
-      phone: $('#poswaiMemberPhone').value.trim() || undefined,
+    /* A shop with no LINE app configured throws here rather than returning
+       nothing, and that used to end the whole attempt. Not having LINE is the
+       ordinary case for a phone that scanned a sticker, so it falls through. */
+    let token = '';
+    if (typeof getLineIdToken === 'function') {
+      try { token = (await getLineIdToken()) || ''; } catch (_) { token = ''; }
+    }
+    const name = $('#poswaiMemberName').value.trim();
+    const phone = $('#poswaiMemberPhone').value.trim();
+    if (token) {
+      return api('/api/members/me', {
+        branch_id: state.branchId, line_id_token: token,
+        display_name: name || undefined, phone: phone || undefined,
+        marketing_opt_in: $('#poswaiMemberConsent').checked,
+      });
+    }
+    if (!tableToken) {
+      throw new Error('สมัครสมาชิกได้ที่โต๊ะ สแกน QR บนโต๊ะก่อน หรือแจ้งพนักงานให้สมัครให้');
+    }
+    if (!name) throw new Error('กรุณากรอกชื่อที่ให้ร้านเรียก');
+    if (!phone) throw new Error('กรุณากรอกเบอร์โทร');
+    return api('/api/members/self', {
+      branch_id: state.branchId, table_no: tableNo,
+      display_name: name, phone,
       marketing_opt_in: $('#poswaiMemberConsent').checked,
     });
   };
@@ -599,7 +624,7 @@
     $('#poswaiMemberError').textContent = '';
     try { showMemberCard(await joinMember()); }
     catch (error) { $('#poswaiMemberError').textContent = error.message; }
-    finally { submit.disabled = false; submit.textContent = 'สมัครด้วย LINE'; }
+    finally { submit.disabled = false; submit.textContent = 'สมัครสมาชิก'; }
   });
   $('#poswaiCloseMember').addEventListener('click', close);
   $('#poswaiCloseMemberCard').addEventListener('click', close);
