@@ -1,0 +1,45 @@
+#view-crm.commerce-ready > :not(.module-intro):not(.commerce-shell) { display:none!important }
+.commerce-shell { display:grid; gap:18px; color:#17212b }
+.commerce-tabs { display:flex; gap:6px; padding:5px; background:#f2f4f7; border-radius:14px; width:max-content; max-width:100%; overflow:auto }
+.commerce-tabs button { border:0; border-radius:10px; background:transparent; color:#596579; padding:10px 15px; font:inherit; font-weight:700; white-space:nowrap; cursor:pointer }
+.commerce-tabs button[aria-selected="true"] { background:#fff; color:#17212b; box-shadow:0 2px 8px #11182712 }
+.commerce-pane { display:grid; gap:16px }
+.commerce-pane[hidden] { display:none }
+.commerce-card { background:#fff; border:1px solid #e3e8ee; border-radius:18px; padding:20px; box-shadow:0 8px 26px #17212b0a }
+.commerce-card h2,.commerce-card h3 { margin:0 0 10px; font-size:1.06rem }
+.commerce-muted { color:#64748b; font-size:.86rem; line-height:1.5 }
+.commerce-toolbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:0 0 14px }
+.commerce-toolbar select,.commerce-toolbar input,.commerce-form input,.commerce-form textarea,.commerce-form select { border:1px solid #d4dce5; border-radius:10px; padding:10px 12px; background:#fff; font:inherit; min-width:0 }
+.commerce-form { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; align-items:end }
+.commerce-form label { display:grid; gap:6px; font-size:.84rem; font-weight:700 }
+.commerce-form .wide { grid-column:1/-1 }
+.commerce-btn { border:0; border-radius:10px; background:#ffca28; color:#17212b; padding:10px 15px; font:inherit; font-weight:800; cursor:pointer; box-shadow:0 3px 0 #cf9f0b }
+.commerce-btn:disabled { opacity:.52; cursor:not-allowed; box-shadow:none }
+.commerce-btn.secondary { background:#eff4f8; box-shadow:none }
+.commerce-btn.dark { background:#17212b; color:#fff; box-shadow:none }
+.commerce-list { display:grid; gap:10px }
+.commerce-row { display:grid; gap:8px; padding:14px; border:1px solid #e5eaf0; border-radius:13px; background:#fff }
+.commerce-row-head { display:flex; gap:10px; align-items:start; justify-content:space-between; flex-wrap:wrap }
+.commerce-row strong { font-size:.93rem }
+.commerce-row small { color:#64748b }
+.commerce-row-actions { display:flex; gap:7px; flex-wrap:wrap }
+.commerce-pill { display:inline-flex; align-items:center; background:#fff5ce; color:#594100; border-radius:999px; padding:4px 9px; font-size:.74rem; font-weight:800 }
+.commerce-pill.green { background:#dcf7e7; color:#11623b }
+.commerce-pill.gray { background:#edf1f4; color:#5a6675 }
+.commerce-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px }
+.commerce-stat { border:1px solid #e6eaf0; border-radius:14px; padding:16px; background:#fff }
+.commerce-stat span { display:block; color:#667085; font-size:.79rem }
+.commerce-stat strong { display:block; font-size:1.5rem; margin-top:4px }
+.commerce-alert { padding:13px 15px; border-radius:12px; background:#fff7df; color:#624500; border:1px solid #f3da86; font-size:.86rem }
+.commerce-alert.error { background:#fff0ed; border-color:#f8c5b9; color:#962f20 }
+.commerce-pickup-open { margin-left:auto }
+.commerce-modal { position:fixed; inset:0; z-index:5000; display:grid; place-items:center; padding:16px; background:#111b27ac }
+.commerce-modal[hidden] { display:none }
+.commerce-modal-card { width:min(680px,100%); max-height:calc(100vh - 32px); overflow:auto; background:#fff; border-radius:22px; padding:22px; box-shadow:0 20px 80px #0004 }
+.commerce-modal-head { display:flex; justify-content:space-between; gap:12px; align-items:center; margin-bottom:14px }
+.commerce-modal-head h2 { margin:0 }
+.commerce-menu-lines { display:grid; gap:8px; margin:14px 0 }
+.commerce-menu-line { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:10px; padding:10px; background:#f7f9fb; border-radius:10px }
+.commerce-menu-line input { width:65px; border:1px solid #ccd6df; border-radius:8px; padding:8px }
+.commerce-map-row { display:grid; grid-template-columns:minmax(140px,1fr) minmax(150px,1fr) auto; align-items:center; gap:10px; padding:8px 0; border-top:1px solid #edf0f3 }
+@media(max-width:700px) { .commerce-card { padding:15px } .commerce-stats { grid-template-columns:1fr 1fr } .commerce-map-row { grid-template-columns:1fr } .commerce-menu-line { grid-template-columns:1fr auto } .commerce-menu-line small { grid-column:1 } }

@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>ค่าบริการร้าน · ZZAX Studio</title>
+<link rel="stylesheet" href="/assets/fonts.css">
+<style>
+  :root{--ink:#17222e;--muted:#5d6b7a;--line:#dfe5ec;--ok:#128a52;--warn:#b26b00;--late:#c0372b;--bg:#f3f5f8;--blue:#1f6feb}
+  *{box-sizing:border-box}
+  body{margin:0;padding:18px;background:var(--bg);color:var(--ink);font-family:"Noto Sans Thai","Prompt",system-ui,sans-serif;font-size:16px;line-height:1.55}
+  h1{margin:0 0 4px;font-size:1.5rem}
+  h2{margin:0 0 10px;font-size:1.1rem}
+  p.lead{margin:0 0 18px;color:var(--muted);font-size:.95rem}
+  .panel{max-width:1180px;margin:0 auto 16px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px}
+  label{display:block;font-weight:700;font-size:.88rem;margin-bottom:6px}
+  input,button,select,textarea{font:inherit}
+  input,select,textarea{width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  button{padding:9px 15px;border:0;border-radius:10px;background:var(--blue);color:#fff;font-weight:700;cursor:pointer}
+  button.ghost{background:#eef2f7;color:var(--ink)}
+  button.warn{background:#b26b00}
+  button.danger{background:var(--late)}
+  button.go{background:var(--ok)}
+  button:disabled{opacity:.55;cursor:wait}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:end}
+  .row>div{flex:1 1 180px}
+  .row>div.tight{flex:0 0 auto}
+  table{width:100%;border-collapse:collapse;font-size:.92rem}
+  th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#f7f9fc;font-size:.85rem;position:sticky;top:0}
+  .tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.78rem;font-weight:700;white-space:nowrap}
+  .tag.ok{background:#e3f6ec;color:var(--ok)}
+  .tag.due_soon{background:#fdf1dc;color:var(--warn)}
+  .tag.overdue{background:#fdeae7;color:var(--late)}
+  .tag.suspended{background:#eceff3;color:#4a5564}
+  .tag.closed{background:#e7e3f6;color:#4b3a96}
+  .msg{margin:10px 0 0;font-size:.9rem;min-height:1.2em}
+  .msg.bad{color:var(--late)}
+  .msg.good{color:var(--ok)}
+  .totals{display:flex;flex-wrap:wrap;gap:18px;margin:0 0 14px;font-size:.9rem;color:var(--muted)}
+  .totals strong{color:var(--ink);font-size:1.15rem;display:block}
+  .history{font-size:.84rem;color:var(--muted)}
+  .detail{background:#fbfcfe}
+  .detail .box{display:grid;gap:14px;padding:4px 2px 10px}
+  .cards{display:flex;flex-wrap:wrap;gap:12px}
+  .card{flex:1 1 260px;border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
+  .card h3{margin:0 0 8px;font-size:.95rem}
+  .card .grid{display:grid;gap:7px}
+  .paylist{margin:0;padding:0;list-style:none;display:grid;gap:7px;font-size:.86rem}
+  .paylist li{border-bottom:1px dashed var(--line);padding-bottom:6px}
+  .paylist .grant{color:#4b3a96}
+  .toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
+  .toolbar>div{flex:1 1 200px}
+  .toolbar>div.tight{flex:0 0 auto}
+  .checkline{display:flex;gap:7px;align-items:center;font-size:.9rem;font-weight:700}
+  .checkline input{width:auto}
+  .muted{color:var(--muted);font-size:.85rem}
+  @media (max-width:720px){td,th{font-size:.84rem;padding:7px 5px}}
+
+  /* ---- colour, added so the numbers and tools read at a glance ---------- */
+  body{background:linear-gradient(180deg,#eef2f7 0%,#f5f7fa 420px,#f5f7fa 100%)}
+  .panel{box-shadow:0 2px 10px rgba(23,34,46,.05)}
+  h1{letter-spacing:-.01em}
+  #keyRow input{padding-left:38px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238a94a3'%3E%3Cpath d='M12.6 10a5 5 0 10-1.2 1.2l3.3 3.3 1.2-1.2L12.6 10zM8 11a3 3 0 113-3 3 3 0 01-3 3z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:12px center;background-size:18px}
+  #openButton{background:#1b2a41}
+  #openButton:hover{background:#27405f}
+  .totals{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin:0 0 18px;font-size:.82rem;color:#55616f}
+  .totals>div{border-radius:14px;padding:13px 14px;border:1px solid;font-weight:600}
+  .totals>div::before{content:"";display:block;width:21px;height:21px;margin-bottom:9px}
+  .totals strong{font-size:1.55rem;line-height:1.15;margin-bottom:1px;letter-spacing:-.02em}
+  thead th{background:#1b2a41;color:#fff;border-bottom:0;font-weight:700}
+  thead th:first-child{border-radius:10px 0 0 10px}
+  thead th:last-child{border-radius:0 10px 10px 0}
+  tbody tr:hover{background:#f8fafd}
+  .cards{gap:14px}
+  .card{position:relative;border-radius:16px;padding:15px 16px}
+  .card::after{content:"";position:absolute;top:15px;right:16px;width:24px;height:24px;opacity:.85}
+  .card h3{padding-right:34px}
+  #revenueTable td{border-bottom-color:rgba(23,34,46,.08)}
+
+  .totals>div:nth-child(1){background:#eef4ff;border-color:#d8e5fb}
+  .totals>div:nth-child(1)::before{background-color:#1f6feb;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M3 10l2-6h14l2 6v1H3v-1zm1 3h16v7H4v-7z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M3 10l2-6h14l2 6v1H3v-1zm1 3h16v7H4v-7z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .totals>div:nth-child(1) strong{color:#1f6feb}
+  .totals>div:nth-child(2){background:#fdecea;border-color:#f7d3ce}
+  .totals>div:nth-child(2)::before{background-color:#c0372b;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .totals>div:nth-child(2) strong{color:#c0372b}
+  .totals>div:nth-child(3){background:#fdf5e3;border-color:#f3e2bb}
+  .totals>div:nth-child(3)::before{background-color:#b26b00;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm1 10V6h-2v8h6v-2h-4z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm1 10V6h-2v8h6v-2h-4z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .totals>div:nth-child(3) strong{color:#b26b00}
+  .totals>div:nth-child(4){background:#f4f6f9;border-color:#e2e7ee}
+  .totals>div:nth-child(4)::before{background-color:#8a94a3;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm0 3a7 7 0 014.2 12.6L6.4 7.8A7 7 0 0112 5zM5.8 9.4l9.8 9.8A7 7 0 015.8 9.4z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 2a10 10 0 100 20 10 10 0 000-20zm0 3a7 7 0 014.2 12.6L6.4 7.8A7 7 0 0112 5zM5.8 9.4l9.8 9.8A7 7 0 015.8 9.4z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .totals>div:nth-child(4) strong{color:#8a94a3}
+  .totals>div:nth-child(5){background:#e9f7ef;border-color:#c9e9d6}
+  .totals>div:nth-child(5)::before{background-color:#128a52;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M2 6h20v12H2V6zm10 2.5A3.5 3.5 0 1015.5 12 3.5 3.5 0 0012 8.5z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M2 6h20v12H2V6zm10 2.5A3.5 3.5 0 1015.5 12 3.5 3.5 0 0012 8.5z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .totals>div:nth-child(5) strong{color:#128a52}
+  .totals>div:nth-child(6){background:#e6f6f4;border-color:#c4e8e3}
+  .totals>div:nth-child(6)::before{background-color:#0f766e;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M3 5h18v3H3V5zm0 5h18v3H3v-3zm0 5h18v4H3v-4z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M3 5h18v3H3V5zm0 5h18v3H3v-3zm0 5h18v4H3v-4z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .totals>div:nth-child(6) strong{color:#0f766e}
+  .cards .card:nth-child(1){background:#eef4ff;border-color:#d8e5fb}
+  .cards .card:nth-child(1)::after{background-color:#06c755;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 3C6.9 3 2.8 6.4 2.8 10.5c0 3.7 3.2 6.8 7.6 7.4.3.1.7.2.8.5.1.3 0 .7 0 1l-.1.8c0 .3-.2 1 .9.6 1.1-.5 5.9-3.5 8-6 1.4-1.5 2.1-3.1 2.1-4.3C22.1 6.4 17.1 3 12 3z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M12 3C6.9 3 2.8 6.4 2.8 10.5c0 3.7 3.2 6.8 7.6 7.4.3.1.7.2.8.5.1.3 0 .7 0 1l-.1.8c0 .3-.2 1 .9.6 1.1-.5 5.9-3.5 8-6 1.4-1.5 2.1-3.1 2.1-4.3C22.1 6.4 17.1 3 12 3z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .cards .card:nth-child(2){background:#ecf8f1;border-color:#cdeada}
+  .cards .card:nth-child(2)::after{background-color:#128a52;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M11 3h2v8h4l-5 6-5-6h4V3zM4 19h16v2H4v-2z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M11 3h2v8h4l-5 6-5-6h4V3zM4 19h16v2H4v-2z'/%3E%3C/svg%3E") center/contain no-repeat}
+  .cards .card:nth-child(3){background:#fdeef2;border-color:#f7d7e0}
+  .cards .card:nth-child(3)::after{background-color:#be3455;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M3 17l5-5 4 4 7-8 2 1.6-9 10.4-4-4-3.6 3.6z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill-rule='evenodd'%3E%3Cpath d='M3 17l5-5 4 4 7-8 2 1.6-9 10.4-4-4-3.6 3.6z'/%3E%3C/svg%3E") center/contain no-repeat}
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>ค่าบริการร้าน POS WAI</h1>
+  <p class="lead">หน้านี้สำหรับทีม ZZAX Studio เท่านั้น เปิดด้วยกุญแจผู้ดูแลระบบ ไม่ใช่บัญชีพนักงานของร้าน · หน้านี้เห็นเฉพาะทะเบียนร้านและการชำระเงิน ไม่เห็นยอดขายหรือข้อมูลลูกค้าของร้าน</p>
+  <div class="row" id="keyRow">
+    <div>
+      <label for="adminKey">กุญแจผู้ดูแลระบบ</label>
+      <input id="adminKey" type="password" autocomplete="off" placeholder="POSWAI_ADMIN_KEY">
+    </div>
+    <div class="tight"><button id="openButton" type="button">เปิดรายชื่อร้าน</button></div>
+    <div class="tight"><button id="forgetButton" class="ghost" type="button" hidden>ลืมกุญแจ</button></div>
+  </div>
+  <p class="msg" id="keyMessage"></p>
+</div>
+
+<div class="panel" id="listPanel" hidden>
+  <div class="totals" id="totals"></div>
+  <div class="toolbar">
+    <div>
+      <label for="searchBox">ค้นหา</label>
+      <input id="searchBox" type="search" placeholder="ชื่อร้าน ชื่อในลิงก์ หรือเบอร์โทร">
+    </div>
+    <div>
+      <label for="stateFilter">กรองตามสถานะ</label>
+      <select id="stateFilter">
+        <option value="">ทั้งหมด</option>
+        <option value="overdue">เลยกำหนดชำระ</option>
+        <option value="due_soon">ใกล้ครบกำหนด</option>
+        <option value="ok">ปกติ</option>
+        <option value="suspended">ถูกระงับ</option>
+        <option value="closed">ปิดถาวร</option>
+        <option value="trial">ยังทดลองใช้</option>
+      </select>
+    </div>
+    <div class="tight"><label class="checkline"><input id="showClosed" type="checkbox"> แสดงร้านที่ปิดถาวร</label></div>
+    <div class="tight"><button id="refreshButton" class="ghost" type="button">โหลดใหม่</button></div>
+  </div>
+  <table>
+    <thead><tr><th>ร้าน</th><th>เจ้าของ / เบอร์</th><th>สถานะ</th><th>ใช้ได้ถึง</th><th>รับเงินแล้ว</th><th></th></tr></thead>
+    <tbody id="shopRows"></tbody>
+  </table>
+  <p class="msg" id="listMessage"></p>
+</div>
+
+<div class="panel" id="toolsPanel" hidden>
+  <div class="cards">
+    <div class="card">
+      <h3>เตือนค่าบริการทาง LINE</h3>
+      <p class="muted">ส่งให้ทุกร้านที่ใกล้ครบกำหนดและเลยกำหนด ร้านที่เจ้าของยังไม่ผูก LINE จะขึ้นเบอร์โทรพร้อมข้อความให้คัดลอกไปส่งเอง</p>
+      <button id="remindButton" type="button">ส่งข้อความเตือน</button>
+      <div id="remindResult"></div>
+    </div>
+    <div class="card">
+      <h3>ส่งออกไฟล์</h3>
+      <p class="muted">ไฟล์ CSV เปิดด้วย Excel ภาษาไทยได้เลย</p>
+      <div class="grid">
+        <button class="ghost" type="button" data-export="shops">ดาวน์โหลดรายชื่อร้าน</button>
+        <button class="ghost" type="button" data-export="payments">ดาวน์โหลดประวัติการชำระ</button>
+      </div>
+      <p class="msg" id="exportMessage"></p>
+    </div>
+    <div class="card">
+      <h3>รายได้รายเดือน</h3>
+      <p class="muted">เฉพาะเงินที่รับจริง ไม่นับวันที่แถมฟรี</p>
+      <table id="revenueTable"><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const STATE_LABEL = {ok: 'ปกติ', due_soon: 'ใกล้ครบกำหนด', overdue: 'เลยกำหนดชำระ',
+                       suspended: 'ถูกระงับ', closed: 'ปิดถาวร'};
+  const METHOD_LABEL = {promptpay_slip: 'สลิปพร้อมเพย์', manual: 'ยืนยันด้วยมือ', grant: 'แถมฟรี'};
+  const baht = value => Number(value || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  let key = sessionStorage.getItem('poswaiAdminKey') || '';
+  let price = 399;
+  let shops = [];
+  const openRows = new Set();
+
+  const say = (element, text, kind) => { element.textContent = text; element.className = 'msg' + (kind ? ' ' + kind : ''); };
+  const eventId = prefix => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  async function call(path, options = {}) {
+    const response = await fetch(path, {
+      ...options, cache: 'no-store',
+      headers: {...(options.body ? {'Content-Type': 'application/json'} : {}), 'x-poswai-admin-key': key}
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.detail || `HTTP ${response.status}`);
+    return body;
+  }
+
+  const field = (type, props = {}) => {
+    const element = document.createElement(type === 'select' ? 'select' : type);
+    Object.assign(element, props);
+    return element;
+  };
+
+  const labelled = (text, control) => {
+    const wrap = document.createElement('label');
+    wrap.textContent = text;
+    wrap.style.fontSize = '.82rem';
+    wrap.append(control);
+    return wrap;
+  };
+
+  function matches(shop) {
+    const needle = $('searchBox').value.trim().toLowerCase();
+    const filter = $('stateFilter').value;
+    if (needle && ![shop.name, shop.slug, shop.owner_name, shop.phone]
+        .some(value => String(value || '').toLowerCase().includes(needle))) return false;
+    if (!filter) return true;
+    if (filter === 'trial') return shop.on_trial && shop.in_service;
+    return shop.state === filter;
+  }
+
+  async function act(button, result, work) {
+    button.disabled = true;
+    say(result, 'กำลังบันทึก...');
+    try {
+      const message = await work();
+      say(result, message, 'good');
+      await load({keepMessage: true});
+    } catch (error) {
+      say(result, error.message, 'bad');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function paymentCard(shop) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h3>ยืนยันว่าได้รับเงินแล้ว</h3>';
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    const amount = field('input', {type: 'number', step: '0.01', min: '1', value: Number(price).toFixed(2)});
+    const months = field('input', {type: 'number', min: '1', max: '12', value: '1'});
+    const note = field('input', {type: 'text', placeholder: 'เช่น โอนมา 17 ต.ค.'});
+    const button = field('button', {type: 'button', textContent: 'บันทึกการรับเงิน', className: 'go'});
+    const result = document.createElement('p');
+    result.className = 'msg';
+    grid.append(labelled('ยอดที่ได้รับ (บาท)', amount), labelled('จำนวนเดือน', months),
+                labelled('บันทึกช่วยจำ', note), button, result);
+    card.append(grid);
+    button.addEventListener('click', () => {
+      const total = Number(amount.value);
+      const monthCount = Number(months.value);
+      if (!(total > 0)) { say(result, 'กรอกยอดเงินที่ได้รับก่อน', 'bad'); return; }
+      if (!Number.isInteger(monthCount) || monthCount < 1 || monthCount > 12) {
+        say(result, 'จำนวนเดือนต้องเป็น 1–12', 'bad'); return;
+      }
+      if (!confirm(`ยืนยันว่าได้รับเงิน ${baht(total)} บาท จากร้าน ${shop.name} และต่ออายุ ${monthCount} เดือน?`)) return;
+      act(button, result, async () => {
+        const body = await call(`/api/admin/shops/${encodeURIComponent(shop.slug)}/payments`, {
+          method: 'POST',
+          body: JSON.stringify({event_id: eventId('manual'), amount: Number(total.toFixed(2)),
+                                months: monthCount, note: note.value.trim()})
+        });
+        return `บันทึกแล้ว ใช้งานได้ถึง ${body.paid_until}`;
+      });
+    });
+    return card;
+  }
+
+  function grantCard(shop) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h3>ขยายเวลาให้ฟรี</h3><p class="muted">ไม่ถูกนับเป็นรายได้ ใช้ตอนชดเชยลูกค้าหรือให้ทดลองต่อ</p>';
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    const days = field('input', {type: 'number', min: '1', max: '365', value: '7'});
+    const reason = field('input', {type: 'text', placeholder: 'เช่น ชดเชยระบบล่ม 2 วัน'});
+    const button = field('button', {type: 'button', textContent: 'แถมวันให้ร้านนี้', className: 'warn'});
+    const result = document.createElement('p');
+    result.className = 'msg';
+    grid.append(labelled('จำนวนวัน', days), labelled('เหตุผล (บังคับ)', reason), button, result);
+    card.append(grid);
+    button.addEventListener('click', () => {
+      const dayCount = Number(days.value);
+      if (!Number.isInteger(dayCount) || dayCount < 1 || dayCount > 365) {
+        say(result, 'จำนวนวันต้องเป็น 1–365', 'bad'); return;
+      }
+      if (reason.value.trim().length < 3) { say(result, 'ต้องระบุเหตุผล', 'bad'); return; }
+      if (!confirm(`แถมเวลาให้ร้าน ${shop.name} ฟรี ${dayCount} วัน?`)) return;
+      act(button, result, async () => {
+        const body = await call(`/api/admin/shops/${encodeURIComponent(shop.slug)}/grants`, {
+          method: 'POST',
+          body: JSON.stringify({event_id: eventId('grant'), days: dayCount, reason: reason.value.trim()})
+        });
+        return `แถมแล้ว ใช้งานได้ถึง ${body.paid_until}`;
+      });
+    });
+    return card;
+  }
+
+  function statusCard(shop) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h3>สถานะร้าน</h3><p class="muted">ระงับหรือปิดถาวรไม่ลบข้อมูลร้าน ไฟล์ฐานข้อมูลยังอยู่ และเปิดกลับได้ทุกเมื่อ</p>';
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+    const reason = field('input', {type: 'text', placeholder: 'เหตุผล (บังคับเมื่อระงับหรือปิด)',
+                                   value: shop.status_reason || ''});
+    const result = document.createElement('p');
+    result.className = 'msg';
+    grid.append(labelled('เหตุผล', reason));
+    const change = (status, label, className) => {
+      const button = field('button', {type: 'button', textContent: label, className});
+      button.addEventListener('click', () => {
+        if (status !== 'active' && reason.value.trim().length < 3) {
+          say(result, 'ต้องระบุเหตุผลอย่างน้อย 3 ตัวอักษร', 'bad'); return;
+        }
+        const warning = status === 'closed'
+          ? `ปิดร้าน ${shop.name} ถาวร? ร้านจะเข้าใช้ไม่ได้และหายจากรายการหลัก แต่ข้อมูลทั้งหมดยังถูกเก็บไว้และเปิดกลับได้`
+          : status === 'suspended' ? `ระงับร้าน ${shop.name} ชั่วคราว? พนักงานจะเข้าใช้ไม่ได้จนกว่าจะเปิดกลับ`
+          : `เปิดให้ร้าน ${shop.name} ใช้งานได้ตามปกติ?`;
+        if (!confirm(warning)) return;
+        act(button, result, async () => {
+          const body = await call(`/api/admin/shops/${encodeURIComponent(shop.slug)}/status`, {
+            method: 'POST', body: JSON.stringify({status, reason: reason.value.trim()})
+          });
+          return `เปลี่ยนสถานะเป็น ${STATE_LABEL[body.status] || body.status} แล้ว ข้อมูลร้านยังอยู่ครบ (${body.database_file})`;
+        });
+      });
+      return button;
+    };
+    if (shop.status !== 'active') grid.append(change('active', 'เปิดให้ใช้งานตามปกติ', 'go'));
+    if (shop.status !== 'suspended') grid.append(change('suspended', 'ระงับชั่วคราว', 'warn'));
+    if (shop.status !== 'closed') grid.append(change('closed', 'ปิดถาวร (ไม่ลบข้อมูล)', 'danger'));
+    grid.append(result);
+    card.append(grid);
+    return card;
+  }
+
+  function historyCard(shop) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<h3>ประวัติการชำระ</h3>';
+    const list = document.createElement('ul');
+    list.className = 'paylist';
+    list.innerHTML = '<li class="history">กำลังโหลด...</li>';
+    card.append(list);
+    call(`/api/admin/shops/${encodeURIComponent(shop.slug)}/payments`).then(body => {
+      const payments = body.payments || [];
+      list.textContent = '';
+      if (!payments.length) {
+        list.innerHTML = '<li class="history">ยังไม่มีประวัติการชำระ</li>';
+        return;
+      }
+      for (const entry of payments) {
+        const item = document.createElement('li');
+        const isGrant = entry.method === 'grant';
+        if (isGrant) item.className = 'grant';
+        const money = isGrant ? 'แถมฟรี' : `${baht(entry.amount)} บาท`;
+        item.innerHTML = `<strong></strong> · <span></span><br><span class="history"></span>`;
+        item.children[0].textContent = `${String(entry.created_at).slice(0, 10)} · ${money}`;
+        item.children[1].textContent = METHOD_LABEL[entry.method] || entry.method;
+        item.children[3].textContent = `ถึง ${entry.period_end} · ยืนยันโดย ${entry.confirmed_by}`
+          + (entry.slip_reference ? ` · สลิป ${entry.slip_reference}` : '')
+          + (entry.note ? ` · ${entry.note}` : '');
+        list.append(item);
+      }
+    }).catch(error => { list.innerHTML = '<li class="history"></li>'; list.firstChild.textContent = error.message; });
+    return card;
+  }
+
+  function detailRow(shop) {
+    const tr = document.createElement('tr');
+    tr.className = 'detail';
+    const cell = document.createElement('td');
+    cell.colSpan = 6;
+    const box = document.createElement('div');
+    box.className = 'box';
+    const cards = document.createElement('div');
+    cards.className = 'cards';
+    cards.append(historyCard(shop), paymentCard(shop), grantCard(shop), statusCard(shop));
+    box.append(cards);
+    cell.append(box);
+    tr.append(cell);
+    return tr;
+  }
+
+  function renderRows() {
+    const rows = $('shopRows');
+    rows.textContent = '';
+    const visible = shops.filter(matches);
+    if (!visible.length) {
+      const empty = document.createElement('tr');
+      empty.innerHTML = '<td colspan="6" class="history">ไม่พบร้านที่ตรงกับเงื่อนไข</td>';
+      rows.append(empty);
+      return;
+    }
+    for (const shop of visible) {
+      const tr = document.createElement('tr');
+      const name = document.createElement('td');
+      name.innerHTML = '<strong></strong><br><span class="history"></span>';
+      name.querySelector('strong').textContent = shop.name;
+      name.querySelector('span').textContent = '/?shop=' + shop.slug;
+      const owner = document.createElement('td');
+      owner.innerHTML = '<span></span><br><span class="history"></span>';
+      owner.children[0].textContent = shop.owner_name;
+      owner.children[2].textContent = shop.phone;
+      const status = document.createElement('td');
+      status.innerHTML = `<span class="tag ${shop.state}">${STATE_LABEL[shop.state] || shop.state}</span>`
+        + '<br><span class="history"></span>';
+      status.querySelector('.history').textContent = shop.status !== 'active'
+        ? (shop.status_reason || 'ไม่ได้ระบุเหตุผล')
+        : (shop.on_trial ? 'ยังอยู่ช่วงทดลอง' : 'ลูกค้าที่ชำระแล้ว');
+      const due = document.createElement('td');
+      due.innerHTML = `${shop.due_date}<br><span class="history">${shop.days_left < 0
+        ? 'เลยมา ' + Math.abs(shop.days_left) + ' วัน' : 'เหลือ ' + shop.days_left + ' วัน'}</span>`;
+      const paid = document.createElement('td');
+      paid.innerHTML = `${baht(shop.paid_total)} บาท<br><span class="history">${shop.payments} ครั้ง`
+        + `${shop.grants ? ' · แถมฟรี ' + shop.grants + ' ครั้ง' : ''}</span>`;
+      const action = document.createElement('td');
+      const toggle = field('button', {type: 'button', className: 'ghost',
+                                      textContent: openRows.has(shop.slug) ? 'ซ่อนรายละเอียด' : 'รายละเอียด'});
+      toggle.addEventListener('click', () => {
+        if (openRows.has(shop.slug)) openRows.delete(shop.slug); else openRows.add(shop.slug);
+        renderRows();
+      });
+      action.append(toggle);
+      tr.append(name, owner, status, due, paid, action);
+      rows.append(tr);
+      if (openRows.has(shop.slug)) rows.append(detailRow(shop));
+    }
+  }
+
+  function renderRevenue(months) {
+    const body = $('revenueTable').querySelector('tbody');
+    body.textContent = '';
+    if (!months.length) {
+      body.innerHTML = '<tr><td class="history">ยังไม่มีเงินเข้า</td></tr>';
+      return;
+    }
+    for (const month of months) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${month.month}${month.is_current ? ' <span class="history">(เดือนนี้)</span>' : ''}</td>`
+        + `<td><strong>${baht(month.amount)}</strong> บาท<br><span class="history">${month.payments} ครั้ง · ${month.shops} ร้าน`
+        + `${month.grants ? ' · แถมฟรี ' + month.grants : ''}</span></td>`;
+      body.append(tr);
+    }
+  }
+
+  async function load(options = {}) {
+    if (!options.keepMessage) say($('listMessage'), 'กำลังโหลด...');
+    const body = await call('/api/admin/shops?include_closed=' + ($('showClosed').checked ? 'true' : 'false'));
+    price = body.price;
+    shops = body.shops || [];
+    const counts = shops.reduce((acc, shop) => { acc[shop.state] = (acc[shop.state] || 0) + 1; return acc; }, {});
+    const income = (body.revenue || []).reduce((sum, month) => sum + Number(month.amount || 0), 0);
+    $('totals').innerHTML = `<div><strong>${shops.length}</strong>ร้านในรายการ</div>`
+      + `<div><strong>${counts.overdue || 0}</strong>เลยกำหนดชำระ</div>`
+      + `<div><strong>${counts.due_soon || 0}</strong>ใกล้ครบกำหนด</div>`
+      + `<div><strong>${counts.suspended || 0}</strong>ถูกระงับ</div>`
+      + `<div><strong>${baht(income)} บาท</strong>รับมาแล้วรวม</div>`
+      + `<div><strong>${baht(price)} บาท</strong>ราคาต่อเดือน</div>`;
+    renderRows();
+    renderRevenue(body.revenue || []);
+    if (!options.keepMessage) {
+      say($('listMessage'), `ข้อมูลวันที่ ${body.today} · บัญชีรับเงิน `
+        + (body.service_promptpay_id || 'ยังไม่ได้ตั้งค่าในเซิร์ฟเวอร์'));
+    }
+    $('listPanel').hidden = false;
+    $('toolsPanel').hidden = false;
+  }
+
+  async function copyText(text, button) {
+    const previous = button.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (_) {
+      // Clipboard access can be refused; a selected textarea still lets them copy by hand.
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.style.width = '100%';
+      button.after(area);
+      area.select();
+      button.textContent = 'คัดลอกจากช่องด้านล่าง';
+      return;
+    }
+    button.textContent = 'คัดลอกแล้ว';
+    setTimeout(() => { button.textContent = previous; }, 2000);
+  }
+
+  async function sendReminders(event) {
+    const button = event.currentTarget;
+    const box = $('remindResult');
+    button.disabled = true;
+    box.textContent = 'กำลังส่ง...';
+    try {
+      const body = await call('/api/admin/reminders', {method: 'POST', body: JSON.stringify({})});
+      box.textContent = '';
+      const summary = document.createElement('p');
+      summary.className = 'msg good';
+      summary.textContent = `ร้านที่ถึงกำหนด ${body.due} ร้าน · ส่งเข้าคิว LINE ${body.queued.length} ร้าน`
+        + ` · ต้องส่งเอง ${body.manual.length} ร้าน` + (body.failed.length ? ` · ส่งไม่ได้ ${body.failed.length} ร้าน` : '');
+      box.append(summary);
+      if (!body.line_ready && body.queued.length) {
+        const warn = document.createElement('p');
+        warn.className = 'msg bad';
+        warn.textContent = 'ยังไม่ได้ตั้งค่าโทเคน LINE ของระบบ ข้อความจะค้างในคิวจนกว่าจะตั้งค่า';
+        box.append(warn);
+      }
+      for (const shop of body.manual) {
+        const line = document.createElement('p');
+        line.className = 'muted';
+        line.textContent = `${shop.name} · ${shop.phone} · ยังไม่ผูก LINE `;
+        const copy = field('button', {type: 'button', className: 'ghost', textContent: 'คัดลอกข้อความ'});
+        copy.addEventListener('click', () => copyText(shop.message, copy));
+        line.append(copy);
+        box.append(line);
+      }
+      for (const shop of body.failed) {
+        const line = document.createElement('p');
+        line.className = 'msg bad';
+        line.textContent = `${shop.name} · อ่านข้อมูลร้านไม่ได้ (${shop.error})`;
+        box.append(line);
+      }
+    } catch (error) {
+      box.textContent = '';
+      const failure = document.createElement('p');
+      failure.className = 'msg bad';
+      failure.textContent = error.message;
+      box.append(failure);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function download(kind, button) {
+    button.disabled = true;
+    say($('exportMessage'), 'กำลังเตรียมไฟล์...');
+    try {
+      const response = await fetch(`/api/admin/export/${kind}.csv`, {
+        cache: 'no-store', headers: {'x-poswai-admin-key': key}
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `poswai-${kind}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+      say($('exportMessage'), 'ดาวน์โหลดแล้ว', 'good');
+    } catch (error) {
+      say($('exportMessage'), error.message, 'bad');
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function open() {
+    key = $('adminKey').value.trim() || key;
+    if (!key) { say($('keyMessage'), 'กรอกกุญแจผู้ดูแลระบบก่อน', 'bad'); return; }
+    $('openButton').disabled = true;
+    say($('keyMessage'), 'กำลังตรวจกุญแจ...');
+    try {
+      await load();
+      sessionStorage.setItem('poswaiAdminKey', key);
+      $('adminKey').value = '';
+      $('adminKey').placeholder = 'บันทึกไว้ในแท็บนี้แล้ว';
+      $('forgetButton').hidden = false;
+      say($('keyMessage'), 'เปิดรายชื่อร้านแล้ว กุญแจถูกเก็บไว้เฉพาะแท็บนี้', 'good');
+    } catch (error) {
+      say($('keyMessage'), error.message, 'bad');
+      $('listPanel').hidden = true;
+      $('toolsPanel').hidden = true;
+    } finally {
+      $('openButton').disabled = false;
+    }
+  }
+
+  $('openButton').addEventListener('click', open);
+  $('adminKey').addEventListener('keydown', event => { if (event.key === 'Enter') open(); });
+  $('refreshButton').addEventListener('click', () => load().catch(error => say($('listMessage'), error.message, 'bad')));
+  $('searchBox').addEventListener('input', renderRows);
+  $('stateFilter').addEventListener('change', renderRows);
+  $('showClosed').addEventListener('change', () => load().catch(error => say($('listMessage'), error.message, 'bad')));
+  $('remindButton').addEventListener('click', sendReminders);
+  document.querySelectorAll('[data-export]').forEach(button => {
+    button.addEventListener('click', () => download(button.dataset.export, button));
+  });
+  $('forgetButton').addEventListener('click', () => {
+    sessionStorage.removeItem('poswaiAdminKey');
+    key = '';
+    $('listPanel').hidden = true;
+    $('toolsPanel').hidden = true;
+    $('forgetButton').hidden = true;
+    $('adminKey').placeholder = 'POSWAI_ADMIN_KEY';
+    say($('keyMessage'), 'ลืมกุญแจแล้ว');
+  });
+  if (key) { $('forgetButton').hidden = false; open(); }
+})();
+</script>
+</body>
+</html>
