@@ -67,7 +67,7 @@
   };
   const panel = document.createElement('section');
   const style = document.createElement('style');
-  style.textContent = `.live-catalog-panel{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:20px;margin:0 0 20px;box-shadow:0 8px 24px #1118270d}.live-catalog-panel h3{margin:0 0 8px}.live-catalog-panel p{color:#6b7280}.live-catalog-panel form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end;padding:14px 0;border-top:1px solid #eee}.live-catalog-panel label{display:grid;gap:5px;font-size:.85rem;font-weight:600}.live-catalog-panel input,.live-catalog-panel select,.live-catalog-panel textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:9px}.live-catalog-panel button{padding:11px 16px;background:#ffc928;color:#141b24;border:0;border-radius:9px;font-weight:700;cursor:pointer}.live-catalog-panel button.ghost{background:#eef2f7;color:#141b24}.live-catalog-panel button.danger{background:#fdeae7;color:#c0372b}.live-tabs{display:flex;gap:8px;border-bottom:2px solid #eef2f7;margin:4px 0 0}.live-tabs button{background:none;color:#6b7280;border-radius:0;padding:12px 18px;border-bottom:3px solid transparent;margin-bottom:-2px}.live-tabs button.on{color:#141b24;border-bottom-color:#ffc928}.live-catalog-panel form.live-menu-grid{display:grid;grid-template-columns:minmax(0,35fr) minmax(0,65fr);gap:20px;align-items:start;border-top:0;padding:16px 0}.live-photo{display:grid;gap:10px;position:sticky;top:12px}.live-photo-box{aspect-ratio:4/3;border:2px dashed #d1d5db;border-radius:14px;display:grid;place-items:center;background:#fbfcfe;overflow:hidden;color:#9ca3af;font-size:.85rem;text-align:center;padding:10px;cursor:pointer}.live-photo-box img{width:100%;height:100%;object-fit:cover}.live-photo-actions{display:flex;gap:8px}.live-photo-actions button{flex:1;padding:9px 10px;font-size:.85rem}.live-preview{border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#fff}.live-preview-cap{font-size:.75rem;color:#6b7280;margin:0 0 8px;text-transform:none}.live-preview-card{border:1px solid #eef2f7;border-radius:12px;overflow:hidden}.live-preview-card .shot{aspect-ratio:4/3;background:#f3f4f6;display:grid;place-items:center;font-size:2rem}.live-preview-card .shot img{width:100%;height:100%;object-fit:cover}.live-preview-card .body{padding:10px}.live-preview-card .title{font-weight:700;font-size:.95rem;line-height:1.4}.live-preview-card .desc{color:#6b7280;font-size:.8rem;margin:3px 0 0;line-height:1.5}.live-preview-card .cost{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}.live-preview-card .baht{font-weight:800;color:#141b24}.live-preview-card .tag{font-size:.72rem;color:#6b7280}.live-preview-card.out{opacity:.55}.live-fields{display:grid;gap:14px}.live-group{border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#fff}.live-group>h4{margin:0 0 10px;font-size:.9rem;color:#141b24}.live-group .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;align-items:end}.live-group label{display:grid;gap:5px;font-size:.85rem;font-weight:600}.live-group textarea{resize:vertical;min-height:62px}.live-id-row{display:flex;gap:8px}.live-id-row input{flex:1}.live-id-row button{white-space:nowrap;padding:10px 12px;font-size:.82rem}.live-catalog-panel label.live-switch{display:flex;align-items:center;gap:9px;font-size:.85rem;font-weight:600;cursor:pointer}.live-catalog-panel label.live-switch input{width:auto;margin:0;transform:scale(1.25);accent-color:#ffc928}.live-switches{display:flex;gap:18px;flex-wrap:wrap}.live-bom{display:grid;gap:8px}.live-bom-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.live-bom-head strong{font-size:.9rem}.live-bom-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 54px auto;gap:8px;align-items:center}.live-addon-row{grid-template-columns:minmax(0,2fr) minmax(0,.8fr) minmax(0,1.1fr) minmax(0,.8fr) auto}.live-bom-row .unit{font-size:.82rem;color:#6b7280;text-align:center}.live-bom-row button{padding:9px 12px;background:#fdeae7;color:#c0372b}.live-bom-empty{color:#6b7280;font-size:.85rem;margin:0}.live-bom-note{margin:0;font-size:.8rem;color:#6b7280}.live-levels{display:grid;gap:6px}.live-table-tools{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 10px}.live-table-tools input,.live-table-tools select{flex:1;min-width:150px;padding:10px;border:1px solid #d1d5db;border-radius:9px}.live-table-wrap{overflow-x:auto;border:1px solid #e5e7eb;border-radius:14px}.live-table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:620px}.live-table th{background:#141b24;color:#fff;text-align:left;padding:11px 12px;font-weight:700;white-space:nowrap}.live-table td{padding:10px 12px;border-top:1px solid #eef2f7;vertical-align:middle}.live-table tr.low td{background:#fff7ed}.live-table .thumb{width:46px;height:46px;border-radius:9px;object-fit:cover;background:#f3f4f6;display:block}.live-table .acts{display:flex;gap:6px;flex-wrap:wrap}.live-table .acts button{padding:7px 11px;font-size:.8rem}.live-pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:.75rem;font-weight:700}.live-pill.ok{background:#e8f6ed;color:#15803d}.live-pill.off{background:#f3f4f6;color:#6b7280}.live-pill.out{background:#fdeae7;color:#c0372b}.live-pill.warn{background:#fff3cd;color:#8a6100}.live-empty-row{text-align:center;color:#6b7280;padding:26px 12px}@media(max-width:900px){.live-catalog-panel form.live-menu-grid{grid-template-columns:1fr}.live-photo{position:static;order:2}.live-fields{order:1}}@media(max-width:650px){.live-bom-row,.live-addon-row{grid-template-columns:1fr;gap:6px}.live-bom-row .unit{text-align:left}}@media(max-width:650px){.live-catalog-panel{padding:15px}.live-catalog-panel form{grid-template-columns:1fr}}`;
+  style.textContent = `.live-catalog-panel{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:20px;margin:0 0 20px;box-shadow:0 8px 24px #1118270d}.live-catalog-panel h3{margin:0 0 8px}.live-catalog-panel p{color:#6b7280}.live-catalog-panel form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end;padding:14px 0;border-top:1px solid #eee}.live-catalog-panel label{display:grid;gap:5px;font-size:.85rem;font-weight:600}.live-catalog-panel input,.live-catalog-panel select,.live-catalog-panel textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:9px}.live-catalog-panel button{padding:11px 16px;background:#ffc928;color:#141b24;border:0;border-radius:9px;font-weight:700;cursor:pointer}.live-catalog-panel button.ghost{background:#eef2f7;color:#141b24}.live-catalog-panel button.danger{background:#fdeae7;color:#c0372b}.live-tabs{display:flex;gap:8px;border-bottom:2px solid #eef2f7;margin:4px 0 0}.live-tabs button{background:none;color:#6b7280;border-radius:0;padding:12px 18px;border-bottom:3px solid transparent;margin-bottom:-2px}.live-tabs button.on{color:#141b24;border-bottom-color:#ffc928}.live-catalog-panel form.live-menu-grid{display:grid;grid-template-columns:minmax(0,35fr) minmax(0,65fr);gap:20px;align-items:start;border-top:0;padding:16px 0}.live-photo{display:grid;gap:10px;position:sticky;top:12px}.live-photo-box{aspect-ratio:4/3;border:2px dashed #d1d5db;border-radius:14px;display:grid;place-items:center;background:#fbfcfe;overflow:hidden;color:#9ca3af;font-size:.85rem;text-align:center;padding:10px;cursor:pointer}.live-photo-box img{width:100%;height:100%;object-fit:cover}.live-photo-actions{display:flex;gap:8px}.live-photo-actions button{flex:1;padding:9px 10px;font-size:.85rem}.live-preview{border:1px solid #e5e7eb;border-radius:14px;padding:12px;background:#fff}.live-preview-cap{font-size:.75rem;color:#6b7280;margin:0 0 8px;text-transform:none}.live-preview-card{border:1px solid #eef2f7;border-radius:12px;overflow:hidden}.live-preview-card .shot{aspect-ratio:4/3;background:#f3f4f6;display:grid;place-items:center;font-size:2rem}.live-preview-card .shot img{width:100%;height:100%;object-fit:cover}.live-preview-card .body{padding:10px}.live-preview-card .title{font-weight:700;font-size:.95rem;line-height:1.4}.live-preview-card .desc{color:#6b7280;font-size:.8rem;margin:3px 0 0;line-height:1.5}.live-preview-card .cost{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px}.live-preview-card .baht{font-weight:800;color:#141b24}.live-preview-card .tag{font-size:.72rem;color:#6b7280}.live-preview-card.out{opacity:.55}.live-fields{display:grid;gap:14px}.live-group{border:1px solid #e5e7eb;border-radius:14px;padding:14px;background:#fff}.live-group>h4{margin:0 0 10px;font-size:.9rem;color:#141b24}.live-group .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:12px;align-items:end}.live-group label{display:grid;gap:5px;font-size:.85rem;font-weight:600}.live-group textarea{resize:vertical;min-height:62px}.live-id-row{display:flex;gap:8px}.live-id-row input{flex:1}.live-id-row button{white-space:nowrap;padding:10px 12px;font-size:.82rem}.live-catalog-panel label.live-switch{display:inline-flex;align-items:center;gap:9px;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap}.live-catalog-panel label.live-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}.live-switch .track{width:42px;height:23px;border-radius:999px;background:#cbd2da;position:relative;transition:background .15s;flex:none}.live-switch .track::after{content:'';position:absolute;top:3px;left:3px;width:17px;height:17px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px #0003}.live-switch input:checked+.track{background:#15803d}.live-switch input:checked+.track::after{transform:translateX(19px)}.live-switch input:focus-visible+.track{outline:2px solid #141b24;outline-offset:2px}.live-switch input:disabled+.track{opacity:.45}.live-switch.warn input:checked+.track{background:#c0372b}.live-status-cell{display:grid;gap:8px;min-width:170px}.live-switches{display:flex;gap:18px;flex-wrap:wrap}.live-bom{display:grid;gap:8px}.live-bom-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.live-bom-head strong{font-size:.9rem}.live-bom-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) 54px auto;gap:8px;align-items:center}.live-addon-row{grid-template-columns:minmax(0,2fr) minmax(0,.8fr) minmax(0,1.1fr) minmax(0,.8fr) auto}.live-bom-row .unit{font-size:.82rem;color:#6b7280;text-align:center}.live-bom-row button{padding:9px 12px;background:#fdeae7;color:#c0372b}.live-bom-empty{color:#6b7280;font-size:.85rem;margin:0}.live-bom-note{margin:0;font-size:.8rem;color:#6b7280}.live-levels{display:grid;gap:6px}.live-table-tools{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 10px}.live-table-tools input,.live-table-tools select{flex:1;min-width:150px;padding:10px;border:1px solid #d1d5db;border-radius:9px}.live-table-wrap{overflow-x:auto;border:1px solid #e5e7eb;border-radius:14px}.live-table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:620px}.live-table th{background:#141b24;color:#fff;text-align:left;padding:11px 12px;font-weight:700;white-space:nowrap}.live-table td{padding:10px 12px;border-top:1px solid #eef2f7;vertical-align:middle}.live-table tr.low td{background:#fff7ed}.live-table .thumb{width:46px;height:46px;border-radius:9px;object-fit:cover;background:#f3f4f6;display:block}.live-table .acts{display:flex;gap:6px;flex-wrap:wrap}.live-table .acts button{padding:7px 11px;font-size:.8rem}.live-pill{display:inline-block;padding:3px 9px;border-radius:999px;font-size:.75rem;font-weight:700}.live-pill.ok{background:#e8f6ed;color:#15803d}.live-pill.off{background:#f3f4f6;color:#6b7280}.live-pill.out{background:#fdeae7;color:#c0372b}.live-pill.warn{background:#fff3cd;color:#8a6100}.live-empty-row{text-align:center;color:#6b7280;padding:26px 12px}@media(max-width:900px){.live-catalog-panel form.live-menu-grid{grid-template-columns:1fr}.live-photo{position:static;order:2}.live-fields{order:1}}@media(max-width:650px){.live-bom-row,.live-addon-row{grid-template-columns:1fr;gap:6px}.live-bom-row .unit{text-align:left}}@media(max-width:650px){.live-catalog-panel{padding:15px}.live-catalog-panel form{grid-template-columns:1fr}}`;
   document.head.append(style);
   panel.className = 'live-catalog-panel';
   panel.hidden = true;
@@ -125,7 +125,7 @@
             </select></label>
           </div>
           <div class="live-switches" style="margin-top:12px">
-            <label class="live-switch"><input type="checkbox" name="service_charge"> คิด Service Charge</label>
+            <label class="live-switch"><input type="checkbox" name="service_charge"><span class="track"></span> คิด Service Charge</label>
           </div>
           <p class="live-bom-note" id="liveMarginNote" style="margin-top:10px"></p>
         </div>
@@ -153,13 +153,7 @@
               <button type="button" class="ghost" id="liveBomAdd">+ เพิ่มวัตถุดิบ</button></div>
             <div id="liveBomRows"></div>
             <p class="live-bom-note">ขายได้แล้วระบบหักสต็อกให้เอง · เว้นว่างไว้ก็ขายได้ แค่ไม่ตัดสต็อก</p>
-          </div>
-        </div>
-
-        <div class="live-group"><h4>สถานะการขาย</h4>
-          <div class="live-switches">
-            <label class="live-switch"><input type="checkbox" name="active" checked> แสดงในหน้าสั่งอาหารลูกค้า</label>
-            <label class="live-switch"><input type="checkbox" name="sold_out"> สินค้าหมดชั่วคราว</label>
+            <p class="live-bom-note">เมนูหมดหรือจะซ่อนจากลูกค้า กดสวิตช์ในตารางเมนูด้านล่างได้เลย ไม่ต้องเปิดฟอร์มนี้</p>
           </div>
         </div>
 
@@ -287,7 +281,6 @@
     const card = panel.querySelector('#liveMenuPreview');
     const price = Number(field('price').value) || 0;
     const cost = Number(field('cost').value) || 0;
-    card.classList.toggle('out', field('sold_out').checked);
     const shot = document.createElement('div');
     shot.className = 'shot';
     const source = photoBox.querySelector('img')?.src;
@@ -316,8 +309,7 @@
     baht.textContent = `฿${price.toLocaleString('th-TH')}`;
     const tag = document.createElement('span');
     tag.className = 'tag';
-    tag.textContent = field('sold_out').checked ? 'หมดชั่วคราว'
-      : (field('category').value.trim() || field('station').value);
+    tag.textContent = field('category').value.trim() || field('station').value;
     cost_row.append(baht, tag);
     body.append(cost_row);
     card.replaceChildren(shot, body);
@@ -326,9 +318,8 @@
       ? `กำไรต่อจาน ฿${(price - cost).toLocaleString('th-TH')} · คิดเป็น ${Math.round((price - cost) / price * 100)}% ของราคาขาย`
       : 'ใส่ต้นทุนไว้ด้วย ระบบจะคำนวณกำไรต่อจานให้เห็นทันที';
   };
-  ['name', 'price', 'cost', 'description', 'category', 'station', 'sold_out']
+  ['name', 'price', 'cost', 'description', 'category', 'station']
     .forEach(name => field(name).addEventListener('input', drawPreview));
-  field('sold_out').addEventListener('change', drawPreview);
 
   /* ---- the recipe ----------------------------------------------------- */
   const bomRows = () => panel.querySelector('#liveBomRows');
@@ -473,8 +464,6 @@
   /* ---- filling and clearing the form ---------------------------------- */
   const clearForm = () => {
     menuForm.reset();
-    field('active').checked = true;
-    field('sold_out').checked = false;
     field('service_charge').checked = false;
     field('id').readOnly = false;
     pendingPhoto = null; photoUrl = ''; photoFile.value = '';
@@ -496,8 +485,6 @@
     field('description').value = item.description || '';
     field('tax_mode').value = item.tax_mode || 'included';
     field('service_charge').checked = !!item.service_charge;
-    field('active').checked = item.active !== false;
-    field('sold_out').checked = !!item.sold_out;
     field('option_title').value = item.option_title || '';
     (item.bom || []).forEach(part => addBomRow(part.ingId, part.qty));
     (item.levels || []).forEach(level => addLevelRow(level));
@@ -528,13 +515,16 @@
   menuForm.addEventListener('submit', async event => {
     event.preventDefault();
     const itemId = String(field('id').value || '').trim();
+    const kept = catalog.find(item => item.id === itemId);
     try {
       const body = {
         branch_id: branch(), name: field('name').value.trim(), price: Number(field('price').value),
         cost: Number(field('cost').value) || 0, station: field('station').value,
         category: field('category').value.trim(), description: field('description').value.trim(),
         tax_mode: field('tax_mode').value, service_charge: field('service_charge').checked,
-        active: field('active').checked, sold_out: field('sold_out').checked,
+        /* Saving the form must not quietly put a sold-out dish back on sale:
+           availability is changed from the dish's own row, so carry it over. */
+        active: kept ? kept.active : true, sold_out: kept ? kept.sold_out : false,
         option_title: field('option_title').value.trim(),
         bom: readBom(), levels: readLevels(), addons: readAddons(),
       };
@@ -550,6 +540,37 @@
   /* ---- what is already on the menu ------------------------------------ */
   const menuSearch = panel.querySelector('#liveMenuSearch');
   const menuFilter = panel.querySelector('#liveMenuFilter');
+  /* One switch on one dish. It sends only what it changes, so a dish going
+     sold out never carries half a form back to the server with it. */
+  const statusSwitch = (item, onLabel, offLabel, isOn, bodyFor) => {
+    const wrap = document.createElement('label');
+    wrap.className = 'live-switch' + (isOn ? '' : ' warn');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = isOn;
+    const track = document.createElement('span');
+    track.className = 'track';
+    const text = document.createElement('span');
+    text.className = 'label';
+    text.textContent = isOn ? onLabel : offLabel;
+    wrap.append(box, track, text);
+    box.addEventListener('change', async () => {
+      box.disabled = true;
+      try {
+        await request(`/api/menu/${encodeURIComponent(item.id)}`, {method: 'PATCH',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({branch_id: branch(), ...bodyFor(box.checked)})});
+        status(`${item.name}: ${box.checked ? onLabel : offLabel}`);
+        await refresh();
+      } catch (error) {
+        box.checked = !box.checked;   // the shop's record did not change
+        box.disabled = false;
+        status(error.message);
+      }
+    });
+    return wrap;
+  };
+
   const renderMenuTable = () => {
     const body = panel.querySelector('#liveMenuTable');
     const query = menuSearch.value.trim().toLowerCase();
@@ -589,11 +610,17 @@
       category_cell.textContent = item.category || '—';
       const price = document.createElement('td');
       price.textContent = `฿${Number(item.price).toLocaleString('th-TH')}`;
+      /* Availability lives here, on the dish, where the owner is standing when
+         the kitchen says it has run out. One tap, and nothing else changes. */
       const state_cell = document.createElement('td');
-      const pill = document.createElement('span');
-      pill.className = 'live-pill ' + (item.sold_out ? 'out' : item.active ? 'ok' : 'off');
-      pill.textContent = item.sold_out ? 'หมดชั่วคราว' : item.active ? 'พร้อมขาย' : 'ซ่อนอยู่';
-      state_cell.append(pill);
+      const cell = document.createElement('div');
+      cell.className = 'live-status-cell';
+      cell.append(
+        statusSwitch(item, 'พร้อมขาย', 'หมดชั่วคราว', !item.sold_out,
+                     on => ({sold_out: !on})),
+        statusSwitch(item, 'แสดงหน้าลูกค้า', 'ซ่อนจากลูกค้า', item.active,
+                     on => ({active: on})));
+      state_cell.append(cell);
       const acts = document.createElement('td');
       const actions = document.createElement('div');
       actions.className = 'acts';

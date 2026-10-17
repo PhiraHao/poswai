@@ -159,6 +159,41 @@ class MenuWorkbenchTest(unittest.TestCase):
         self.assertTrue(self.manager.get("/api/menu").json()["items"][0]["sold_out"])
         self.assertEqual(self._stock("PORK"), 1000)
 
+    def test_availability_flips_on_its_own_without_touching_the_dish(self):
+        """The switch on the menu row sends only what it changes."""
+        self._save(category="จานหลัก", cost=22, addons=[{"name": "ไข่ดาว", "price": 10}])
+        response = self.manager.patch("/api/menu/M001", json={"branch_id": 1, "sold_out": True})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertTrue(response.json()["sold_out"])
+        self.assertTrue(response.json()["active"])
+        item = self.manager.get("/api/menu").json()["items"][0]
+        self.assertTrue(item["sold_out"])
+        # Everything the form owns is still exactly as it was.
+        self.assertEqual(item["category"], "จานหลัก")
+        self.assertEqual(item["cost"], 22)
+        self.assertEqual(item["price"], 60)
+        self.assertEqual([addon["name"] for addon in item["addons"]], ["ไข่ดาว"])
+        self.assertEqual(item["bom"], [{"ingId": "PORK", "qty": 120}])
+
+    def test_hiding_a_dish_takes_it_off_the_customer_menu_only(self):
+        self._save()
+        self.assertEqual(self.manager.patch("/api/menu/M001",
+                                            json={"branch_id": 1, "active": False}).status_code, 200)
+        self.assertEqual(self.manager.get("/api/menu").json()["items"], [])
+        hidden = self.manager.get("/api/menu?include_inactive=true").json()["items"]
+        self.assertEqual(len(hidden), 1)
+        self.assertFalse(hidden[0]["active"])
+        self.assertEqual(self._order("ORD-H").status_code, 409)
+
+    def test_a_status_change_needs_a_real_dish_and_something_to_change(self):
+        self._save()
+        self.assertEqual(self.manager.patch("/api/menu/NOPE",
+                                            json={"branch_id": 1, "sold_out": True}).status_code, 404)
+        self.assertEqual(self.manager.patch("/api/menu/M001",
+                                            json={"branch_id": 1}).status_code, 400)
+        self.assertEqual(self.cashier.patch("/api/menu/M001",
+                                            json={"branch_id": 1, "sold_out": True}).status_code, 403)
+
     def test_clearing_sold_out_lets_the_dish_sell_again(self):
         self._save(sold_out=True)
         self._save(sold_out=False)

@@ -50,7 +50,8 @@ from poswai_inventory import (InventoryError, apply_inventory_movement,
 from easyslip import SlipVerificationError, verify_bank_slip
 from poswai_catalog import (CatalogError, deduct_inventory, delete_menu_item, init_catalog,
                             list_menu_categories, list_menu_items, quote_order,
-                            set_menu_photo, upsert_menu_item, STATIONS, TAX_MODES)
+                            set_menu_photo, set_menu_status, upsert_menu_item,
+                            STATIONS, TAX_MODES)
 from poswai_tables import (TableError, add_table, delete_table, init_tables, list_tables,
                            reissue_code, resolve_code, set_active)
 from poswai_dossier import (DossierError, add_asset, add_timeline_entry, branch_summary,
@@ -1254,6 +1255,24 @@ def put_menu_item(item_id: str, item: MenuUpsert, request: Request):
                 description=item.description, cost=item.cost, tax_mode=item.tax_mode,
                 service_charge=item.service_charge, sold_out=item.sold_out,
                 option_title=item.option_title, levels=item.levels, addons=item.addons)
+    except CatalogError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+class MenuStatus(BaseModel):
+    branch_id: int = 1
+    active: Optional[bool] = None
+    sold_out: Optional[bool] = None
+
+
+@app.patch("/api/menu/{item_id}")
+def patch_menu_status(item_id: str, item: MenuStatus, request: Request):
+    """Mark a dish sold out, or take it off the customer screen, from the menu
+    list itself. Nothing else about the dish is touched."""
+    require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return set_menu_status(conn, item.branch_id, item_id, item.active, item.sold_out)
     except CatalogError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 

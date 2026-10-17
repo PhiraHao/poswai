@@ -260,6 +260,34 @@ def upsert_menu_item(
             "addons": [_addon_out(addon) for addon in canonical_addons]}
 
 
+def set_menu_status(conn: sqlite3.Connection, branch_id: int, item_id: str,
+                    active: Any = None, sold_out: Any = None) -> dict:
+    """Flip whether a dish is on the menu, or has run out, and nothing else.
+
+    A dish runs out in the middle of service. Saving the whole form back would
+    carry whatever is on screen with it, so availability moves on its own.
+    """
+    branch_id, item_id = _branch(branch_id), _item_id(item_id)
+    fields, values = [], []
+    if active is not None:
+        fields.append("active=?")
+        values.append(int(_flag(active, "active flag")))
+    if sold_out is not None:
+        fields.append("sold_out=?")
+        values.append(int(_flag(sold_out, "sold out flag")))
+    if not fields:
+        raise CatalogError("ไม่ได้ระบุสถานะที่จะเปลี่ยน")
+    cursor = conn.execute(
+        f"UPDATE menu_catalog SET {','.join(fields)},updated_at=CURRENT_TIMESTAMP"
+        " WHERE branch_id=? AND item_id=?", (*values, branch_id, item_id))
+    if cursor.rowcount != 1:
+        raise CatalogError(f"Item {item_id} is unavailable", 404)
+    row = conn.execute("SELECT active,sold_out FROM menu_catalog WHERE branch_id=? AND item_id=?",
+                       (branch_id, item_id)).fetchone()
+    return {"branch_id": branch_id, "id": item_id,
+            "active": bool(row[0]), "sold_out": bool(row[1])}
+
+
 def set_menu_photo(conn: sqlite3.Connection, branch_id: int, item_id: str, photo: str) -> None:
     branch_id, item_id = _branch(branch_id), _item_id(item_id)
     cursor = conn.execute("UPDATE menu_catalog SET photo=?,updated_at=CURRENT_TIMESTAMP"
