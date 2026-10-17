@@ -71,7 +71,10 @@
     '.tbl-pay{display:grid;gap:12px;justify-items:center;padding:16px;background:#fbfcfe;border:1px solid #e5e7eb;border-radius:14px}',
     '.tbl-pay canvas{width:220px;height:220px;image-rendering:pixelated;background:#fff}',
     '.tbl-pay small{color:#6b7280;text-align:center;line-height:1.7}',
-    '.tbl-pay input[type=file]{width:100%}',
+    '.tbl-pay .slip-pick{width:100%;padding:12px;border:2px dashed #c9d2dc;border-radius:11px;background:#fff;',
+    'color:#44536a;font-weight:700;font-size:.9rem;cursor:pointer;text-align:center;font-family:inherit}',
+    '.tbl-pay .slip-pick.has{border-style:solid;border-color:#15803d;color:#15803d;background:#f3fbf6}',
+    '.tbl-pay input[type=file]{position:absolute;opacity:0;width:0;height:0}',
     '.tbl-pay button{width:100%;padding:13px;background:#ffc928;border:0;border-radius:11px;font-weight:700;cursor:pointer}',
     '@media(max-width:560px){.tbl-card canvas{width:120px;height:120px}}',
   ].join('');
@@ -384,12 +387,22 @@
     const file = document.createElement('input');
     file.type = 'file';
     file.accept = 'image/jpeg,image/png,image/gif,image/webp';
+    file.id = 'tblSlipFile';
     file.setAttribute('aria-label', 'รูปสลิปโอนเงิน');
+    const pick = document.createElement('label');
+    pick.className = 'slip-pick';
+    pick.htmlFor = file.id;
+    pick.textContent = '📷 แตะเพื่อแนบรูปสลิปโอนเงิน';
+    file.addEventListener('change', () => {
+      const chosen = file.files?.[0];
+      pick.classList.toggle('has', !!chosen);
+      pick.textContent = chosen ? `✅ แนบแล้ว: ${chosen.name}` : '📷 แตะเพื่อแนบรูปสลิปโอนเงิน';
+    });
     const send = document.createElement('button');
     send.type = 'button';
     send.textContent = 'ส่งสลิปและปิดบิล';
     send.addEventListener('click', () => paySlip(file, send));
-    box.append(hint, file, send);
+    box.append(hint, pick, file, send);
   };
 
   const paySlip = async (file, button) => {

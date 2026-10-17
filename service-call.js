@@ -21,7 +21,10 @@
 
   const callButton = document.createElement('button');
   callButton.type = 'button';
-  callButton.className = 'service-call-primary';
+  /* Wears the category pill's own class so it is exactly the same shape and
+     height as its neighbours; only the colours are its own. Sizing it by
+     hand left it a few pixels short and sitting off the line. */
+  callButton.className = 'cat-pill service-call-primary';
   callButton.textContent = 'เรียกพนักงาน';
   callButton.addEventListener('click', () => sendTableServiceCall('เรียกพนักงานที่โต๊ะ'));
   /* On the same line as the category pills. Appended to the search row it
