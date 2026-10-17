@@ -12,6 +12,7 @@
   const role = () => auth().current?.role || '';
   const canRefund = () => ['manager', 'owner'].includes(role());
   const preview = () => typeof state !== 'undefined' && !!state.previewOnly;
+  const shortNo = no => (window.shortOrderNo ? window.shortOrderNo(no) : no);
   const money = value => `฿${Number(value || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
   const clock = value => {
     const stamp = new Date(String(value || '').replace(' ', 'T') + 'Z');
@@ -95,10 +96,10 @@
   const act = async (kind, order, button) => {
     const isVoid = kind === 'void';
     const what = isVoid ? 'ยกเลิกบิล' : 'คืนเงิน';
-    const reason = prompt(`${what} ${order.order_no} · ${money(order.amount)}\n\nพิมพ์เหตุผล (3-200 ตัวอักษร) เหตุผลนี้จะถูกบันทึกไว้และแจ้งผู้จัดการ`, '');
+    const reason = prompt(`${what} ${shortNo(order.order_no)} · ${money(order.amount)}\n\nพิมพ์เหตุผล (3-200 ตัวอักษร) เหตุผลนี้จะถูกบันทึกไว้และแจ้งผู้จัดการ`, '');
     if (reason === null) return;
     if (reason.trim().length < 3) { note('ต้องใส่เหตุผลอย่างน้อย 3 ตัวอักษร', 'bad'); return; }
-    if (!confirm(`ยืนยัน${what} ${order.order_no} จำนวน ${money(order.amount)} ใช่หรือไม่\n\nเหตุผล: ${reason.trim()}`)) return;
+    if (!confirm(`ยืนยัน${what} ${shortNo(order.order_no)} จำนวน ${money(order.amount)} ใช่หรือไม่\n\nเหตุผล: ${reason.trim()}`)) return;
     button.disabled = true;
     note(`กำลัง${what}…`);
     const path = isVoid ? `/api/orders/${encodeURIComponent(order.order_no)}/void`
@@ -106,7 +107,7 @@
     try {
       await api(path, {method: 'POST', body: JSON.stringify({event_id: eventId(kind, order.order_no), reason: reason.trim()})});
       clearEventId(kind, order.order_no);
-      note(`${what} ${order.order_no} เรียบร้อย · แจ้งผู้จัดการทาง LINE แล้ว`, 'good');
+      note(`${what} ${shortNo(order.order_no)} เรียบร้อย · แจ้งผู้จัดการทาง LINE แล้ว`, 'good');
       window.poswaiLiveData?.refresh?.().catch(() => {});
       await load();
     } catch (error) {
@@ -119,7 +120,7 @@
     const item = document.createElement('li');
     item.className = 'void-row';
     const title = document.createElement('strong');
-    title.textContent = `${order.order_no} · ${money(order.amount)}`;
+    title.textContent = `${shortNo(order.order_no)} · ${money(order.amount)}`;
     const where = document.createElement('small');
     where.textContent = [order.table_no ? `โต๊ะ ${order.table_no}` : '', clock(order.at),
                          order.closed_by ? `ปิดโดย ${order.closed_by}` : ''].filter(Boolean).join(' · ');

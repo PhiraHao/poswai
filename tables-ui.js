@@ -41,8 +41,8 @@
     '.tbl-note{margin:14px 0 0;font-size:.82rem;color:#6b7280;line-height:1.7}',
     '.tbl-empty{color:#6b7280;padding:22px 0;margin:0}',
     /* The guest's own bill, opened from the ordering screen. */
-    '.tbl-bill-open{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:60;padding:13px 22px;',
-    'background:#141b24;color:#ffc928;border:0;border-radius:999px;font-weight:700;cursor:pointer;box-shadow:0 10px 28px #1118274d}',
+'.tbl-bill-open{display:block;width:100%;margin:10px 0 0;padding:13px 18px;background:#141b24;color:#ffc928;',
+    'border:0;border-radius:11px;font-weight:700;cursor:pointer;font-size:.95rem}',
     '.tbl-sheet{position:fixed;inset:0;z-index:70;background:#0009;display:grid;place-items:end center}',
     '.tbl-sheet[hidden]{display:none}',
     '.tbl-sheet-body{background:#fff;width:min(560px,100%);max-height:88vh;overflow:auto;border-radius:20px 20px 0 0;padding:20px 20px 150px}',
@@ -232,7 +232,7 @@
   openButton.type = 'button';
   openButton.className = 'tbl-bill-open';
   openButton.hidden = true;
-  openButton.textContent = 'ดูบิลโต๊ะนี้ · จ่ายเงิน';
+  openButton.textContent = '🧾 ดูออเดอร์ที่สั่งไปแล้ว · จ่ายเงิน';
 
   const sheet = document.createElement('div');
   sheet.className = 'tbl-sheet';
@@ -373,7 +373,15 @@
       const settings = home.querySelector('.live-catalog-panel');
       if (settings) settings.before(panel); else home.append(panel);
     }
-    if (!openButton.parentElement) document.body.append(openButton, sheet);
+    if (!sheet.parentElement) document.body.append(sheet);
+    /* In the cart, under "send order": the guest is already looking there once
+       the food is ordered, and the next thing they want is the bill. Floating
+       it could not work — the app's own fixed bars cover that strip of screen,
+       so the button was visible to the DOM and invisible to the customer. */
+    const cartButton = document.querySelector('#view-customer button[onclick*="submitOrderFromCustomer"]');
+    if (cartButton) {
+      if (openButton.previousElementSibling !== cartButton) cartButton.after(openButton);
+    } else if (!openButton.parentElement) document.body.append(openButton);
   };
 
   /* A scanned phone orders for the table it is sitting at, and for no other.

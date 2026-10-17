@@ -3444,6 +3444,14 @@
       `).join("");
     }
 
+    /* The order number is a uuid so two tills never collide. Nobody can read
+       one out across a room, so screens show its last few characters. */
+    function shortOrderNo(orderNo) {
+      const tail = String(orderNo).replace(/[^0-9a-zA-Z]/g, "").slice(-5).toUpperCase();
+      return tail ? `#${tail}` : String(orderNo);
+    }
+    window.shortOrderNo = shortOrderNo;
+
     async function submitOrderFromCustomer() {
       if (state.cart.length === 0) {
         showToast("⚠️ กรุณาเลือกเมนูอาหารก่อนส่งเข้าครัวครับ");
@@ -3475,7 +3483,7 @@
         state.cart = [];
         document.getElementById("orderNoteInput").value = "";
         if (window.poswaiLiveData) await window.poswaiLiveData.refresh();
-        showToast(`ส่งออเดอร์ #${orderId} สำเร็จ`);
+        showToast(`ส่งออเดอร์ ${shortOrderNo(orderId)} เข้าครัวแล้ว`);
         return;
       }
       deductBomInventory(state.cart);
@@ -3512,7 +3520,7 @@
 
       addAuditLog(`🔔 ออเดอร์ใหม่ #${orderId} โต๊ะ ${table} ยอดสุทธิ ฿${(subtotal - discount).toFixed(2)} (ตัดสต็อก BOM & สะสมแต้ม +${earnedPts} คะแนน)`);
       renderAll();
-      showToast(`🚀 ส่งออเดอร์ #${orderId} เข้าครัว + ตัดสต็อกวัตถุดิบ BOM เรียบร้อย!`);
+      showToast(`🚀 ส่งออเดอร์ ${shortOrderNo(orderId)} เข้าครัว + ตัดสต็อกวัตถุดิบ BOM เรียบร้อย!`);
     }
 
     function getTableOrders(tStr) {
@@ -3553,7 +3561,7 @@
       listEl.innerHTML = orders.map(o => `
         <div style="padding:6px 8px; background:#f8fafc; border-radius:8px; margin-bottom:5px; border:1px solid var(--border-color);">
           <div style="display:flex; justify-content:space-between;">
-            <strong>#${o.orderId} (${o.source})</strong>
+            <strong>${shortOrderNo(o.orderId)} (${o.source})</strong>
             <span class="badge ${o.status === 'ready' ? 'badge-occupied' : 'badge-cooking'}">${o.status === 'ready' ? 'เสิร์ฟแล้ว' : 'กำลังปรุง'}</span>
           </div>
           ${o.items.map(i => `<div>• ${escapeUi(i.name)} x${i.qty} (฿${i.price * i.qty})</div>`).join("")}
@@ -3681,7 +3689,7 @@
             const held = !ready && items.some(item => item.courseMode === "HOLD");
             return `<article class="kds-ticket ${ready ? 'is-ready' : held ? 'is-held' : 'is-cooking'}">
               <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(order.table)}</strong><span class="badge ${ready ? 'badge-occupied' : held ? 'badge-purple' : 'badge-verify'}">${ready ? 'พร้อมเสิร์ฟ' : held ? 'พักคอร์ส' : 'กำลังทำ'}</span></div>
-              <div class="kds-ticket-meta">#${escapeUi(order.orderId)} · ${escapeUi(order.time)} · ${escapeUi(order.source)}</div>
+              <div class="kds-ticket-meta">${escapeUi(shortOrderNo(order.orderId))} · ${escapeUi(order.time)} · ${escapeUi(order.source)}</div>
               <div class="kds-ticket-items">${items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}</span>${item.courseMode === 'HOLD' && !ready ? '<em>พักไว้</em>' : ''}</div>`).join('')}</div>
               ${order.note && order.note !== '-' ? `<div class="kds-ticket-note">หมายเหตุ: ${escapeUi(order.note)}</div>` : ''}
               ${!ready ? `<div class="kds-ticket-actions">${held ? `<button class="btn btn-sm btn-purple" onclick="fireHeldCourseOrder('${order.orderId}','${station}')">เริ่มทำคอร์ส</button>` : ''}<button class="btn btn-sm btn-line" ${held ? 'disabled title="เริ่มทำคอร์สที่พักไว้ก่อน"' : ''} onclick="setOrderReady('${order.orderId}','${station}')">พร้อมเสิร์ฟ</button></div>` : ''}
@@ -3712,7 +3720,7 @@
       });
       refreshKdsOrderStatus(order);
       renderAll();
-      showToast(`${KDS_STATION_NAMES[station]}: #${orderId} พร้อมเสิร์ฟแล้ว`);
+      showToast(`${KDS_STATION_NAMES[station]}: ${shortOrderNo(orderId)} พร้อมเสิร์ฟแล้ว`);
     }
 
     /* =========================================================================
@@ -4968,12 +4976,12 @@
   <script src="/landing.js?v=43"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>
-  <script src="/qr.js?v=71"></script>
-  <script src="/live-data.js?v=71"></script>
-  <script src="/tables-ui.js?v=70"></script>
+  <script src="/qr.js?v=72"></script>
+  <script src="/live-data.js?v=72"></script>
+  <script src="/tables-ui.js?v=72"></script>
   <script src="/inventory-live.js?v=23"></script>
   <link rel="stylesheet" href="/commerce-ui.css?v=29">
   <script src="/commerce-ui.js?v=30"></script>
-  <script src="/cashier-void.js?v=70"></script>
+  <script src="/cashier-void.js?v=72"></script>
 </body>
 </html>
