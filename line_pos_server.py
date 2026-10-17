@@ -60,6 +60,7 @@ from line_integration import (build_leave_flex, parse_leave_postback,
                               verify_webhook_signature)
 from line_notifications import enqueue as enqueue_line_notification, flush as flush_line_notifications, init_notifications
 import poswai_shops as shops
+import poswai_owner_auth as owner_auth
 from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
 import poswai_billing as billing
 
@@ -113,6 +114,10 @@ LINE_LOGIN_CHANNEL_ID = os.getenv("LINE_LOGIN_CHANNEL_ID", "")
 LINE_LOGIN_CHANNEL_SECRET = os.getenv("LINE_LOGIN_CHANNEL_SECRET", "")
 GOOGLE_CLIENT_ID = os.getenv("POSWAI_GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("POSWAI_GOOGLE_CLIENT_SECRET", "")
+# Where the provider sends an owner back after signing in. It has to match the
+# callback URL registered in the LINE and Google consoles character for
+# character, so it is a setting rather than something guessed from headers.
+PUBLIC_BASE_URL = os.getenv("POSWAI_PUBLIC_BASE_URL", "").strip().rstrip("/")
 FACEBOOK_APP_ID = os.getenv("POSWAI_FACEBOOK_APP_ID", "")
 FACEBOOK_APP_SECRET = os.getenv("POSWAI_FACEBOOK_APP_SECRET", "")
 OWNER_EMAIL_LOGIN = os.getenv("POSWAI_OWNER_EMAIL_LOGIN", "0") == "1"
@@ -674,7 +679,8 @@ async def protect_preview(request: Request, call_next):
         allowed_staff_write = staff_path.startswith("/api/admin/") or (
             slug == DEMO_SHOP and staff_path in ("/api/auth/login", "/api/shops")) or STAFF_LIVE and slug != DEMO_SHOP and (
             staff_path.startswith("/api/billing/") or
-            staff_path.startswith("/api/auth/") or staff_path == "/api/staff" or
+            staff_path.startswith("/api/auth/") or staff_path.startswith("/api/owner/") or
+            staff_path == "/api/staff" or
             staff_path.startswith("/api/staff/") or staff_path == "/api/attendance" or
             staff_path.startswith("/api/line-liff/") or staff_path.startswith("/api/line-webhook") or
             staff_path.startswith("/api/line/notifications/"))
@@ -2819,10 +2825,14 @@ def open_shop(req: ShopSignup, request: Request, response: Response):
         shops.shop_db_path(DB_PATH, slug).unlink(missing_ok=True)
         shops.release_shop(DB_PATH, slug)
         raise
+    account = owner_auth.session_account(DB_PATH, request.cookies.get(OWNER_COOKIE, ""))
+    if account:
+        # Opened from an owner account: bind it now so the next sign-in needs no shop code.
+        owner_auth.link_shop(DB_PATH, account_id=account["id"], slug=slug, staff_id=owner_id)
     _remember_shop(request, response, slug)
     return {"shop": {"slug": slug, "name": shop["name"], "trial_ends_at": shop["trial_ends_at"]},
             "staff_id": owner_id, "branch_id": 1, "name": owner_name, "role": "owner",
-            "expires_at": expires}
+            "expires_at": expires, "linked_account": bool(account)}
 
 
 class ShopSettings(BaseModel):
@@ -2858,6 +2868,197 @@ def save_shop_settings(req: ShopSettings, request: Request):
         with closing(connect_db()) as conn, conn:
             conn.execute("UPDATE branches SET name=? WHERE id=1", (name,))
     return {"slug": slug, "name": shop["name"], "promptpay_id": shop["promptpay_id"]}
+
+
+# =====================================================================
+# Owner accounts: an owner signs in as a person, not as a shop code
+# The PIN login stays for front-of-house, where one tablet passes between people.
+OWNER_COOKIE = "poswai_owner"
+OWNER_FAILURES = {
+    "state": "คำขอเข้าสู่ระบบหมดอายุหรือไม่ถูกต้อง กรุณาลองใหม่",
+    "denied": "คุณยกเลิกการเข้าสู่ระบบ หรือผู้ให้บริการไม่อนุญาต",
+    "provider": "ติดต่อผู้ให้บริการเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่",
+    "id_token": "ข้อมูลยืนยันตัวตนไม่ถูกต้อง กรุณาลองใหม่",
+    "nonce": "ข้อมูลยืนยันตัวตนไม่ตรงกับคำขอนี้ กรุณาลองใหม่",
+    "code": "ไม่ได้รับรหัสยืนยันจากผู้ให้บริการ กรุณาลองใหม่",
+    "shop": "ร้านที่จะผูกบัญชีใช้งานไม่ได้แล้ว",
+    "unconfigured": "ยังไม่ได้เปิดใช้ช่องทางนี้",
+    "provider_unknown": "ช่องทางเข้าสู่ระบบนี้ไม่มีในระบบ",
+}
+OWNER_CHANNELS = {"line": "LINE", "google": "Google"}
+
+
+def _provider_credentials(provider: str) -> tuple[str, str]:
+    if provider == "line":
+        return LINE_LOGIN_CHANNEL_ID, LINE_LOGIN_CHANNEL_SECRET
+    if provider == "google":
+        return GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+    raise HTTPException(404, OWNER_FAILURES["provider_unknown"])
+
+
+def _owner_redirect_uri(request: Request, provider: str) -> str:
+    """The callback the consoles know. Falls back to this request's own host in
+    development, where no public URL is configured."""
+    base = PUBLIC_BASE_URL or str(request.base_url).rstrip("/")
+    return f"{base}/api/owner/auth/{provider}/callback"
+
+
+def _owner_failure(code: str) -> RedirectResponse:
+    """Send the browser home with a reason the sign-in page can read out in Thai."""
+    return RedirectResponse(f"/?owner_error={code if code in OWNER_FAILURES else 'provider'}",
+                            status_code=303)
+
+
+def _owner_account(request: Request) -> dict:
+    account = owner_auth.session_account(DB_PATH, request.cookies.get(OWNER_COOKIE, ""))
+    if not account:
+        raise HTTPException(401, "กรุณาเข้าสู่ระบบด้วยบัญชีเจ้าของร้านก่อน")
+    return account
+
+
+def _set_owner_cookie(request: Request, response: Response, token: str) -> None:
+    # "lax" rather than "strict": the owner arrives back here from the provider's
+    # own page, and a strict cookie would not be sent on that first navigation.
+    response.set_cookie(OWNER_COOKIE, token, max_age=owner_auth.SESSION_LIFETIME, httponly=True,
+                        secure=_secure(request), samesite="lax", path="/")
+
+
+@app.get("/api/owner/auth/{provider}/start")
+def owner_login_start(provider: str, request: Request, mode: str = "login"):
+    """Begin a sign-in, or — with mode=link — bind a provider to the open shop."""
+    client_id, client_secret = _provider_credentials(provider)
+    if not client_id or not client_secret:
+        raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
+    slug, staff_id = "", None
+    if mode == "link":
+        # Only the owner already signed into this shop may hand it to an account.
+        staff = require_staff(request, roles=("owner",))
+        slug = CURRENT_SHOP.get()
+        if slug in (MAIN_SHOP, DEMO_SHOP) or not shops.get_shop(DB_PATH, slug):
+            raise HTTPException(409, "ร้านนี้ผูกบัญชีไม่ได้ ร้านหลักตั้งค่าที่เซิร์ฟเวอร์")
+        staff_id = staff["id"]
+    try:
+        handshake = owner_auth.start_login(DB_PATH, provider=provider, mode=mode, slug=slug,
+                                           staff_id=staff_id)
+    except owner_auth.OwnerAuthError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+    return RedirectResponse(owner_auth.authorize_url(
+        provider, client_id=client_id, redirect_uri=_owner_redirect_uri(request, provider),
+        state=handshake["state"], nonce=handshake["nonce"]), status_code=302)
+
+
+@app.get("/api/owner/auth/{provider}/callback")
+def owner_login_callback(provider: str, request: Request, code: str = "", state: str = "",
+                         error: str = ""):
+    """Finish a sign-in. Nothing here is believed without the state row and the
+    provider's own verification of the identity token."""
+    if provider not in owner_auth.PROVIDERS:
+        return _owner_failure("provider_unknown")
+    if error:
+        return _owner_failure("denied")
+    client_id, client_secret = _provider_credentials(provider)
+    try:
+        pending = owner_auth.consume_state(DB_PATH, provider=provider, state=state)
+        identity = owner_auth.identity_from_code(
+            provider, code=code, nonce=pending["nonce"], client_id=client_id,
+            client_secret=client_secret, redirect_uri=_owner_redirect_uri(request, provider))
+        account = owner_auth.upsert_account(DB_PATH, identity)
+    except owner_auth.OwnerAuthError as exc:
+        return _owner_failure(exc.code)
+    if pending["mode"] == "link":
+        record = shops.get_shop(DB_PATH, pending["slug"])
+        if not record or record["status"] != "active" or not pending["staff_id"]:
+            return _owner_failure("shop")
+        owner_auth.link_shop(DB_PATH, account_id=account["id"], slug=pending["slug"],
+                             staff_id=int(pending["staff_id"]))
+        response = RedirectResponse(f"/?shop={pending['slug']}&owner=linked", status_code=303)
+    else:
+        linked = owner_auth.account_shops(DB_PATH, account["id"])
+        if not linked:
+            # A new owner: the sign-up form opens with the account already bound.
+            response = RedirectResponse("/?owner=new", status_code=303)
+        elif len(linked) == 1:
+            response = RedirectResponse(f"/?shop={linked[0]['slug']}&owner=enter", status_code=303)
+        else:
+            response = RedirectResponse("/?owner=choose", status_code=303)
+    token, _ = owner_auth.open_session(DB_PATH, account["id"])
+    _set_owner_cookie(request, response, token)
+    return response
+
+
+@app.get("/api/owner/session")
+def owner_session(request: Request):
+    """Who is signed in and which shops they may open."""
+    account = _owner_account(request)
+    return {"account": {"id": account["id"], "provider": account["provider"],
+                        "email": account["email"], "name": account["display_name"]},
+            "shops": [{"slug": row["slug"], "name": row["name"], "role": row["role"],
+                       "status": row["status"], "trial_ends_at": row["trial_ends_at"]}
+                      for row in owner_auth.account_shops(DB_PATH, account["id"])]}
+
+
+class OwnerShopChoice(BaseModel):
+    slug: str
+
+
+@app.post("/api/owner/enter")
+def owner_enter_shop(req: OwnerShopChoice, request: Request, response: Response):
+    """Open a shop from an owner account: this is where the staff session starts."""
+    account = _owner_account(request)
+    slug = req.slug.strip().lower()
+    membership = owner_auth.shop_membership(DB_PATH, account_id=account["id"], slug=slug)
+    if not membership:
+        raise HTTPException(403, "บัญชีนี้ไม่ได้เป็นเจ้าของร้านนี้")
+    record = shops.get_shop(DB_PATH, slug)
+    if not record:
+        raise HTTPException(404, "ไม่พบร้านนี้")
+    if record["status"] != "active":
+        raise HTTPException(403, _out_of_service_text(record))
+    CURRENT_SHOP.set(slug)
+    with closing(connect_db()) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT id,branch_id,name,role,is_active FROM staffs WHERE id=?",
+                           (membership["staff_id"],)).fetchone()
+        if not row or not row["is_active"]:
+            raise HTTPException(409, "บัญชีพนักงานของเจ้าของร้านนี้ถูกปิดใช้งาน "
+                                     "กรุณาเข้าด้วยรหัสร้านและ PIN แล้วผูกบัญชีใหม่")
+        expires = _open_session(request, response, conn, row["id"])
+    _remember_shop(request, response, slug)
+    return {"shop": {"slug": slug, "name": record["name"]}, "staff_id": row["id"],
+            "branch_id": row["branch_id"], "name": row["name"], "role": row["role"],
+            "expires_at": expires}
+
+
+@app.post("/api/owner/logout")
+def owner_logout(request: Request, response: Response):
+    owner_auth.close_session(DB_PATH, request.cookies.get(OWNER_COOKIE, ""))
+    response.delete_cookie(OWNER_COOKIE, path="/")
+    return {"status": "logged_out"}
+
+
+@app.get("/api/shop/owner-accounts")
+def list_shop_owner_accounts(request: Request):
+    """The accounts that can open this shop, for the owner's own settings page."""
+    require_staff(request, roles=("owner",))
+    slug = CURRENT_SHOP.get()
+    hosted = slug not in (MAIN_SHOP, DEMO_SHOP) and bool(shops.get_shop(DB_PATH, slug))
+    channels = {name: bool(_provider_credentials(name)[0] and _provider_credentials(name)[1])
+                for name in owner_auth.PROVIDERS}
+    return {"slug": slug, "linkable": hosted, "channels": channels,
+            "accounts": [{"id": row["id"], "provider": row["provider"], "email": row["email"],
+                          "name": row["display_name"], "linked_at": row["linked_at"]}
+                         for row in (owner_auth.shop_accounts(DB_PATH, slug) if hosted else [])]}
+
+
+@app.delete("/api/shop/owner-accounts/{account_id}")
+def remove_shop_owner_account(account_id: int, request: Request):
+    """Unlink an account. The shop code and PIN keep working either way."""
+    require_staff(request, roles=("owner",))
+    slug = CURRENT_SHOP.get()
+    if not any(row["id"] == account_id for row in owner_auth.shop_accounts(DB_PATH, slug)):
+        raise HTTPException(404, "บัญชีนี้ไม่ได้ผูกกับร้านนี้")
+    owner_auth.unlink_shop(DB_PATH, account_id=account_id, slug=slug)
+    return {"status": "unlinked", "account_id": account_id}
 
 
 # =====================================================================

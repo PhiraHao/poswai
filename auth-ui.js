@@ -5,6 +5,21 @@
   const requestedBranch = Number(new URLSearchParams(location.search).get('branch_id'));
   const tableBranchId = Number.isInteger(requestedBranch) && requestedBranch > 0 ? requestedBranch : 1;
   const requestedShop = (new URLSearchParams(location.search).get('shop') || '').trim().toLowerCase();
+  /* Set by the owner sign-in callback: "enter" one shop, "choose" between several,
+     "new" to open the first one, "linked" after binding an account to this shop. */
+  const ownerFlow = (new URLSearchParams(location.search).get('owner') || '').trim();
+  const ownerError = (new URLSearchParams(location.search).get('owner_error') || '').trim();
+  const OWNER_ERRORS = {
+    state: 'คำขอเข้าสู่ระบบหมดอายุหรือไม่ถูกต้อง กรุณากดเข้าสู่ระบบอีกครั้ง',
+    denied: 'คุณยกเลิกการเข้าสู่ระบบ หรือผู้ให้บริการไม่อนุญาต',
+    provider: 'ติดต่อผู้ให้บริการเข้าสู่ระบบไม่สำเร็จ กรุณาลองใหม่',
+    provider_unknown: 'ช่องทางเข้าสู่ระบบนี้ไม่มีในระบบ',
+    id_token: 'ข้อมูลยืนยันตัวตนไม่ถูกต้อง กรุณาลองใหม่',
+    nonce: 'ข้อมูลยืนยันตัวตนไม่ตรงกับคำขอนี้ กรุณาลองใหม่',
+    code: 'ไม่ได้รับรหัสยืนยันจากผู้ให้บริการ กรุณาลองใหม่',
+    shop: 'ร้านที่จะผูกบัญชีใช้งานไม่ได้แล้ว',
+    unconfigured: 'ยังไม่ได้เปิดใช้ช่องทางนี้',
+  };
   let current = null;
   let live = false;
   let preview = false;
@@ -62,6 +77,7 @@
         </form>
         <p class="poswai-auth-switch">มีรหัสร้านและ PIN อยู่แล้ว? <button type="button" data-login-tab="staff">เข้าด้วยรหัสร้าน</button></p>
         <p class="poswai-auth-switch">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
+        <p class="poswai-auth-hint">เจ้าของร้านเข้าด้วยบัญชีของตัวเอง พนักงานหน้าร้านใช้รหัสร้านกับ PIN ที่แท็บข้าง ๆ</p>
       </div>
 
       <div data-login-pane="staff" hidden>
@@ -81,7 +97,15 @@
         </form>
       </div>
     </div>
+    <div id="poswaiChooserPanel" hidden>
+      <p class="poswai-auth-hint" id="poswaiChooserWho"></p>
+      <div class="poswai-chooser-list" id="poswaiChooserList"></div>
+      <p class="poswai-auth-error" id="poswaiChooserError" role="alert"></p>
+      <p class="poswai-auth-switch">ต้องการเปิดร้านใหม่อีกร้าน? <button type="button" id="poswaiChooserSignup">เปิดร้านใหม่</button></p>
+      <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiChooserLogout">ออกจากบัญชี</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
+    </div>
     <div id="poswaiSignupPanel" hidden>
+      <p class="poswai-auth-hint ok" id="poswaiSignupAccount" hidden></p>
       <form id="poswaiSignupForm">
         <label for="poswaiShopName">ชื่อร้าน</label><input id="poswaiShopName" maxlength="80" required>
         <label for="poswaiNewSlug">รหัสร้าน (ใช้ตอนเข้าสู่ระบบ)</label><input id="poswaiNewSlug" maxlength="30" pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]" placeholder="a-z ตัวเลข และขีดกลาง" required>
@@ -129,6 +153,16 @@
         <strong id="poswaiCreatedId"></strong>
         <p>แจ้งรหัสนี้และ PIN ที่ตั้งไว้ให้พนักงานเป็นการส่วนตัว</p>
         <button class="poswai-auth-primary" type="button" id="poswaiAddAnotherStaff">เพิ่มพนักงานอีกคน</button>
+      </div>
+      <div class="poswai-owner-accounts" id="poswaiOwnerAccounts" hidden>
+        <strong>บัญชีเจ้าของร้าน</strong>
+        <p class="poswai-auth-hint">ผูกบัญชี LINE หรือ Google กับร้านนี้ แล้วครั้งต่อไปเข้าได้ด้วยบัญชีตัวเอง ไม่ต้องจำรหัสร้าน · รหัสร้านกับ PIN ยังใช้ได้เหมือนเดิม</p>
+        <ul class="poswai-owner-account-list" id="poswaiOwnerAccountList"></ul>
+        <div class="poswai-channels" id="poswaiLinkChannels">
+          <button type="button" class="poswai-channel line" data-link-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>ผูกบัญชี LINE กับร้านนี้</button>
+          <button type="button" class="poswai-channel google" data-link-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>ผูกบัญชี Google กับร้านนี้</button>
+        </div>
+        <p class="poswai-auth-error" id="poswaiOwnerAccountError" role="alert"></p>
       </div>
       <p class="poswai-auth-error" id="poswaiManagerError" role="alert"></p>
       <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiLogoutManager">ออกจากระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseManager">ปิด</button></div>
@@ -225,10 +259,11 @@
     manager: ['จัดการบัญชีพนักงาน', 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ', '#poswaiNewName'],
     signup: ['เปิดร้านของคุณ', 'ใช้ฟรี 30 วัน ไม่ต้องใส่บัตรเครดิต', '#poswaiShopName'],
     member: ['สมาชิกร้าน', 'สะสมแต้มทุกครั้งที่ซื้อ และรับโปรโมชันจากร้าน', '#poswaiMemberPhone'],
+    chooser: ['เลือกร้านที่จะเข้า', 'บัญชีของคุณเป็นเจ้าของหลายร้าน', '#poswaiChooserList'],
   };
   const open = (panel = 'login') => {
     if (panel === true) panel = 'manager';
-    if (panel === 'manager') showCreateForm();
+    if (panel === 'manager') { showCreateForm(); loadOwnerAccounts(); }
     if (panel === 'login') showLoginTab(device.shop ? 'staff' : 'owner');
     $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
     if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
@@ -335,13 +370,32 @@
     renderDevice();
     $('#poswaiShopCode').focus();
   });
-  overlay.querySelector('.poswai-channels').addEventListener('click', event => {
+  const CHANNEL_NAMES = {line: 'LINE', google: 'Google', facebook: 'Facebook'};
+  overlay.querySelector('[data-login-pane="owner"] .poswai-channels').addEventListener('click', event => {
     const button = event.target.closest('[data-channel]');
     if (!button) return;
-    const name = {line: 'LINE', google: 'Google', facebook: 'Facebook'}[button.dataset.channel];
-    $('#poswaiOwnerError').textContent = channels[button.dataset.channel]
-      ? `กำลังพาไปหน้า ${name}…`
-      : `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${name} ระหว่างนี้ใช้รหัสร้านและ PIN ไปก่อน`;
+    const channel = button.dataset.channel;
+    const name = CHANNEL_NAMES[channel];
+    if (!channels[channel]) {
+      $('#poswaiOwnerError').textContent =
+        `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${name} ระหว่างนี้ใช้รหัสร้านและ PIN ไปก่อน`;
+      return;
+    }
+    $('#poswaiOwnerError').textContent = `กำลังพาไปหน้า ${name}…`;
+    // The handshake is the server's: it writes the state and nonce, we only follow.
+    location.href = `/api/owner/auth/${channel}/start`;
+  });
+  $('#poswaiLinkChannels').addEventListener('click', event => {
+    const button = event.target.closest('[data-link-channel]');
+    if (!button) return;
+    const channel = button.dataset.linkChannel;
+    if (!channels[channel]) {
+      $('#poswaiOwnerAccountError').textContent =
+        `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${CHANNEL_NAMES[channel]}`;
+      return;
+    }
+    $('#poswaiOwnerAccountError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[channel]}…`;
+    location.href = `/api/owner/auth/${channel}/start?mode=link`;
   });
   $('#poswaiOwnerEmailForm').addEventListener('submit', event => {
     event.preventDefault();
@@ -386,6 +440,130 @@
       location.href = `/?shop=${encodeURIComponent(result.shop.slug)}`;
     } catch (error) { $('#poswaiSignupError').textContent = error.message; }
     finally { submit.disabled = false; submit.textContent = 'เปิดร้าน'; }
+  });
+
+  /* The owner account signed in on this browser, if any. It is not a staff
+     session: entering a shop is what opens one. */
+  let ownerAccount = null;
+  const accountLabel = account => account?.name || account?.email ||
+    `บัญชี ${CHANNEL_NAMES[account?.provider] || ''}`.trim();
+  const dropOwnerParams = () => {
+    const query = new URLSearchParams(location.search);
+    if (!query.has('owner') && !query.has('owner_error')) return;
+    query.delete('owner');
+    query.delete('owner_error');
+    const rest = query.toString();
+    history.replaceState(history.state, '', `${location.pathname}${rest ? `?${rest}` : ''}`);
+  };
+  const enterOwnerShop = async slug => {
+    $('#poswaiChooserError').textContent = '';
+    try {
+      await api('/api/owner/enter', { slug });
+      sessionStorage.removeItem('poswaiPreviewPeek');
+      // Reload on the shop's own address so its menu, billing notice and
+      // permissions all come from that shop and nothing is left over.
+      location.href = `/?shop=${encodeURIComponent(slug)}`;
+    } catch (error) {
+      open('chooser');
+      $('#poswaiChooserError').textContent = error.message;
+    }
+  };
+  const renderChooser = (shops) => {
+    $('#poswaiChooserWho').textContent = `เข้าสู่ระบบเป็น ${accountLabel(ownerAccount)}`;
+    $('#poswaiChooserList').replaceChildren(...shops.map(entry => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'poswai-chooser-shop';
+      const name = document.createElement('strong');
+      name.textContent = entry.name || entry.slug;
+      const code = document.createElement('span');
+      code.textContent = entry.status === 'suspended' ? `${entry.slug} · ถูกระงับการใช้งาน` : entry.slug;
+      button.append(name, code);
+      button.addEventListener('click', () => enterOwnerShop(entry.slug));
+      return button;
+    }));
+    open('chooser');
+  };
+  const resumeOwnerSignIn = async flow => {
+    let session = null;
+    try {
+      const response = await fetch('/api/owner/session', { credentials: 'same-origin', cache: 'no-store' });
+      if (response.ok) session = await response.json();
+    } catch (_) { /* offline: the sign-in page below says what to do */ }
+    dropOwnerParams();
+    if (!session) {
+      open('login');
+      showLoginTab('owner');
+      $('#poswaiOwnerError').textContent = 'เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง';
+      return;
+    }
+    ownerAccount = session.account;
+    if (flow === 'linked') {
+      if (current?.role === 'owner') {
+        open('manager');
+        await loadOwnerAccounts();
+        $('#poswaiOwnerAccountError').textContent = '';
+      }
+      return;
+    }
+    const owned = session.shops || [];
+    if (!owned.length) {
+      open('signup');
+      $('#poswaiSignupAccount').hidden = false;
+      $('#poswaiSignupAccount').textContent =
+        `ผูกบัญชี ${accountLabel(ownerAccount)} ไว้แล้ว เปิดร้านเสร็จแล้วครั้งต่อไปเข้าด้วยบัญชีนี้ได้เลย`;
+      return;
+    }
+    if (owned.length === 1 && flow !== 'choose') { await enterOwnerShop(owned[0].slug); return; }
+    renderChooser(owned);
+  };
+  const loadOwnerAccounts = async () => {
+    const box = $('#poswaiOwnerAccounts');
+    box.hidden = current?.role !== 'owner';
+    if (box.hidden) return;
+    let info = null;
+    try {
+      const response = await fetch('/api/shop/owner-accounts', { credentials: 'same-origin', cache: 'no-store' });
+      if (response.ok) info = await response.json();
+    } catch (_) { /* offline */ }
+    if (!info || !info.linkable) { box.hidden = true; return; }
+    $('#poswaiLinkChannels').hidden = !(info.channels?.line || info.channels?.google);
+    $('#poswaiOwnerAccountList').replaceChildren(...(info.accounts || []).map(account => {
+      const row = document.createElement('li');
+      const label = document.createElement('span');
+      label.textContent = `${CHANNEL_NAMES[account.provider] || account.provider} · ${account.email || account.name || 'ไม่ระบุ'}`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'ยกเลิกการผูก';
+      remove.addEventListener('click', async () => {
+        remove.disabled = true;
+        $('#poswaiOwnerAccountError').textContent = '';
+        try {
+          const response = await fetch(`/api/shop/owner-accounts/${account.id}`,
+            { method: 'DELETE', credentials: 'same-origin' });
+          if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || 'ยกเลิกไม่สำเร็จ');
+          await loadOwnerAccounts();
+        } catch (error) {
+          remove.disabled = false;
+          $('#poswaiOwnerAccountError').textContent = error.message;
+        }
+      });
+      row.append(label, remove);
+      return row;
+    }));
+    if (!(info.accounts || []).length) {
+      const empty = document.createElement('li');
+      empty.className = 'poswai-owner-account-empty';
+      empty.textContent = 'ยังไม่มีบัญชีผูกกับร้านนี้';
+      $('#poswaiOwnerAccountList').replaceChildren(empty);
+    }
+  };
+  $('#poswaiChooserSignup').addEventListener('click', () => open('signup'));
+  $('#poswaiChooserLogout').addEventListener('click', async () => {
+    try { await api('/api/owner/logout', {}); } catch (_) { /* already gone */ }
+    ownerAccount = null;
+    open('login');
+    showLoginTab('owner');
   });
 
   const showMemberCard = card => {
@@ -491,6 +669,14 @@
       if (response.ok) current = await response.json();
     } catch (_) { /* Offline pages retain local functionality without storing credentials. */ }
     update();
+    if (ownerError) {
+      dropOwnerParams();
+      open('login');
+      showLoginTab('owner');
+      $('#poswaiOwnerError').textContent = OWNER_ERRORS[ownerError] || OWNER_ERRORS.provider;
+      return;
+    }
+    if (ownerFlow) { await resumeOwnerSignIn(ownerFlow); return; }
     const installedApp = window.matchMedia?.('(display-mode: standalone)').matches;
     if (!current && !tableToken && installedApp && sessionStorage.getItem('poswaiPreviewPeek') !== '1') open();
   }).catch(() => {});

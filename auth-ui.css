@@ -84,3 +84,28 @@
 .poswai-member-card ul { width: 100%; margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; }
 .poswai-member-card li { padding: 8px 11px; background: #f8fafc; border-radius: 9px; font-size: .82rem; color: #334155; text-align: left; }
 body.poswai-locked { overflow: hidden; }
+
+/* Choosing between the shops one account owns, and the accounts linked to a shop. */
+.poswai-chooser-list { display: grid; gap: 10px; margin: 4px 0 14px; }
+.poswai-chooser-shop {
+  display: grid; gap: 2px; justify-items: start; width: 100%; padding: 14px 16px;
+  border: 1px solid var(--poswai-auth-line, #d8dee7); border-radius: 12px;
+  background: #fff; color: inherit; font: inherit; cursor: pointer; text-align: left;
+}
+.poswai-chooser-shop:hover, .poswai-chooser-shop:focus-visible {
+  border-color: #1f6feb; background: #f4f8ff;
+}
+.poswai-chooser-shop strong { font-size: 1.05rem; }
+.poswai-chooser-shop span { font-size: 0.9rem; color: #5b6676; }
+.poswai-owner-accounts { margin: 18px 0 6px; padding-top: 16px; border-top: 1px solid var(--poswai-auth-line, #d8dee7); }
+.poswai-owner-accounts > strong { display: block; margin-bottom: 4px; font-size: 1.02rem; }
+.poswai-owner-account-list { list-style: none; margin: 10px 0; padding: 0; display: grid; gap: 8px; }
+.poswai-owner-account-list li {
+  display: flex; gap: 10px; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border: 1px solid var(--poswai-auth-line, #d8dee7); border-radius: 10px;
+  font-size: 0.95rem;
+}
+.poswai-owner-account-list li button {
+  border: 0; background: none; color: #b42318; font: inherit; cursor: pointer; text-decoration: underline;
+}
+.poswai-owner-account-empty { color: #5b6676; justify-content: flex-start; }
