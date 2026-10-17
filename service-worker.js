@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-wai-offline-v50';
+const CACHE_NAME = 'pos-wai-offline-v51';
 const ASSETS = [
   "/",
   "/index.html",
@@ -12,7 +12,7 @@ const ASSETS = [
   "/reports-restore.css?v=19",
   "/reports-live.css?v=20",
   "/service-call.css?v=19",
-  "/auth-ui.css?v=44",
+  "/auth-ui.css?v=51",
   "/payment-ui.css?v=21",
   "/billing-ui.css?v=49",
   "/workspace.js?v=46",
@@ -24,7 +24,7 @@ const ASSETS = [
   "/reports-restore.js?v=19",
   "/reports-live.js?v=31",
   "/service-call.js?v=19",
-  "/auth-ui.js?v=46",
+  "/auth-ui.js?v=51",
   "/landing.css?v=42",
   "/landing.js?v=42",
   "/assets/landing/prompt.css",

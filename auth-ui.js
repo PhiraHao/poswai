@@ -9,6 +9,7 @@
   let live = false;
   let preview = false;
   let shop = { slug: requestedShop || 'main', name: '', is_demo: false, trial_ends_at: null };
+  let channels = { line: false, google: false, facebook: false, email: false };
   let pointBaht = 10;
   /* Mirrors ROLE_PERMISSIONS in line_pos_server.py and is refreshed from /api/permissions.
      Hiding a tab is only a convenience: every endpoint checks the role again. */
@@ -41,14 +42,44 @@
     <h2 id="poswaiAuthTitle">เข้าสู่ระบบ POS WAI</h2>
     <p id="poswaiAuthDescription">ใช้รหัสพนักงานและ PIN ส่วนตัว</p>
     <div id="poswaiLoginPanel">
-      <form id="poswaiLoginForm">
-        <label for="poswaiShopCode">รหัสร้าน</label><input id="poswaiShopCode" name="shop" autocomplete="organization" placeholder="เช่น baan-kaew" required>
-        <label for="poswaiStaffId">รหัสพนักงาน</label><input id="poswaiStaffId" name="staff_id" type="number" min="1" inputmode="numeric" autocomplete="username" required>
-        <label for="poswaiStaffPin">PIN</label><input id="poswaiStaffPin" name="pin" type="password" minlength="8" autocomplete="current-password" required>
-        <p class="poswai-auth-error" id="poswaiLoginError" role="alert"></p>
-        <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseLogin">ปิด</button></div>
-      </form>
-      <p class="poswai-auth-switch">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
+      <div class="poswai-login-tabs" role="tablist">
+        <button type="button" role="tab" data-login-tab="owner" aria-selected="true">เจ้าของร้าน</button>
+        <button type="button" role="tab" data-login-tab="staff" aria-selected="false">พนักงานหน้าร้าน</button>
+      </div>
+
+      <div data-login-pane="owner">
+        <div class="poswai-channels">
+          <button type="button" class="poswai-channel line" data-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>เข้าสู่ระบบด้วย LINE</button>
+          <button type="button" class="poswai-channel google" data-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>เข้าสู่ระบบด้วย Google</button>
+          <button type="button" class="poswai-channel facebook" data-channel="facebook"><span class="poswai-channel-mark" aria-hidden="true">f</span>เข้าสู่ระบบด้วย Facebook</button>
+        </div>
+        <div class="poswai-or"><span>หรือ</span></div>
+        <form id="poswaiOwnerEmailForm">
+          <label for="poswaiOwnerEmail">อีเมล</label><input id="poswaiOwnerEmail" type="email" autocomplete="email" placeholder="you@example.com" required>
+          <label for="poswaiOwnerPassword">รหัสผ่าน</label><input id="poswaiOwnerPassword" type="password" autocomplete="current-password" required>
+          <p class="poswai-auth-error" id="poswaiOwnerError" role="alert"></p>
+          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
+        </form>
+        <p class="poswai-auth-switch">มีรหัสร้านและ PIN อยู่แล้ว? <button type="button" data-login-tab="staff">เข้าด้วยรหัสร้าน</button></p>
+        <p class="poswai-auth-switch">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
+      </div>
+
+      <div data-login-pane="staff" hidden>
+        <div class="poswai-device-shop" id="poswaiDeviceShop" hidden>
+          <span id="poswaiDeviceShopName"></span>
+          <button type="button" id="poswaiChangeShop">เปลี่ยนร้าน</button>
+        </div>
+        <div class="poswai-known-staff" id="poswaiKnownStaff" hidden></div>
+        <form id="poswaiLoginForm">
+          <div id="poswaiShopCodeRow">
+            <label for="poswaiShopCode">รหัสร้าน</label><input id="poswaiShopCode" name="shop" autocomplete="organization" placeholder="เช่น baan-kaew" required>
+          </div>
+          <label for="poswaiStaffId">รหัสพนักงาน</label><input id="poswaiStaffId" name="staff_id" type="number" min="1" inputmode="numeric" autocomplete="username" required>
+          <label for="poswaiStaffPin">PIN</label><input id="poswaiStaffPin" name="pin" type="password" minlength="8" autocomplete="current-password" required>
+          <p class="poswai-auth-error" id="poswaiLoginError" role="alert"></p>
+          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseLogin">ปิด</button></div>
+        </form>
+      </div>
     </div>
     <div id="poswaiSignupPanel" hidden>
       <form id="poswaiSignupForm">
@@ -121,6 +152,67 @@
   document.body.append(landing);
 
   const $ = (selector) => overlay.querySelector(selector);
+
+  /* What this tablet remembers: which shop it belongs to, and the people who
+     have signed in on it. Names are kept only here, so no screen ever lists a
+     shop's staff to someone who has not signed in yet. */
+  const DEVICE_KEY = 'poswaiDevice';
+  const readDevice = () => {
+    try { return JSON.parse(localStorage.getItem(DEVICE_KEY) || '{}'); }
+    catch (_) { return {}; }
+  };
+  const writeDevice = value => {
+    try { localStorage.setItem(DEVICE_KEY, JSON.stringify(value)); } catch (_) { /* private browsing */ }
+  };
+  let device = readDevice();
+  const rememberLogin = (slug, staff) => {
+    const sameShop = device.shop === slug ? device : {shop: slug, name: '', staff: []};
+    const people = [{id: staff.staff_id, name: staff.name}, ...(sameShop.staff || [])]
+      .filter((person, index, all) => all.findIndex(other => other.id === person.id) === index)
+      .slice(0, 6);
+    device = {shop: slug, name: shop.name || sameShop.name || '', staff: people};
+    writeDevice(device);
+  };
+
+  const loginFocus = () => {
+    const staffTab = !$('[data-login-pane="staff"]').hidden;
+    if (!staffTab) return '#poswaiOwnerEmail';
+    return device.shop ? '#poswaiStaffId' : '#poswaiShopCode';
+  };
+  const showLoginTab = name => {
+    for (const tab of overlay.querySelectorAll('[role="tab"][data-login-tab]'))
+      tab.setAttribute('aria-selected', String(tab.dataset.loginTab === name));
+    for (const pane of overlay.querySelectorAll('[data-login-pane]'))
+      pane.hidden = pane.dataset.loginPane !== name;
+    $('#poswaiAuthDescription').textContent = name === 'owner'
+      ? 'เจ้าของร้านและผู้จัดการ เข้าด้วยบัญชีของตัวเอง ไม่ต้องจำรหัสร้าน'
+      : device.shop ? 'เครื่องนี้จำร้านไว้แล้ว พนักงานใส่รหัสของตัวเองกับ PIN ได้เลย'
+      : 'ใส่รหัสร้าน รหัสพนักงาน และ PIN · เครื่องนี้จะจำร้านไว้ให้หลังเข้าครั้งแรก';
+    if (name === 'staff') renderDevice();
+    $(loginFocus())?.focus();
+  };
+  const renderDevice = () => {
+    const known = $('#poswaiKnownStaff');
+    const shopRow = $('#poswaiDeviceShop');
+    $('#poswaiShopCodeRow').hidden = Boolean(device.shop);
+    $('#poswaiShopCode').required = !device.shop;
+    if (device.shop) $('#poswaiShopCode').value = device.shop;
+    shopRow.hidden = !device.shop;
+    $('#poswaiDeviceShopName').textContent = device.shop ? `ร้าน ${device.name || device.shop}` : '';
+    const people = device.shop ? (device.staff || []) : [];
+    known.hidden = !people.length;
+    known.replaceChildren(...people.map(person => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = person.name;
+      button.addEventListener('click', () => {
+        $('#poswaiStaffId').value = person.id;
+        $('#poswaiStaffPin').value = '';
+        $('#poswaiStaffPin').focus();
+      });
+      return button;
+    }));
+  };
   const showCreateForm = () => {
     $('#poswaiStaffForm').hidden = false;
     $('#poswaiCreateSuccess').hidden = true;
@@ -129,7 +221,7 @@
     $('#poswaiManagerError').textContent = '';
   };
   const PANELS = {
-    login: ['เข้าสู่ระบบ POS WAI', 'ใส่รหัสร้าน รหัสพนักงาน และ PIN ส่วนตัว', '#poswaiShopCode'],
+    login: ['เข้าสู่ระบบ POS WAI', '', '#poswaiOwnerEmail'],
     manager: ['จัดการบัญชีพนักงาน', 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ', '#poswaiNewName'],
     signup: ['เปิดร้านของคุณ', 'ใช้ฟรี 30 วัน ไม่ต้องใส่บัตรเครดิต', '#poswaiShopName'],
     member: ['สมาชิกร้าน', 'สะสมแต้มทุกครั้งที่ซื้อ และรับโปรโมชันจากร้าน', '#poswaiMemberPhone'],
@@ -137,10 +229,7 @@
   const open = (panel = 'login') => {
     if (panel === true) panel = 'manager';
     if (panel === 'manager') showCreateForm();
-    if (panel === 'login') {
-      $('#poswaiShopCode').value = $('#poswaiShopCode').value || (shop.slug === 'main' ? '' : shop.slug);
-      $('#poswaiShopCode').required = shop.slug !== 'main';
-    }
+    if (panel === 'login') showLoginTab(device.shop ? 'staff' : 'owner');
     $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
     if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
     for (const name of Object.keys(PANELS)) {
@@ -149,9 +238,9 @@
     }
     const [title, description, focus] = PANELS[panel];
     $('#poswaiAuthTitle').textContent = title;
-    $('#poswaiAuthDescription').textContent = description;
+    if (panel !== 'login') $('#poswaiAuthDescription').textContent = description;
     overlay.hidden = false;
-    $(focus)?.focus();
+    (panel === 'login' ? $(loginFocus()) : $(focus))?.focus();
   };
   const close = () => { overlay.hidden = true; };
   const api = async (url, body) => {
@@ -204,6 +293,7 @@
       });
       $('#poswaiStaffPin').value = '';
       if (current.shop) shop = { ...shop, slug: current.shop, is_demo: false };
+      rememberLogin(current.shop || shop.slug, current);
       sessionStorage.removeItem('poswaiPreviewPeek');
       close(); update();
       if (typeof flushOfflineSyncQueue === 'function') flushOfflineSyncQueue();
@@ -232,6 +322,32 @@
   $('#poswaiAddAnotherStaff').addEventListener('click', () => {
     showCreateForm();
     $('#poswaiNewName').focus();
+  });
+  overlay.addEventListener('click', event => {
+    const tab = event.target.closest('[data-login-tab]');
+    if (tab) showLoginTab(tab.dataset.loginTab);
+    if (event.target.closest('[data-close-login]')) close();
+  });
+  $('#poswaiChangeShop').addEventListener('click', () => {
+    device = {};
+    writeDevice(device);
+    $('#poswaiShopCode').value = '';
+    renderDevice();
+    $('#poswaiShopCode').focus();
+  });
+  overlay.querySelector('.poswai-channels').addEventListener('click', event => {
+    const button = event.target.closest('[data-channel]');
+    if (!button) return;
+    const name = {line: 'LINE', google: 'Google', facebook: 'Facebook'}[button.dataset.channel];
+    $('#poswaiOwnerError').textContent = channels[button.dataset.channel]
+      ? `กำลังพาไปหน้า ${name}…`
+      : `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${name} ระหว่างนี้ใช้รหัสร้านและ PIN ไปก่อน`;
+  });
+  $('#poswaiOwnerEmailForm').addEventListener('submit', event => {
+    event.preventDefault();
+    $('#poswaiOwnerError').textContent = channels.email
+      ? 'กำลังตรวจสอบ…'
+      : 'ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วยอีเมล ระหว่างนี้ใช้รหัสร้านและ PIN ไปก่อน';
   });
   $('#poswaiOpenSignup').addEventListener('click', () => open('signup'));
   $('#poswaiBackToLogin').addEventListener('click', () => open('login'));
@@ -360,6 +476,7 @@
     preview = !!config.preview_only;
     shop = config.shop || shop;
     pointBaht = config.point_baht || pointBaht;
+    channels = config.login_channels || channels;
     live = !preview || !!config.staff_live;
     if (shop.is_demo) sessionStorage.setItem('poswaiPreviewPeek', '1');
     window.dispatchEvent(new CustomEvent('poswai:shop-ready', { detail: shop }));

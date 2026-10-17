@@ -46,6 +46,30 @@
 .poswai-landing-preview { border: 0; background: none; color: #34536c; font-size: .8rem; font-weight: 700;
   text-decoration: underline; cursor: pointer; padding: 4px; }
 .poswai-landing-preview[hidden] { display: none; }
+.poswai-login-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 5px; margin: 0 0 16px;
+  background: #f1f4f8; border-radius: 12px; }
+.poswai-login-tabs button { border: 0; border-radius: 9px; padding: 9px 10px; background: none; color: #5d6b7a;
+  font: inherit; font-size: .88rem; font-weight: 700; cursor: pointer; }
+.poswai-login-tabs button[aria-selected="true"] { background: #fff; color: #17222e; box-shadow: 0 1px 4px rgba(23,34,46,.12); }
+.poswai-channels { display: grid; gap: 9px; }
+.poswai-channel { display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 14px; border: 1.5px solid #dfe5ec;
+  border-radius: 12px; background: #fff; color: #17222e; font: inherit; font-size: .92rem; font-weight: 600; cursor: pointer; }
+.poswai-channel:hover { background: #f8fafc; }
+.poswai-channel-mark { display: grid; place-items: center; width: 26px; height: 26px; flex: none; border-radius: 7px;
+  color: #fff; font-size: .68rem; font-weight: 800; letter-spacing: -.02em; }
+.poswai-channel.line .poswai-channel-mark { background: #06c755; font-size: .52rem; }
+.poswai-channel.google .poswai-channel-mark { background: #fff; color: #4285f4; border: 1px solid #dfe5ec; font-size: .95rem; }
+.poswai-channel.facebook .poswai-channel-mark { background: #1877f2; font-size: .95rem; }
+.poswai-or { display: flex; align-items: center; gap: 12px; margin: 15px 0 13px; color: #8a94a3; font-size: .82rem; }
+.poswai-or::before, .poswai-or::after { content: ""; flex: 1; height: 1px; background: #e4e9f0; }
+.poswai-device-shop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 13px;
+  padding: 10px 13px; background: #fff8e4; border: 1px solid #f3e2bb; border-radius: 11px; font-size: .86rem; font-weight: 700; color: #6b5a2e; }
+.poswai-device-shop button { border: 0; background: none; padding: 0; color: #1d6fe0; font: inherit; font-size: .82rem;
+  font-weight: 700; cursor: pointer; text-decoration: underline; }
+.poswai-known-staff { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 13px; }
+.poswai-known-staff button { border: 1.5px solid #dfe5ec; border-radius: 999px; padding: 7px 14px; background: #fff;
+  color: #17222e; font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; }
+.poswai-known-staff button:hover { border-color: #ffc928; background: #fffaf0; }
 .poswai-auth-switch { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid #eceff3; color: #64748b; font-size: .84rem; text-align: center; }
 .poswai-auth-switch button { border: 0; background: none; padding: 0; color: #1d6fe0; font: inherit; font-weight: 700; cursor: pointer; text-decoration: underline; }
 .poswai-auth-hint { margin: -4px 0 6px; font-size: .78rem; color: #64748b; min-height: 1.1em; }

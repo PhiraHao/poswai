@@ -107,6 +107,15 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./poswai.db")
 PROMPTPAY_ID = os.getenv("PROMPTPAY_ID", "")
 LINE_LIFF_ID = os.getenv("LINE_LIFF_ID", "")
 LINE_LOGIN_CHANNEL_ID = os.getenv("LINE_LOGIN_CHANNEL_ID", "")
+# An owner signs in with an account, not a shop code. A channel only appears on
+# the sign-in page once its own credentials are set, so a button never leads to
+# a dead end.
+LINE_LOGIN_CHANNEL_SECRET = os.getenv("LINE_LOGIN_CHANNEL_SECRET", "")
+GOOGLE_CLIENT_ID = os.getenv("POSWAI_GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.getenv("POSWAI_GOOGLE_CLIENT_SECRET", "")
+FACEBOOK_APP_ID = os.getenv("POSWAI_FACEBOOK_APP_ID", "")
+FACEBOOK_APP_SECRET = os.getenv("POSWAI_FACEBOOK_APP_SECRET", "")
+OWNER_EMAIL_LOGIN = os.getenv("POSWAI_OWNER_EMAIL_LOGIN", "0") == "1"
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 PREVIEW_ONLY = os.getenv("POSWAI_PREVIEW_ONLY", "0") == "1"
@@ -2734,6 +2743,10 @@ def public_config():
     slug = CURRENT_SHOP.get()
     shop = shops.get_shop(DB_PATH, slug) if slug not in (MAIN_SHOP, DEMO_SHOP) else None
     return {"void_limits": {"max_amount": VOID_CASHIER_MAX_AMOUNT, "daily_limit": VOID_CASHIER_DAILY_LIMIT},
+            "login_channels": {"line": bool(LINE_LOGIN_CHANNEL_ID and LINE_LOGIN_CHANNEL_SECRET),
+                               "google": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+                               "facebook": bool(FACEBOOK_APP_ID and FACEBOOK_APP_SECRET),
+                               "email": OWNER_EMAIL_LOGIN},
             "promptpay_id": shop["promptpay_id"] if shop else (PROMPTPAY_ID if slug == MAIN_SHOP else ""),
             "line_liff_id": LINE_LIFF_ID, "preview_only": is_preview(),
             "staff_live": STAFF_LIVE and slug != DEMO_SHOP,
