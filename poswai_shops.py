@@ -180,7 +180,7 @@ def reserve_shop(main_db: Path, *, slug: str, name: str, owner_name: str, phone:
         if conn.execute("SELECT COUNT(*) FROM shops").fetchone()[0] >= max_shops:
             raise ShopError(503, "ขณะนี้รับร้านใหม่เต็มแล้ว กรุณาติดต่อทีมงาน")
         if not slug_available(main_db, slug):
-            raise ShopError(409, "รหัสร้านนี้ถูกใช้แล้ว กรุณาเลือกรหัสอื่น")
+            raise ShopError(409, "ชื่อร้านในลิงก์นี้ถูกใช้แล้ว กรุณาเลือกชื่ออื่น")
         trial_ends = (datetime.date.today() + datetime.timedelta(days=TRIAL_DAYS)).isoformat()
         conn.execute("INSERT INTO shops(slug,name,owner_name,phone,trial_ends_at) VALUES(?,?,?,?,?)",
                      (slug, name, owner_name, phone, trial_ends))

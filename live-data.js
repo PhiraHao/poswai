@@ -112,7 +112,7 @@
       shopPanel.querySelector('[name="name"]').value = settings.name || '';
       shopPanel.querySelector('[name="promptpay_id"]').value = settings.promptpay_id || '';
       shopPanel.querySelector('#liveShopLink').textContent = settings.editable
-        ? `ลิงก์เข้าร้านของคุณ ${location.origin}/?shop=${settings.slug} · รหัสร้าน ${settings.slug}` +
+        ? `ลิงก์เข้าร้านของคุณ ${location.origin}/?shop=${settings.slug} · ชื่อร้านในลิงก์ ${settings.slug}` +
           (settings.trial_ends_at ? ` · ทดลองใช้ฟรีถึง ${settings.trial_ends_at}` : '')
         : 'ร้านนี้ตั้งค่าจากเซิร์ฟเวอร์ ติดต่อทีมงานหากต้องการแก้';
       shopPanel.querySelector('#liveShopForm').hidden = !settings.editable;
@@ -138,6 +138,19 @@
     if (enabled) refresh().catch(error => showToast(`โหลดข้อมูลจริงไม่สำเร็จ: ${error.message}`));
   };
   window.addEventListener('poswai:auth-changed', updateManager);
+  /* The empty menu calls this: open the stock tab and put the cursor in the
+     first field of the menu form, so adding the first dish is one click. */
+  window.goAddMenu = () => {
+    if (!['manager', 'owner'].includes(window.poswaiAuth?.current?.role)) {
+      showToast('ให้ผู้จัดการหรือเจ้าของร้านเป็นคนเพิ่มเมนู');
+      return;
+    }
+    document.querySelector(".role-tab[onclick*=\"'inventory'\"]")?.click();
+    window.setTimeout(() => {
+      panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+      panel.querySelector('#liveMenuForm [name="id"]')?.focus();
+    }, 150);
+  };
   window.poswaiLiveData = {refresh};
   const crmNav = document.querySelector('.role-tab[onclick*="\'crm\'"]');
   const hideUnsupported = () => {

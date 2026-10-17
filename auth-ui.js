@@ -75,9 +75,9 @@
           <p class="poswai-auth-error" id="poswaiOwnerError" role="alert"></p>
           <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
         </form>
-        <p class="poswai-auth-switch">มีรหัสร้านและ PIN อยู่แล้ว? <button type="button" data-login-tab="staff">เข้าด้วยรหัสร้าน</button></p>
+        <p class="poswai-auth-switch">มีชื่อร้านในลิงก์และ PIN อยู่แล้ว? <button type="button" data-login-tab="staff">เข้าด้วยชื่อร้าน</button></p>
         <p class="poswai-auth-switch">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
-        <p class="poswai-auth-hint">เจ้าของร้านเข้าด้วยบัญชีของตัวเอง พนักงานหน้าร้านใช้รหัสร้านกับ PIN ที่แท็บข้าง ๆ</p>
+        <p class="poswai-auth-hint">เจ้าของร้านเข้าด้วยบัญชีของตัวเอง พนักงานหน้าร้านใช้ชื่อร้านกับ PIN ที่แท็บข้าง ๆ</p>
       </div>
 
       <div data-login-pane="staff" hidden>
@@ -88,7 +88,7 @@
         <div class="poswai-known-staff" id="poswaiKnownStaff" hidden></div>
         <form id="poswaiLoginForm">
           <div id="poswaiShopCodeRow">
-            <label for="poswaiShopCode">รหัสร้าน</label><input id="poswaiShopCode" name="shop" autocomplete="organization" placeholder="เช่น baan-kaew" required>
+            <label for="poswaiShopCode">ชื่อร้านในลิงก์</label><input id="poswaiShopCode" name="shop" autocomplete="organization" placeholder="เช่น baan-kaew" required>
           </div>
           <label for="poswaiStaffId">รหัสพนักงาน</label><input id="poswaiStaffId" name="staff_id" type="number" min="1" inputmode="numeric" autocomplete="username" required>
           <label for="poswaiStaffPin">PIN</label><input id="poswaiStaffPin" name="pin" type="password" minlength="8" autocomplete="current-password" required>
@@ -108,11 +108,13 @@
       <p class="poswai-auth-hint ok" id="poswaiSignupAccount" hidden></p>
       <form id="poswaiSignupForm">
         <label for="poswaiShopName">ชื่อร้าน</label><input id="poswaiShopName" maxlength="80" required>
-        <label for="poswaiNewSlug">รหัสร้าน (ใช้ตอนเข้าสู่ระบบ)</label><input id="poswaiNewSlug" maxlength="30" pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]" placeholder="a-z ตัวเลข และขีดกลาง" required>
+        <label for="poswaiNewSlug">ชื่อร้านในลิงก์</label><input id="poswaiNewSlug" maxlength="30" pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]" placeholder="a-z ตัวเลข และขีดกลาง" required>
         <p class="poswai-auth-hint" id="poswaiSlugHint" role="status"></p>
+        <p class="poswai-auth-hint">ชื่อนี้อยู่ในลิงก์ของร้าน ใครเห็นลิงก์ก็เห็นชื่อนี้ <strong>ไม่ใช่รหัสลับ</strong> สิ่งที่กันคนอื่นเข้าร้านคือ PIN</p>
         <label for="poswaiOwnerName">ชื่อเจ้าของร้าน</label><input id="poswaiOwnerName" maxlength="100" required>
         <label for="poswaiOwnerPhone">เบอร์โทร</label><input id="poswaiOwnerPhone" type="tel" maxlength="20" required>
         <label for="poswaiOwnerPin">ตั้ง PIN เจ้าของร้าน (อย่างน้อย 8 ตัวอักษร)</label><input id="poswaiOwnerPin" type="password" minlength="8" autocomplete="new-password" required>
+        <p class="poswai-auth-hint">PIN คือด่านเดียวที่กันคนอื่นเข้าร้าน อย่าใช้เลขเรียง วันเกิด หรือเบอร์โทร</p>
         <label class="poswai-auth-check"><input type="checkbox" id="poswaiAcceptTerms" required> <span>ยอมรับ<a href="/terms" target="_blank" rel="noopener">ข้อตกลงการใช้งาน</a>และ<a href="/privacy" target="_blank" rel="noopener">นโยบายความเป็นส่วนตัว</a></span></label>
         <p class="poswai-auth-error" id="poswaiSignupError" role="alert"></p>
         <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiSignupSubmit">เปิดร้าน</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseSignup">ปิด</button></div>
@@ -156,7 +158,7 @@
       </div>
       <div class="poswai-owner-accounts" id="poswaiOwnerAccounts" hidden>
         <strong>บัญชีเจ้าของร้าน</strong>
-        <p class="poswai-auth-hint">ผูกบัญชี LINE หรือ Google กับร้านนี้ แล้วครั้งต่อไปเข้าได้ด้วยบัญชีตัวเอง ไม่ต้องจำรหัสร้าน · รหัสร้านกับ PIN ยังใช้ได้เหมือนเดิม</p>
+        <p class="poswai-auth-hint">ผูกบัญชี LINE หรือ Google กับร้านนี้ แล้วครั้งต่อไปเข้าได้ด้วยบัญชีตัวเอง ไม่ต้องจำชื่อร้าน · ชื่อร้านกับ PIN ยังใช้ได้เหมือนเดิม</p>
         <ul class="poswai-owner-account-list" id="poswaiOwnerAccountList"></ul>
         <div class="poswai-channels" id="poswaiLinkChannels">
           <button type="button" class="poswai-channel line" data-link-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>ผูกบัญชี LINE กับร้านนี้</button>
@@ -219,9 +221,9 @@
     for (const pane of overlay.querySelectorAll('[data-login-pane]'))
       pane.hidden = pane.dataset.loginPane !== name;
     $('#poswaiAuthDescription').textContent = name === 'owner'
-      ? 'เจ้าของร้านและผู้จัดการ เข้าด้วยบัญชีของตัวเอง ไม่ต้องจำรหัสร้าน'
+      ? 'เจ้าของร้านและผู้จัดการ เข้าด้วยบัญชีของตัวเอง ไม่ต้องจำชื่อร้าน'
       : device.shop ? 'เครื่องนี้จำร้านไว้แล้ว พนักงานใส่รหัสของตัวเองกับ PIN ได้เลย'
-      : 'ใส่รหัสร้าน รหัสพนักงาน และ PIN · เครื่องนี้จะจำร้านไว้ให้หลังเข้าครั้งแรก';
+      : 'ใส่ชื่อร้านในลิงก์ รหัสพนักงาน และ PIN · เครื่องนี้จะจำร้านไว้ให้หลังเข้าครั้งแรก';
     if (name === 'staff') renderDevice();
     $(loginFocus())?.focus();
   };
@@ -378,7 +380,7 @@
     const name = CHANNEL_NAMES[channel];
     if (!channels[channel]) {
       $('#poswaiOwnerError').textContent =
-        `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${name} ระหว่างนี้ใช้รหัสร้านและ PIN ไปก่อน`;
+        `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${name} ระหว่างนี้ใช้ชื่อร้านและ PIN ไปก่อน`;
       return;
     }
     $('#poswaiOwnerError').textContent = `กำลังพาไปหน้า ${name}…`;
@@ -401,7 +403,7 @@
     event.preventDefault();
     $('#poswaiOwnerError').textContent = channels.email
       ? 'กำลังตรวจสอบ…'
-      : 'ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วยอีเมล ระหว่างนี้ใช้รหัสร้านและ PIN ไปก่อน';
+      : 'ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วยอีเมล ระหว่างนี้ใช้ชื่อร้านและ PIN ไปก่อน';
   });
   $('#poswaiOpenSignup').addEventListener('click', () => open('signup'));
   $('#poswaiBackToLogin').addEventListener('click', () => open('login'));
@@ -416,8 +418,8 @@
     slugTimer = setTimeout(async () => {
       try {
         const result = await (await fetch(`/api/shops/check?slug=${encodeURIComponent(field.value)}`)).json();
-        hint.textContent = !result.valid ? 'รหัสร้านใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว'
-          : result.available ? `ใช้ได้ · ลิงก์ร้านคุณคือ ${location.origin}/?shop=${result.slug}` : 'รหัสนี้มีคนใช้แล้ว';
+        hint.textContent = !result.valid ? 'ชื่อร้านในลิงก์ใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว'
+            : result.available ? `ใช้ได้ · ลิงก์ร้านคุณคือ ${location.origin}/?shop=${result.slug}` : 'ชื่อนี้มีคนใช้แล้ว';
         hint.className = `poswai-auth-hint${result.valid && result.available ? ' ok' : ' bad'}`;
       } catch (_) { hint.textContent = ''; }
     }, 350);

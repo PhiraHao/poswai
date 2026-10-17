@@ -762,12 +762,12 @@ def staff_login(req: LoginRequest, request: Request, response: Response):
             raise HTTPException(403, _out_of_service_text(stopped))
         if slug == DEMO_SHOP or not _known_shop(slug):
             hash_pin("invalid-credentials")
-            raise HTTPException(401, "รหัสร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
+            raise HTTPException(401, "ชื่อร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
         CURRENT_SHOP.set(slug)
     if CURRENT_SHOP.get() == DEMO_SHOP:
         raise HTTPException(401, "ร้านตัวอย่างไม่มีบัญชีพนักงาน")
     if req.staff_id < 1 or len(req.pin) > 128:
-        raise HTTPException(401, "รหัสร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
+        raise HTTPException(401, "ชื่อร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
     with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         now = int(time.time())
@@ -786,7 +786,7 @@ def staff_login(req: LoginRequest, request: Request, response: Response):
             else:
                 conn.execute("UPDATE auth_login_attempts SET failures=failures+1 WHERE staff_id=?", (req.staff_id,))
             conn.commit()
-            raise HTTPException(401, "รหัสร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
+            raise HTTPException(401, "ชื่อร้าน รหัสพนักงาน หรือ PIN ไม่ถูกต้อง")
         today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
         locked = conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
                               (row["id"], today)).fetchone()
@@ -2815,7 +2815,7 @@ def open_shop(req: ShopSignup, request: Request, response: Response):
     if not re.fullmatch(r"\+?\d{9,15}", phone):
         raise HTTPException(400, "เบอร์โทรไม่ถูกต้อง")
     if not shops.valid_slug(slug):
-        raise HTTPException(400, "รหัสร้านใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว")
+        raise HTTPException(400, "ชื่อร้านในลิงก์ใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว")
     pin_hash = hash_pin(req.pin)
     client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
         request.client.host if request.client else "unknown")
