@@ -526,9 +526,15 @@
       transition: all 0.15s ease;
     }
     .menu-item.sold-out {
-      opacity: 0.58;
+      /* The food still looks like food. Fading the photo hid the dish the
+         customer came in for; the banner and the badge say it is off today. */
       background: #f1f5f9;
       border-color: #cbd5e1;
+    }
+    .menu-item.sold-out .menu-name,
+    .menu-item.sold-out .menu-sub,
+    .menu-item.sold-out .menu-price {
+      color: #64748b;
     }
     .menu-item.pinned-item {
       border: 2px solid var(--line-green);
@@ -5071,7 +5077,7 @@
   <script src="/landing.js?v=43"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>
-  <script src="/live-data.js?v=66"></script>
+  <script src="/live-data.js?v=69"></script>
   <script src="/tables-ui.js?v=65"></script>
   <script src="/inventory-live.js?v=23"></script>
   <link rel="stylesheet" href="/commerce-ui.css?v=29">

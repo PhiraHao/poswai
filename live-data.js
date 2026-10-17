@@ -611,15 +611,15 @@
       const price = document.createElement('td');
       price.textContent = `฿${Number(item.price).toLocaleString('th-TH')}`;
       /* Availability lives here, on the dish, where the owner is standing when
-         the kitchen says it has run out. One tap, and nothing else changes. */
+         the kitchen says it has run out. One tap, and nothing else changes.
+         One switch only: a dish marked sold out already cannot be ordered, so
+         a second "hide from customers" switch would just be a way to get the
+         same result by a longer route. */
       const state_cell = document.createElement('td');
       const cell = document.createElement('div');
       cell.className = 'live-status-cell';
-      cell.append(
-        statusSwitch(item, 'พร้อมขาย', 'หมดชั่วคราว', !item.sold_out,
-                     on => ({sold_out: !on})),
-        statusSwitch(item, 'แสดงหน้าลูกค้า', 'ซ่อนจากลูกค้า', item.active,
-                     on => ({active: on})));
+      cell.append(statusSwitch(item, 'พร้อมขาย', 'หมดชั่วคราว', !item.sold_out,
+                               on => ({sold_out: !on})));
       state_cell.append(cell);
       const acts = document.createElement('td');
       const actions = document.createElement('div');
@@ -761,7 +761,14 @@
       <label>พร้อมเพย์ (เบอร์โทรหรือเลขบัตรประชาชน) <input name="promptpay_id" maxlength="20" inputmode="numeric"></label>
       <button type="submit">บันทึกการตั้งค่า</button></form>
     <p id="liveShopStatus" role="status"></p><p id="liveShopLink"></p>`;
-  panel.before(shopPanel);
+  /* Shop settings sit with the tables on the cashier screen, not with the
+     ingredients. Only the owner ever sees this panel, so a cashier standing
+     at the same till cannot change the shop's name or its bank account. */
+  const settingsHome = document.querySelector('#view-cashier');
+  if (settingsHome) {
+    const intro = settingsHome.querySelector('.module-intro');
+    if (intro) intro.after(shopPanel); else settingsHome.prepend(shopPanel);
+  } else panel.before(shopPanel);
   const loadShop = async () => {
     try {
       const settings = await request('/api/shop/settings');
