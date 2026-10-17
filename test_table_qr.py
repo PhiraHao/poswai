@@ -259,6 +259,26 @@ class TableQrTest(unittest.TestCase):
         self.assertEqual(again.status_code, 409)
         self.assertIn("เป็นสมาชิกอยู่แล้ว", again.json()["detail"])
 
+    def test_a_returning_member_gets_their_own_card_back(self):
+        """There is no member password to forget, so the name and number are it.
+
+        Someone who signed up last week and types the same two things today
+        used to be told the number was taken, with nowhere to go: the sign-in
+        screen behind it belongs to the shop's own staff."""
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        body = {"branch_id": 1, "table_no": "1", "display_name": "คุณเก่ง", "phone": "0812345678"}
+        first = self.guest.post("/api/members/self", headers={"X-Table-Token": token}, json=body)
+        self.assertEqual(first.status_code, 200, first.text)
+        for name in ("คุณเก่ง", " คุณ เก่ง "):
+            with self.subTest(name=name):
+                again = self.guest.post("/api/members/self", headers={"X-Table-Token": token},
+                                        json={**body, "display_name": name})
+                self.assertEqual(again.status_code, 200, again.text)
+                self.assertEqual(again.json()["member_id"], first.json()["member_id"])
+        with sqlite3.connect(server.DB_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM crm_customers").fetchone()[0], 1)
+
     def test_joining_needs_a_real_name_and_number(self):
         code = self._add("1").json()["code"]
         _, token = self._scan(code)

@@ -3799,13 +3799,18 @@ class CounterMember(BaseModel):
     marketing_opt_in: bool = False
 
 
-def _add_member(branch_id: int, display_name: str, phone: str, marketing_opt_in: bool) -> dict:
+def _clean_member_details(display_name: str, phone: str) -> tuple:
     name = display_name.strip()
     phone = re.sub(r"[\s-]", "", phone)
     if not name or len(name) > 100:
         raise HTTPException(400, "กรุณากรอกชื่อลูกค้า")
     if not re.fullmatch(r"\+?\d{9,15}", phone):
         raise HTTPException(400, "เบอร์โทรไม่ถูกต้อง")
+    return name, phone
+
+
+def _add_member(branch_id: int, display_name: str, phone: str, marketing_opt_in: bool) -> dict:
+    name, phone = _clean_member_details(display_name, phone)
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         if conn.execute("SELECT 1 FROM crm_customers WHERE branch_id=? AND phone=?",
@@ -3836,11 +3841,29 @@ def register_member_from_table(req: SelfMember, request: Request):
     shop's own staff sign-in and reasonably gave up. Being at the table is
     proof enough to leave a name and a number.
 
-    A number already on the shop's list is refused, so nobody can take over
-    someone else's points by claiming their phone.
+    Members have no password of any kind, so a customer who signed up last
+    week has nothing to log in with. Giving their own name and their own
+    number back is what identifies them, and the card comes up again. A
+    number on the list under a different name is refused rather than handed
+    over, so knowing only someone's phone does not show you their points.
     """
     require_table_or_staff(request, req.branch_id, req.table_no.strip())
-    return _add_member(req.branch_id, req.display_name, req.phone, req.marketing_opt_in)
+    name, phone = _clean_member_details(req.display_name, req.phone)
+    with closing(connect_db()) as conn:
+        row = conn.execute("SELECT id,display_name FROM crm_customers WHERE branch_id=? AND phone=?",
+                           (req.branch_id, phone)).fetchone()
+        if row:
+            if _same_person(row[1], name):
+                return _member_card(conn, row[0])
+            raise HTTPException(409, "เบอร์นี้เป็นสมาชิกอยู่แล้วในชื่ออื่น แจ้งพนักงานเพื่อดูแต้มได้เลย")
+    return _add_member(req.branch_id, name, phone, req.marketing_opt_in)
+
+
+def _same_person(stored: str, given: str) -> bool:
+    """A name typed again by its owner, allowing for spacing and case."""
+    def squash(text):
+        return re.sub(r"\s+", "", text or "").casefold()
+    return squash(stored) == squash(given)
 
 
 class PointChange(BaseModel):

@@ -128,7 +128,7 @@
           <label for="poswaiMemberPhone">เบอร์โทร (ใช้บอกพนักงานตอนสะสมแต้ม)</label><input id="poswaiMemberPhone" type="tel" maxlength="20" required>
           <label class="poswai-auth-check"><input type="checkbox" id="poswaiMemberConsent"> ยินยอมรับข่าวสารและโปรโมชันจากร้าน</label>
           <p class="poswai-auth-error" id="poswaiMemberError" role="alert"></p>
-          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiMemberSubmit">สมัครสมาชิก</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseMember">ปิด</button></div>
+          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiMemberSubmit">สมัคร / ดูแต้ม</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseMember">ปิด</button></div>
         </form>
       </div>
       <div class="poswai-member-card" id="poswaiMemberCard" hidden>
@@ -260,7 +260,7 @@
     login: ['เข้าสู่ระบบ POS WAI', '', '#poswaiOwnerEmail'],
     manager: ['จัดการบัญชีพนักงาน', 'กำหนด PIN ใหม่เฉพาะพนักงานคนนี้ เพื่อใช้เข้าสู่ระบบ', '#poswaiNewName'],
     signup: ['เปิดร้านของคุณ', 'ใช้ฟรี 30 วัน ไม่ต้องใส่บัตรเครดิต', '#poswaiShopName'],
-    member: ['สมาชิกร้าน', 'สะสมแต้มทุกครั้งที่ซื้อ และรับโปรโมชันจากร้าน', '#poswaiMemberPhone'],
+    member: ['สมาชิกร้าน', 'สะสมแต้มทุกครั้งที่ซื้อ · เคยสมัครแล้วกรอกชื่อกับเบอร์เดิมเพื่อดูแต้ม', '#poswaiMemberPhone'],
     chooser: ['เลือกร้านที่จะเข้า', 'บัญชีของคุณเป็นเจ้าของหลายร้าน', '#poswaiChooserList'],
   };
   const open = (panel = 'login') => {
@@ -622,11 +622,11 @@
     event.preventDefault();
     const submit = $('#poswaiMemberSubmit');
     if (submit.disabled) return;
-    submit.disabled = true; submit.textContent = 'กำลังสมัคร…';
+    submit.disabled = true; submit.textContent = 'กำลังตรวจสอบ…';
     $('#poswaiMemberError').textContent = '';
     try { showMemberCard(await joinMember()); }
     catch (error) { $('#poswaiMemberError').textContent = error.message; }
-    finally { submit.disabled = false; submit.textContent = 'สมัครสมาชิก'; }
+    finally { submit.disabled = false; submit.textContent = 'สมัคร / ดูแต้ม'; }
   });
   $('#poswaiCloseMember').addEventListener('click', close);
   $('#poswaiCloseMemberCard').addEventListener('click', close);
