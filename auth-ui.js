@@ -589,30 +589,32 @@
      customer to the shop's own staff sign-in, which is what used to happen,
      asked them to log in to a till they have no business in. */
   const joinMember = async () => {
-    /* A shop with no LINE app configured throws here rather than returning
-       nothing, and that used to end the whole attempt. Not having LINE is the
-       ordinary case for a phone that scanned a sticker, so it falls through. */
+    const name = $('#poswaiMemberName').value.trim();
+    const phone = $('#poswaiMemberPhone').value.trim();
+    /* Someone sitting at a table has already proved where they are, so that
+       is what signs them up. Sending them to LINE first takes a guest who
+       filled in the form and drops them on a login page for an app they may
+       not have, which is what used to happen whenever the shop had LIFF set
+       up at all. */
+    if (tableToken) {
+      if (!name) throw new Error('กรุณากรอกชื่อที่ให้ร้านเรียก');
+      if (!phone) throw new Error('กรุณากรอกเบอร์โทร');
+      return api('/api/members/self', {
+        branch_id: state.branchId, table_no: tableNo,
+        display_name: name, phone,
+        marketing_opt_in: $('#poswaiMemberConsent').checked,
+      });
+    }
     let token = '';
     if (typeof getLineIdToken === 'function') {
       try { token = (await getLineIdToken()) || ''; } catch (_) { token = ''; }
     }
-    const name = $('#poswaiMemberName').value.trim();
-    const phone = $('#poswaiMemberPhone').value.trim();
-    if (token) {
-      return api('/api/members/me', {
-        branch_id: state.branchId, line_id_token: token,
-        display_name: name || undefined, phone: phone || undefined,
-        marketing_opt_in: $('#poswaiMemberConsent').checked,
-      });
-    }
-    if (!tableToken) {
+    if (!token) {
       throw new Error('สมัครสมาชิกได้ที่โต๊ะ สแกน QR บนโต๊ะก่อน หรือแจ้งพนักงานให้สมัครให้');
     }
-    if (!name) throw new Error('กรุณากรอกชื่อที่ให้ร้านเรียก');
-    if (!phone) throw new Error('กรุณากรอกเบอร์โทร');
-    return api('/api/members/self', {
-      branch_id: state.branchId, table_no: tableNo,
-      display_name: name, phone,
+    return api('/api/members/me', {
+      branch_id: state.branchId, line_id_token: token,
+      display_name: name || undefined, phone: phone || undefined,
       marketing_opt_in: $('#poswaiMemberConsent').checked,
     });
   };
