@@ -4504,6 +4504,17 @@
       }
     }
 
+    /* A staff code reads as a code, not a row number: 1 becomes 001. The
+       stored id is still the number, and typing either form signs the same
+       person in, so no shop has to re-learn the codes it already uses. */
+    function staffCode(value) {
+      const number = Number(value);
+      return Number.isInteger(number) && number >= 0 && number < 1000
+        ? String(number).padStart(3, "0")
+        : String(value ?? "");
+    }
+    window.staffCode = staffCode;
+
     function safeStaffText(value) {
       return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     }
@@ -4593,7 +4604,7 @@
 
           return `
             <tr>
-              <td><strong>${safeStaffText(s.name)}</strong><br/><small style="color:var(--text-muted);">รหัส ${targetId} · ${safeStaffText(s.role)}</small></td>
+              <td><strong>${safeStaffText(s.name)}</strong><br/><small style="color:var(--text-muted);">รหัส ${staffCode(targetId)} · ${safeStaffText(s.role)}</small></td>
               <td>${shiftCell}</td>
               <td>${statusBadge}</td>
               <td>${pinCell}</td>
@@ -5051,12 +5062,12 @@
   <script src="/sales-redesign.js?v=49"></script>
   <script src="/ops-redesign.js?v=19"></script>
   <script src="/people-redesign.js?v=38"></script>
-  <script src="/staff-admin.js?v=38"></script>
-  <script src="/staff-dossier.js?v=39"></script>
+  <script src="/staff-admin.js?v=59"></script>
+  <script src="/staff-dossier.js?v=59"></script>
   <script src="/reports-restore.js?v=19"></script>
   <script src="/reports-live.js?v=31"></script>
   <script src="/service-call.js?v=19"></script>
-  <script src="/auth-ui.js?v=53"></script>
+  <script src="/auth-ui.js?v=59"></script>
   <script src="/landing.js?v=43"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>

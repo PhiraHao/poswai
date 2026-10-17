@@ -90,7 +90,7 @@
           <div id="poswaiShopCodeRow">
             <label for="poswaiShopCode">ชื่อร้านในลิงก์</label><input id="poswaiShopCode" name="shop" autocomplete="organization" placeholder="เช่น baan-kaew" required>
           </div>
-          <label for="poswaiStaffId">รหัสพนักงาน</label><input id="poswaiStaffId" name="staff_id" type="number" min="1" inputmode="numeric" autocomplete="username" required>
+          <label for="poswaiStaffId">รหัสพนักงาน</label><input id="poswaiStaffId" name="staff_id" type="text" inputmode="numeric" pattern="[0-9]{1,6}" maxlength="6" autocomplete="username" placeholder="เช่น 001" required>
           <label for="poswaiStaffPin">PIN</label><input id="poswaiStaffPin" name="pin" type="password" minlength="8" autocomplete="current-password" required>
           <p class="poswai-auth-error" id="poswaiLoginError" role="alert"></p>
           <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseLogin">ปิด</button></div>
@@ -242,7 +242,7 @@
       button.type = 'button';
       button.textContent = person.name;
       button.addEventListener('click', () => {
-        $('#poswaiStaffId').value = person.id;
+        $('#poswaiStaffId').value = (window.staffCode || String)(person.id);
         $('#poswaiStaffPin').value = '';
         $('#poswaiStaffPin').focus();
       });
@@ -346,7 +346,7 @@
       const result = await api('/api/staff', { name: $('#poswaiNewName').value.trim(),
         role: $('#poswaiNewRole').value, pin: $('#poswaiNewPin').value });
       $('#poswaiCreatedName').textContent = result.name;
-      $('#poswaiCreatedId').textContent = String(result.staff_id);
+      $('#poswaiCreatedId').textContent = (window.staffCode || String)(result.staff_id);
       $('#poswaiStaffForm').reset();
       $('#poswaiStaffForm').hidden = true;
       $('#poswaiCreateSuccess').hidden = false;

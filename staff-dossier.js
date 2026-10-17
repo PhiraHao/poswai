@@ -53,7 +53,7 @@
       if (person.assets_outstanding) flags.push(`<em class="dossier-flag">ของค้าง ${person.assets_outstanding}</em>`);
       return `<button type="button" data-staff-id="${person.id}" class="${person.id === selectedId ? 'selected' : ''}">
         <strong>${escape(person.name)}</strong>
-        <small>รหัส ${person.id} · ${escape(ROLE_LABELS[person.role] || person.role)} · ${escape(person.tenure)}</small>
+        <small>รหัส ${(window.staffCode || String)(person.id)} · ${escape(ROLE_LABELS[person.role] || person.role)} · ${escape(person.tenure)}</small>
         ${flags.length ? `<span class="dossier-flags">${flags.join('')}</span>` : ''}</button>`;
     }).join('');
   }
@@ -92,7 +92,7 @@
     detail.innerHTML = `
       <div class="dossier-head">
         <div><h3>${escape(dossier.staff.name)}${profile.nickname ? ` (${escape(profile.nickname)})` : ''}</h3>
-          <p>รหัสพนักงาน ${dossier.staff.id} · ${escape(ROLE_LABELS[dossier.staff.role] || dossier.staff.role)}
+          <p>รหัสพนักงาน ${(window.staffCode || String)(dossier.staff.id)} · ${escape(ROLE_LABELS[dossier.staff.role] || dossier.staff.role)}
             · ${escape(dossier.employment_label)}</p></div>
         <div class="dossier-head-facts">
           <span>อายุงาน<strong>${escape(dossier.tenure.text)}</strong></span>

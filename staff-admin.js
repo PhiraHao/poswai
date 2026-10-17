@@ -116,14 +116,14 @@
     if (!user) return;
     $$('#staffDirectoryList').innerHTML = directory.map(person =>
       `<button type="button" data-staff-id="${person.id}" class="${person.id===selectedStaffId?'selected':''}">
-        <strong>${escape(person.name)}</strong><small>รหัส ${person.id} · ${escape(ROLE_LABELS[person.role] || person.role)} · ${person.is_active?'ใช้งาน':'ปิดใช้งาน'}</small></button>`).join('');
+        <strong>${escape(person.name)}</strong><small>รหัส ${(window.staffCode || String)(person.id)} · ${escape(ROLE_LABELS[person.role] || person.role)} · ${person.is_active?'ใช้งาน':'ปิดใช้งาน'}</small></button>`).join('');
     const person = directory.find(item => item.id === selectedStaffId);
     const detail = $$('#staffDirectoryDetail');
     detail.hidden = !person;
     if (!person) return;
     const canEdit = user.role === 'owner' || !['manager','owner'].includes(person.role);
     const own = person.id === user.staff_id;
-    $$('#staffDetailTitle').textContent = `${person.name} · รหัส ${person.id}`;
+    $$('#staffDetailTitle').textContent = `${person.name} · รหัส ${(window.staffCode || String)(person.id)}`;
     const form = $$('#staffProfileForm');
     form.elements.namedItem('name').value = person.name;
     form.elements.namedItem('role').value = person.role;
@@ -194,7 +194,7 @@
       });
       form.reset();
       form.hidden = true;
-      $$('#staffCreatedLine').textContent = `${created.name} · รหัสพนักงาน ${created.staff_id}`;
+      $$('#staffCreatedLine').textContent = `${created.name} · รหัสพนักงาน ${(window.staffCode || String)(created.staff_id)}`;
       $$('#staffCreateSuccess').hidden = false;
       selectedStaffId = created.staff_id;
       directoryStatus('');
@@ -229,7 +229,7 @@
   $$('#staffToggleActive').addEventListener('click', async () => {
     const person = directory.find(item => item.id === selectedStaffId);
     if (!person) return;
-    if (person.is_active && !confirm(`ปิดใช้งานบัญชี ${person.name} รหัส ${person.id}?`)) return;
+    if (person.is_active && !confirm(`ปิดใช้งานบัญชี ${person.name} รหัส ${(window.staffCode || String)(person.id)}?`)) return;
     try {
       await api(`/api/staff/${person.id}/profile`, 'PATCH', {is_active:!person.is_active});
       directoryStatus(person.is_active?'ปิดใช้งานบัญชีแล้ว':'เปิดใช้งานบัญชีแล้ว');
