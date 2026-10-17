@@ -8,6 +8,8 @@
   /* Set by the owner sign-in callback: "enter" one shop, "choose" between several,
      "new" to open the first one, "linked" after binding an account to this shop. */
   const ownerFlow = (new URLSearchParams(location.search).get('owner') || '').trim();
+  /* Set by the customer sign-in callback: the card itself lives in a cookie. */
+  const signedInWithAccount = new URLSearchParams(location.search).get('member') === 'in';
   const ownerError = (new URLSearchParams(location.search).get('owner_error') || '').trim();
   const OWNER_ERRORS = {
     state: 'คำขอเข้าสู่ระบบหมดอายุหรือไม่ถูกต้อง กรุณากดเข้าสู่ระบบอีกครั้ง',
@@ -85,6 +87,11 @@
       </div>
 
       <div data-login-pane="member" hidden>
+        <div class="poswai-channels" id="poswaiMemberChannels">
+          <button type="button" class="poswai-channel line" data-member-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>เข้าสู่ระบบด้วย LINE</button>
+          <button type="button" class="poswai-channel google" data-member-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>เข้าสู่ระบบด้วย Google</button>
+        </div>
+        <div class="poswai-or" id="poswaiMemberOr"><span>หรือ</span></div>
         <form id="poswaiCustomerForm">
           <label for="poswaiCustomerName">ชื่อที่ให้ร้านเรียก</label><input id="poswaiCustomerName" maxlength="100" autocomplete="name" required>
           <label for="poswaiCustomerPhone">เบอร์โทร</label><input id="poswaiCustomerPhone" type="tel" maxlength="20" autocomplete="tel" required>
@@ -436,6 +443,18 @@
     // The handshake is the server's: it writes the state and nonce, we only follow.
     location.href = `/api/owner/auth/${channel}/start`;
   });
+  $('#poswaiMemberChannels').addEventListener('click', event => {
+    const button = event.target.closest('[data-member-channel]');
+    if (!button) return;
+    const channel = button.dataset.memberChannel;
+    if (!channels[channel]) {
+      $('#poswaiCustomerError').textContent =
+        `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${CHANNEL_NAMES[channel]} ระหว่างนี้ใช้ชื่อกับเบอร์ไปก่อน`;
+      return;
+    }
+    $('#poswaiCustomerError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[channel]}…`;
+    location.href = `/api/members/auth/${channel}/start?shop=${encodeURIComponent(shop.slug)}`;
+  });
   $('#poswaiLinkChannels').addEventListener('click', event => {
     const button = event.target.closest('[data-link-channel]');
     if (!button) return;
@@ -500,9 +519,10 @@
     `บัญชี ${CHANNEL_NAMES[account?.provider] || ''}`.trim();
   const dropOwnerParams = () => {
     const query = new URLSearchParams(location.search);
-    if (!query.has('owner') && !query.has('owner_error')) return;
+    if (!query.has('owner') && !query.has('owner_error') && !query.has('member')) return;
     query.delete('owner');
     query.delete('owner_error');
+    query.delete('member');
     const rest = query.toString();
     history.replaceState(history.state, '', `${location.pathname}${rest ? `?${rest}` : ''}`);
   };
@@ -624,7 +644,12 @@
     if (card?.token) { member = { ...card }; keepMemberToken(card.token); update(); }
     return card;
   };
-  const signOutMember = () => { member = null; keepMemberToken(''); update(); };
+  const signOutMember = () => {
+    member = null;
+    keepMemberToken('');
+    fetch('/api/members/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+    update();
+  };
   const showMemberCard = card => {
     $('#poswaiMemberJoin').hidden = true;
     $('#poswaiMemberCard').hidden = false;
@@ -741,6 +766,11 @@
     shop = config.shop || shop;
     pointBaht = config.point_baht || pointBaht;
     channels = config.login_channels || channels;
+    for (const button of overlay.querySelectorAll('[data-member-channel]'))
+      button.hidden = !channels[button.dataset.memberChannel];
+    const noMemberChannels = !channels.line && !channels.google;
+    $('#poswaiMemberChannels').hidden = noMemberChannels;
+    $('#poswaiMemberOr').hidden = noMemberChannels;
     live = !preview || !!config.staff_live;
     if (shop.is_demo) sessionStorage.setItem('poswaiPreviewPeek', '1');
     window.dispatchEvent(new CustomEvent('poswai:shop-ready', { detail: shop }));
@@ -756,12 +786,17 @@
     } catch (_) { /* Offline pages retain local functionality without storing credentials. */ }
     update();
     const saved = readMemberToken();
-    if (saved && !current) {
+    if (signedInWithAccount) dropOwnerParams();
+    if (saved || signedInWithAccount) {
       try {
         const response = await fetch('/api/members/card', { cache: 'no-store',
-          headers: { 'X-Member-Token': saved } });
-        if (response.ok) { member = { ...(await response.json()), token: saved }; update(); }
-        else if (response.status === 401) keepMemberToken('');
+          credentials: 'same-origin',
+          headers: saved ? { 'X-Member-Token': saved } : {} });
+        if (response.ok) {
+          member = { ...(await response.json()), token: saved };
+          update();
+          if (signedInWithAccount) { showMemberCard(member); open('member'); }
+        } else if (response.status === 401) keepMemberToken('');
       } catch (_) { /* offline: the card simply waits for the next visit */ }
     }
     if (ownerError) {

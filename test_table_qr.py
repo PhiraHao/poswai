@@ -340,6 +340,49 @@ class TableQrTest(unittest.TestCase):
         response = self.guest.get("/api/members/card", headers={"X-Member-Token": elsewhere})
         self.assertEqual(response.status_code, 401)
 
+    def test_a_customer_signs_in_with_the_account_they_already_have(self):
+        """LINE and Google, the same two the owner signs in with.
+
+        They share the owner's callback, and so the redirect URI already
+        registered with each provider; the mode on the state row is what says
+        this is a customer rather than a shop owner."""
+        identity = {"provider": "google", "external_id": "google-sub-1",
+                    "email": "guest@example.com", "display_name": "คุณแขก"}
+        with patch.object(server.owner_auth, "consume_state",
+                          return_value={"nonce": "n", "mode": "member", "slug": server.MAIN_SHOP,
+                                        "staff_id": None}),              patch.object(server.owner_auth, "identity_from_code", return_value=identity),              patch.object(server, "GOOGLE_CLIENT_ID", "id"),              patch.object(server, "GOOGLE_CLIENT_SECRET", "secret"):
+            landed = self.guest.get("/api/owner/auth/google/callback?code=c&state=s",
+                                    follow_redirects=False)
+        self.assertEqual(landed.status_code, 303)
+        self.assertIn("member=in", landed.headers["location"])
+        card = self.guest.get("/api/members/card")
+        self.assertEqual(card.status_code, 200, card.text)
+        self.assertEqual(card.json()["display_name"], "คุณแขก")
+        self.guest.post("/api/members/logout")
+        self.assertEqual(self.guest.get("/api/members/card").status_code, 401)
+
+    def test_the_same_account_comes_back_to_the_same_card(self):
+        identity = {"provider": "google", "external_id": "google-sub-1", "email": "",
+                    "display_name": "คุณแขก"}
+        seen = []
+        for _ in range(2):
+            with patch.object(server.owner_auth, "consume_state",
+                              return_value={"nonce": "n", "mode": "member",
+                                            "slug": server.MAIN_SHOP, "staff_id": None}),                  patch.object(server.owner_auth, "identity_from_code", return_value=identity),                  patch.object(server, "GOOGLE_CLIENT_ID", "id"),                  patch.object(server, "GOOGLE_CLIENT_SECRET", "secret"):
+                self.guest.get("/api/owner/auth/google/callback?code=c&state=s",
+                               follow_redirects=False)
+            seen.append(self.guest.get("/api/members/card").json()["member_id"])
+        self.assertEqual(seen[0], seen[1])
+        with sqlite3.connect(server.DB_PATH) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM crm_customers").fetchone()[0], 1)
+
+    def test_an_unconfigured_channel_does_not_pretend_to_work(self):
+        with patch.object(server, "GOOGLE_CLIENT_ID", ""),              patch.object(server, "GOOGLE_CLIENT_SECRET", ""):
+            response = self.guest.get("/api/members/auth/google/start", follow_redirects=False)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.guest.get("/api/members/auth/facebook/start",
+                                        follow_redirects=False).status_code, 404)
+
     def test_joining_needs_a_real_name_and_number(self):
         code = self._add("1").json()["code"]
         _, token = self._scan(code)

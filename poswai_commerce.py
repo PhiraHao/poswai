@@ -32,6 +32,11 @@ def init_commerce(conn: sqlite3.Connection) -> None:
     )""")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS crm_line_identity ON crm_customers(branch_id,line_user_id) WHERE line_user_id IS NOT NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS crm_songwai_identity ON crm_customers(branch_id,songwai_user_id) WHERE songwai_user_id IS NOT NULL")
+    # "google:1234", "facebook:5678", "line:U9…": one column for every account a
+    # customer may sign in with, rather than a column per provider.
+    if "social_id" not in {row[1] for row in conn.execute("PRAGMA table_info(crm_customers)")}:
+        conn.execute("ALTER TABLE crm_customers ADD COLUMN social_id TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS crm_social_identity ON crm_customers(branch_id,social_id) WHERE social_id IS NOT NULL")
     conn.execute("""CREATE TABLE IF NOT EXISTS online_orders (
         order_no TEXT PRIMARY KEY REFERENCES order_events(order_no),
         branch_id INTEGER NOT NULL,
@@ -142,6 +147,26 @@ def upsert_customer(
         (branch_id, external_id, display_name, phone,
          int(marketing_opt_in) if source == "line" and marketing_opt_in is not None else 0),
     )
+    return cursor.lastrowid
+
+
+def upsert_social_customer(conn: sqlite3.Connection, *, branch_id: int, provider: str,
+                           subject: str, display_name: str = "") -> int:
+    """The customer who signs in with LINE, Google or Facebook.
+
+    The provider's own id is what identifies them, so the same person coming
+    back lands on the same card however long the gap, with no phone number to
+    remember and nothing to type."""
+    social_id = f"{provider}:{subject}"
+    row = conn.execute("SELECT id FROM crm_customers WHERE branch_id=? AND social_id=?",
+                       (branch_id, social_id)).fetchone()
+    if row:
+        if display_name:
+            conn.execute("UPDATE crm_customers SET display_name=?,updated_at=CURRENT_TIMESTAMP "
+                         "WHERE id=? AND display_name=''", (display_name, row[0]))
+        return row[0]
+    cursor = conn.execute("INSERT INTO crm_customers(branch_id,social_id,display_name) VALUES(?,?,?)",
+                          (branch_id, social_id, display_name))
     return cursor.lastrowid
 
 

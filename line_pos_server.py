@@ -59,7 +59,8 @@ from poswai_dossier import (DossierError, add_asset, add_timeline_entry, branch_
                             update_profile)
 from poswai_commerce import (create_order as create_commerce_order, init_commerce,
                              list_customers as commerce_customers, mark_handed_off,
-                             restore_cancelled_inventory, segment_for, upsert_customer, POINT_BAHT)
+                             restore_cancelled_inventory, segment_for, upsert_customer,
+                             upsert_social_customer, POINT_BAHT)
 from line_integration import (build_leave_flex, parse_leave_postback,
                               push_leave_request, verify_liff_id_token,
                               verify_webhook_signature)
@@ -3354,6 +3355,51 @@ def owner_login_start(provider: str, request: Request, mode: str = "login"):
         state=handshake["state"], nonce=handshake["nonce"]), status_code=302)
 
 
+MEMBER_COOKIE = "poswai_member"
+
+
+@app.get("/api/members/auth/{provider}/start")
+def member_login_start(provider: str, request: Request):
+    """A customer signing in with the account they already have.
+
+    It shares the owner's callback, and so the redirect URI already registered
+    with each provider; what tells the two apart is the mode on the state row.
+    """
+    client_id, client_secret = _provider_credentials(provider)
+    if not client_id or not client_secret:
+        raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
+    if len(TABLE_QR_SECRET) < 32:
+        raise HTTPException(503, "ยังไม่ได้ตั้งค่ากุญแจของร้าน")
+    try:
+        handshake = owner_auth.start_login(DB_PATH, provider=provider, mode="member",
+                                           slug=CURRENT_SHOP.get())
+    except owner_auth.OwnerAuthError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+    return RedirectResponse(owner_auth.authorize_url(
+        provider, client_id=client_id, redirect_uri=_owner_redirect_uri(request, provider),
+        state=handshake["state"], nonce=handshake["nonce"]), status_code=302)
+
+
+def _finish_member_login(request: Request, slug: str, identity: dict) -> RedirectResponse:
+    """Hand the customer their card back on the shop's own page.
+
+    The provider's callback carries no shop, so the slug recorded when the
+    sign-in began is what says whose member list this is."""
+    shop_token = CURRENT_SHOP.set(slug)
+    try:
+        with closing(connect_db()) as conn, conn:
+            customer_id = upsert_social_customer(
+                conn, branch_id=1, provider=identity["provider"],
+                subject=identity["external_id"], display_name=identity.get("display_name", ""))
+        member_token = _mint_member_token(customer_id)
+    finally:
+        CURRENT_SHOP.reset(shop_token)
+    response = RedirectResponse(f"/?shop={slug}&member=in", status_code=303)
+    response.set_cookie(MEMBER_COOKIE, member_token, max_age=MEMBER_TOKEN_TTL_SECONDS,
+                        httponly=True, secure=_secure(request), samesite="lax", path="/")
+    return response
+
+
 @app.get("/api/owner/auth/{provider}/callback")
 def owner_login_callback(provider: str, request: Request, code: str = "", state: str = "",
                          error: str = ""):
@@ -3372,6 +3418,8 @@ def owner_login_callback(provider: str, request: Request, code: str = "", state:
         account = owner_auth.upsert_account(DB_PATH, identity)
     except owner_auth.OwnerAuthError as exc:
         return _owner_failure(exc.code)
+    if pending["mode"] == "member":
+        return _finish_member_login(request, pending["slug"] or MAIN_SHOP, identity)
     if pending["mode"] == "link":
         record = shops.get_shop(DB_PATH, pending["slug"])
         if not record or record["status"] != "active" or not pending["staff_id"]:
@@ -3821,7 +3869,7 @@ def _mint_member_token(member_id: int) -> str:
 
 
 def _signed_in_member(request: Request) -> int:
-    token = request.headers.get("x-member-token", "")
+    token = request.headers.get("x-member-token", "") or request.cookies.get(MEMBER_COOKIE, "")
     if len(TABLE_QR_SECRET) < 32 or len(token) > 512 or "." not in token:
         raise HTTPException(401, "กรุณาเข้าสู่ระบบลูกค้าอีกครั้ง")
     try:
@@ -3933,6 +3981,12 @@ def sign_in_member(req: MemberLogin, request: Request):
         if not row or not _same_person(row[1], name):
             raise HTTPException(404, "ไม่พบสมาชิกที่ชื่อและเบอร์นี้ สมัครได้ที่โต๊ะ หรือแจ้งพนักงาน")
         return _signed_in_card(conn, row[0])
+
+
+@app.post("/api/members/logout")
+def sign_out_member(response: Response):
+    response.delete_cookie(MEMBER_COOKIE, path="/")
+    return {"ok": True}
 
 
 @app.get("/api/members/card")
