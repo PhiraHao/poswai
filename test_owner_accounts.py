@@ -346,6 +346,23 @@ class OwnerSignInPageTest(unittest.TestCase):
         self.assertNotIn("access.line.me", self.script)
         self.assertNotIn("accounts.google.com", self.script)
 
+    def test_line_is_only_asked_for_what_the_channel_was_granted(self):
+        """An unapproved scope turns LINE's own page into a bare error dialog.
+
+        The customer sees "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ" with nothing to do
+        about it, and nothing reaches this server to log, so the email scope
+        waits until the shop says LINE approved it."""
+        with patch.object(server.owner_auth, "LINE_EMAIL_PERMISSION", False):
+            url = server.owner_auth.authorize_url("line", client_id="c", redirect_uri="https://e/cb",
+                                                  state="s", nonce="n")
+        self.assertIn("scope=openid+profile&", url)
+        self.assertNotIn("email", url)
+        self.assertNotIn("bot_prompt", url)
+        with patch.object(server.owner_auth, "LINE_EMAIL_PERMISSION", True):
+            granted = server.owner_auth.authorize_url("line", client_id="c", redirect_uri="https://e/cb",
+                                                      state="s", nonce="n")
+        self.assertIn("openid+profile+email", granted)
+
     def test_the_page_can_pick_up_every_outcome_of_a_sign_in(self):
         for flow in ("owner=new", "owner=choose", "owner=enter", "owner=linked"):
             self.assertIn(flow.split("=")[1], self.script, flow)

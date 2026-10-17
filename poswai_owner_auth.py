@@ -11,6 +11,7 @@ verification endpoint, not from a token the page handed us.
 """
 
 import hashlib
+import os
 import secrets
 import sqlite3
 import time
@@ -22,6 +23,8 @@ import httpx
 import poswai_shops as shops
 
 PROVIDERS = ("line", "google")
+# Set POSWAI_LINE_EMAIL_PERMISSION=1 once LINE approves the channel for it.
+LINE_EMAIL_PERMISSION = os.getenv("POSWAI_LINE_EMAIL_PERMISSION", "") not in ("", "0", "false")
 STATE_LIFETIME = 600            # a sign-in that takes longer than ten minutes is stale
 SESSION_LIFETIME = 30 * 24 * 3600   # an owner signs in on their own phone, not a shared till
 LINE_AUTH_URL = "https://access.line.me/oauth2/v2.1/authorize"
@@ -144,9 +147,15 @@ def _get_json(url: str, params: dict) -> dict:
 def authorize_url(provider: str, *, client_id: str, redirect_uri: str, state: str, nonce: str) -> str:
     from urllib.parse import urlencode
     if provider == "line":
+        # LINE hands out the email scope only to channels that applied for it,
+        # and bot_prompt only means anything on a channel linked to an official
+        # account. Asking for either without that turns the login page into
+        # "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ", which tells the customer nothing.
+        # The email is a nicety here, so it is asked for only once the shop
+        # says the permission came through.
+        scope = "openid profile email" if LINE_EMAIL_PERMISSION else "openid profile"
         query = {"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
-                 "state": state, "scope": "openid profile email", "nonce": nonce,
-                 "bot_prompt": "normal"}
+                 "state": state, "scope": scope, "nonce": nonce}
         return f"{LINE_AUTH_URL}?{urlencode(query)}"
     query = {"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
              "state": state, "scope": "openid email profile", "nonce": nonce,
