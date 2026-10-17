@@ -6,8 +6,11 @@ of it taken last week opens nothing, and one table's code can be withdrawn
 without touching the paper on any other table.
 """
 
+import base64
+import json
 import sqlite3
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -278,6 +281,64 @@ class TableQrTest(unittest.TestCase):
                 self.assertEqual(again.json()["member_id"], first.json()["member_id"])
         with sqlite3.connect(server.DB_PATH) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM crm_customers").fetchone()[0], 1)
+
+    def _join(self, token, name="คุณเก่ง", phone="0812345678"):
+        return self.guest.post("/api/members/self", headers={"X-Table-Token": token},
+                               json={"branch_id": 1, "table_no": "1",
+                                     "display_name": name, "phone": phone})
+
+    def test_signing_up_at_a_table_also_signs_the_phone_in(self):
+        """Giving a name and a number is the whole sign-up, so it is the sign-in too.
+
+        Without this the customer filled the form in, got their card once, and
+        was back to an anonymous page the moment they closed it, with only the
+        shop's own staff sign-in on offer."""
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        card = self._join(token).json()
+        self.assertTrue(card["token"])
+        later = self.guest.get("/api/members/card", headers={"X-Member-Token": card["token"]})
+        self.assertEqual(later.status_code, 200, later.text)
+        self.assertEqual(later.json()["member_id"], card["member_id"])
+
+    def test_a_customer_signs_in_with_their_own_name_and_number(self):
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        joined = self._join(token).json()
+        signed_in = self.guest.post("/api/members/login",
+                                    json={"branch_id": 1, "display_name": "คุณเก่ง",
+                                          "phone": "0812345678"})
+        self.assertEqual(signed_in.status_code, 200, signed_in.text)
+        self.assertEqual(signed_in.json()["member_id"], joined["member_id"])
+
+    def test_signing_in_needs_the_number_to_be_a_member_under_that_name(self):
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        self._join(token)
+        for body in ({"display_name": "คนอื่น", "phone": "0812345678"},
+                     {"display_name": "คุณเก่ง", "phone": "0899999999"}):
+            with self.subTest(body=body):
+                response = self.guest.post("/api/members/login", json={"branch_id": 1, **body})
+                self.assertEqual(response.status_code, 404)
+
+    def test_a_made_up_member_token_reads_nobody_card(self):
+        code = self._add("1").json()["code"]
+        _, token = self._scan(code)
+        real = self._join(token).json()["token"]
+        encoded = real.split(".", 1)[0]
+        for forged in ("", "nonsense", encoded + ".0" * 32, real[:-1] + ("0" if real[-1] != "0" else "1")):
+            with self.subTest(token=forged[:12]):
+                response = self.guest.get("/api/members/card", headers={"X-Member-Token": forged})
+                self.assertEqual(response.status_code, 401)
+
+    def test_a_member_token_from_another_shop_is_refused(self):
+        """Shops share this server, and each one's member list is its own."""
+        payload = json.dumps({"m": 1, "e": int(time.time()) + 600, "s": "another-shop"},
+                             sort_keys=True, separators=(",", ":")).encode()
+        encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
+        elsewhere = encoded + "." + server._member_signature(payload)
+        response = self.guest.get("/api/members/card", headers={"X-Member-Token": elsewhere})
+        self.assertEqual(response.status_code, 401)
 
     def test_joining_needs_a_real_name_and_number(self):
         code = self._add("1").json()["code"]

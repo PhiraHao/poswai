@@ -21,6 +21,9 @@
     unconfigured: 'ยังไม่ได้เปิดใช้ช่องทางนี้',
   };
   let current = null;
+  /* The customer signed in on this phone. Not a staff session: it carries no
+     cookie and opens nothing but its own points, so the phone keeps it. */
+  let member = null;
   let live = false;
   let preview = false;
   let shop = { slug: requestedShop || 'main', name: '', is_demo: false, trial_ends_at: null };
@@ -40,7 +43,7 @@
   let matrix = null;
   // The sample shop is a guided tour of every screen, and holds no real records.
   const canAccessTab = tab => shop.is_demo || (tabsByRole[current?.role || 'guest'] || tabsByRole.guest).includes(tab);
-  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; }, get permissions() { return matrix; }, get shop() { return shop; }, get pointBaht() { return pointBaht; }, canAccessTab };
+  const state = { get current() { return current; }, get tableToken() { return tableToken; }, get tableNo() { return tableNo; }, get branchId() { return current?.branch_id || tableBranchId; }, get permissions() { return matrix; }, get member() { return member; }, get shop() { return shop; }, get pointBaht() { return pointBaht; }, canAccessTab };
   window.poswaiAuth = state;
 
   const accountButton = document.createElement('button');
@@ -58,6 +61,7 @@
     <p id="poswaiAuthDescription">ใช้รหัสพนักงานและ PIN ส่วนตัว</p>
     <div id="poswaiLoginPanel">
       <div class="poswai-login-tabs" role="tablist">
+        <button type="button" role="tab" data-login-tab="member" aria-selected="false">ลูกค้า</button>
         <button type="button" role="tab" data-login-tab="owner" aria-selected="true">เจ้าของร้าน</button>
         <button type="button" role="tab" data-login-tab="staff" aria-selected="false">พนักงานหน้าร้าน</button>
       </div>
@@ -78,6 +82,16 @@
         <p class="poswai-auth-switch">มีชื่อร้านในลิงก์และ PIN อยู่แล้ว? <button type="button" data-login-tab="staff">เข้าด้วยชื่อร้าน</button></p>
         <p class="poswai-auth-switch">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
         <p class="poswai-auth-hint">เจ้าของร้านเข้าด้วยบัญชีของตัวเอง พนักงานหน้าร้านใช้ชื่อร้านกับ PIN ที่แท็บข้าง ๆ</p>
+      </div>
+
+      <div data-login-pane="member" hidden>
+        <form id="poswaiCustomerForm">
+          <label for="poswaiCustomerName">ชื่อที่ให้ร้านเรียก</label><input id="poswaiCustomerName" maxlength="100" autocomplete="name" required>
+          <label for="poswaiCustomerPhone">เบอร์โทร</label><input id="poswaiCustomerPhone" type="tel" maxlength="20" autocomplete="tel" required>
+          <p class="poswai-auth-error" id="poswaiCustomerError" role="alert"></p>
+          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiCustomerSubmit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
+        </form>
+        <p class="poswai-auth-hint">ลูกค้าไม่มีรหัสผ่าน ใช้ชื่อกับเบอร์ที่สมัครไว้ · ยังไม่เคยสมัคร สแกน QR บนโต๊ะแล้วกดสมัครสมาชิกได้เลย</p>
       </div>
 
       <div data-login-pane="staff" hidden>
@@ -136,7 +150,7 @@
         <strong id="poswaiMemberPoints">0</strong>
         <p id="poswaiMemberSummary"></p>
         <ul id="poswaiMemberHistory"></ul>
-        <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiCloseMemberCard">ปิด</button></div>
+        <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiMemberLogout">ออกจากระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseMemberCard">ปิด</button></div>
       </div>
     </div>
     <div id="poswaiManagerPanel" hidden>
@@ -210,7 +224,18 @@
     writeDevice(device);
   };
 
+  const memberKey = () => `poswaiMemberToken:${shop.slug}`;
+  const readMemberToken = () => {
+    try { return localStorage.getItem(memberKey()) || ''; } catch (_) { return ''; }
+  };
+  const keepMemberToken = token => {
+    try {
+      if (token) localStorage.setItem(memberKey(), token); else localStorage.removeItem(memberKey());
+    } catch (_) { /* private browsing */ }
+  };
+
   const loginFocus = () => {
+    if (!$('[data-login-pane="member"]').hidden) return '#poswaiCustomerName';
     const staffTab = !$('[data-login-pane="staff"]').hidden;
     if (!staffTab) return '#poswaiOwnerEmail';
     return device.shop ? '#poswaiStaffId' : '#poswaiShopCode';
@@ -220,7 +245,9 @@
       tab.setAttribute('aria-selected', String(tab.dataset.loginTab === name));
     for (const pane of overlay.querySelectorAll('[data-login-pane]'))
       pane.hidden = pane.dataset.loginPane !== name;
-    $('#poswaiAuthDescription').textContent = name === 'owner'
+    $('#poswaiAuthDescription').textContent = name === 'member'
+      ? 'ลูกค้าสะสมแต้ม เข้าด้วยชื่อกับเบอร์ที่สมัครไว้'
+      : name === 'owner'
       ? 'เจ้าของร้านและผู้จัดการ เข้าด้วยบัญชีของตัวเอง ไม่ต้องจำชื่อร้าน'
       : device.shop ? 'เครื่องนี้จำร้านไว้แล้ว พนักงานใส่รหัสของตัวเองกับ PIN ได้เลย'
       : 'ใส่ชื่อร้านในลิงก์ รหัสพนักงาน และ PIN · เครื่องนี้จะจำร้านไว้ให้หลังเข้าครั้งแรก';
@@ -266,7 +293,7 @@
   const open = (panel = 'login') => {
     if (panel === true) panel = 'manager';
     if (panel === 'manager') { showCreateForm(); loadOwnerAccounts(); }
-    if (panel === 'login') showLoginTab(device.shop ? 'staff' : 'owner');
+    if (panel === 'login') showLoginTab(tableToken ? 'member' : device.shop ? 'staff' : 'owner');
     $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
     if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
     for (const name of Object.keys(PANELS)) {
@@ -292,14 +319,17 @@
   const update = () => {
     // A demo peek only counts while the shop runs in preview mode.
     const peeking = (preview || shop.is_demo) && sessionStorage.getItem('poswaiPreviewPeek') === '1';
-    const locked = live && !current && !tableToken && !peeking;
+    /* A signed-in customer is past the front door too, the same as one
+       holding a table token. */
+    const locked = live && !current && !tableToken && !member && !peeking;
     landing.hidden = !locked;
     document.body.classList.toggle('poswai-locked', locked);
     const peek = landing.querySelector('#poswaiLandingPreview');
     if (peek) peek.hidden = !preview;
     document.body.classList.toggle('poswai-guest', live && !preview && !current);
     accountButton.hidden = !live;
-    accountButton.textContent = current ? `${current.name} ▾` : 'เข้าสู่ระบบ';
+    accountButton.textContent = current ? `${current.name} ▾`
+      : member ? `${member.display_name || 'สมาชิก'} ▾` : 'เข้าสู่ระบบ';
     document.querySelectorAll('.role-tab').forEach(button => {
       const tab = button.getAttribute('onclick')?.match(/switchTab\('([^']+)'/)?.[1];
       if (tab) button.hidden = !canAccessTab(tab);
@@ -315,11 +345,28 @@
     window.dispatchEvent(new CustomEvent('poswai:auth-changed', { detail: current }));
   };
   accountButton.addEventListener('click', async () => {
+    if (!current && member) { showMemberCard(member); open('member'); return; }
     if (!current) { open(); return; }
     if (current.role === 'manager' || current.role === 'owner') { open(true); return; }
     if (confirm(`ออกจากระบบ ${current.name}?`)) {
       await api('/api/auth/logout', {}); current = null; update(); open();
     }
+  });
+  $('#poswaiCustomerForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submit = $('#poswaiCustomerSubmit');
+    if (submit.disabled) return;
+    submit.disabled = true; submit.textContent = 'กำลังเข้าสู่ระบบ…';
+    $('#poswaiCustomerError').textContent = '';
+    try {
+      signInMember(await api('/api/members/login', {
+        branch_id: state.branchId,
+        display_name: $('#poswaiCustomerName').value.trim(),
+        phone: $('#poswaiCustomerPhone').value.trim(),
+      }));
+      showMemberCard(member); open('member');
+    } catch (error) { $('#poswaiCustomerError').textContent = error.message; }
+    finally { submit.disabled = false; submit.textContent = 'เข้าสู่ระบบ'; }
   });
   $('#poswaiLoginForm').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -570,6 +617,14 @@
     showLoginTab('owner');
   });
 
+  /* A card handed back by the server comes with what keeps this phone signed
+     in. Signing up at a table is therefore also signing in, which is what the
+     customer expects after giving their name and number. */
+  const signInMember = card => {
+    if (card?.token) { member = { ...card }; keepMemberToken(card.token); update(); }
+    return card;
+  };
+  const signOutMember = () => { member = null; keepMemberToken(''); update(); };
   const showMemberCard = card => {
     $('#poswaiMemberJoin').hidden = true;
     $('#poswaiMemberCard').hidden = false;
@@ -624,13 +679,15 @@
     if (submit.disabled) return;
     submit.disabled = true; submit.textContent = 'กำลังตรวจสอบ…';
     $('#poswaiMemberError').textContent = '';
-    try { showMemberCard(await joinMember()); }
+    try { showMemberCard(signInMember(await joinMember())); }
     catch (error) { $('#poswaiMemberError').textContent = error.message; }
     finally { submit.disabled = false; submit.textContent = 'สมัคร / ดูแต้ม'; }
   });
+  $('#poswaiMemberLogout').addEventListener('click', () => { signOutMember(); close(); });
   $('#poswaiCloseMember').addEventListener('click', close);
   $('#poswaiCloseMemberCard').addEventListener('click', close);
   const openMember = () => {
+    if (member) { showMemberCard(member); open('member'); return; }
     $('#poswaiMemberJoin').hidden = false;
     $('#poswaiMemberCard').hidden = true;
     $('#poswaiMemberError').textContent = '';
@@ -698,6 +755,15 @@
       if (response.ok) current = await response.json();
     } catch (_) { /* Offline pages retain local functionality without storing credentials. */ }
     update();
+    const saved = readMemberToken();
+    if (saved && !current) {
+      try {
+        const response = await fetch('/api/members/card', { cache: 'no-store',
+          headers: { 'X-Member-Token': saved } });
+        if (response.ok) { member = { ...(await response.json()), token: saved }; update(); }
+        else if (response.status === 401) keepMemberToken('');
+      } catch (_) { /* offline: the card simply waits for the next visit */ }
+    }
     if (ownerError) {
       dropOwnerParams();
       open('login');

@@ -3799,6 +3799,49 @@ class CounterMember(BaseModel):
     marketing_opt_in: bool = False
 
 
+# A membership unlocks nothing except its own points, so it is not a staff
+# session and gets no session cookie. The phone that signed in keeps the token,
+# and it lasts about as long as a paper stamp card would before the customer
+# has to give their name and number again.
+MEMBER_TOKEN_TTL_SECONDS = 180 * 24 * 3600
+
+
+def _member_signature(payload: bytes) -> str:
+    return hmac.new(TABLE_QR_SECRET.encode(), b"member:" + payload, hashlib.sha256).hexdigest()
+
+
+def _mint_member_token(member_id: int) -> str:
+    if len(TABLE_QR_SECRET) < 32:
+        raise HTTPException(503, "ยังไม่ได้ตั้งค่ากุญแจของร้าน")
+    payload = json.dumps({"m": member_id, "e": int(time.time()) + MEMBER_TOKEN_TTL_SECONDS,
+                          "s": CURRENT_SHOP.get()},
+                         sort_keys=True, separators=(",", ":")).encode()
+    encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
+    return encoded + "." + _member_signature(payload)
+
+
+def _signed_in_member(request: Request) -> int:
+    token = request.headers.get("x-member-token", "")
+    if len(TABLE_QR_SECRET) < 32 or len(token) > 512 or "." not in token:
+        raise HTTPException(401, "กรุณาเข้าสู่ระบบลูกค้าอีกครั้ง")
+    try:
+        encoded, signature = token.split(".", 1)
+        payload = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+        data = json.loads(payload)
+        if (not hmac.compare_digest(signature, _member_signature(payload))
+                or data["e"] < int(time.time())
+                or data.get("s", MAIN_SHOP) != CURRENT_SHOP.get()):
+            raise ValueError("Invalid member token")
+        return int(data["m"])
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(401, "กรุณาเข้าสู่ระบบลูกค้าอีกครั้ง")
+
+
+def _signed_in_card(conn: sqlite3.Connection, member_id: int) -> dict:
+    """The card plus what keeps the customer signed in on this phone."""
+    return {**_member_card(conn, member_id), "token": _mint_member_token(member_id)}
+
+
 def _clean_member_details(display_name: str, phone: str) -> tuple:
     name = display_name.strip()
     phone = re.sub(r"[\s-]", "", phone)
@@ -3854,9 +3897,10 @@ def register_member_from_table(req: SelfMember, request: Request):
                            (req.branch_id, phone)).fetchone()
         if row:
             if _same_person(row[1], name):
-                return _member_card(conn, row[0])
+                return _signed_in_card(conn, row[0])
             raise HTTPException(409, "เบอร์นี้เป็นสมาชิกอยู่แล้วในชื่ออื่น แจ้งพนักงานเพื่อดูแต้มได้เลย")
-    return _add_member(req.branch_id, name, phone, req.marketing_opt_in)
+    card = _add_member(req.branch_id, name, phone, req.marketing_opt_in)
+    return {**card, "token": _mint_member_token(card["member_id"])}
 
 
 def _same_person(stored: str, given: str) -> bool:
@@ -3864,6 +3908,41 @@ def _same_person(stored: str, given: str) -> bool:
     def squash(text):
         return re.sub(r"\s+", "", text or "").casefold()
     return squash(stored) == squash(given)
+
+
+class MemberLogin(BaseModel):
+    branch_id: int = 1
+    display_name: str
+    phone: str
+
+
+@app.post("/api/members/login")
+def sign_in_member(req: MemberLogin, request: Request):
+    """The customer's own door, next to the owner's and the staff's.
+
+    Everyone who sat down and signed up at a table had nowhere to go
+    afterwards: the only sign-in on offer was the shop's own, for its owner
+    and its staff, which is not theirs and which they cannot pass. A customer
+    has no password to type, so their own name and their own number are what
+    they give, and the phone keeps the card from then on.
+    """
+    name, phone = _clean_member_details(req.display_name, req.phone)
+    with closing(connect_db()) as conn:
+        row = conn.execute("SELECT id,display_name FROM crm_customers WHERE branch_id=? AND phone=?",
+                           (req.branch_id, phone)).fetchone()
+        if not row or not _same_person(row[1], name):
+            raise HTTPException(404, "ไม่พบสมาชิกที่ชื่อและเบอร์นี้ สมัครได้ที่โต๊ะ หรือแจ้งพนักงาน")
+        return _signed_in_card(conn, row[0])
+
+
+@app.get("/api/members/card")
+def read_member_card(request: Request):
+    """What the phone asks for when the app opens again days later."""
+    member_id = _signed_in_member(request)
+    with closing(connect_db()) as conn:
+        if not conn.execute("SELECT 1 FROM crm_customers WHERE id=?", (member_id,)).fetchone():
+            raise HTTPException(401, "กรุณาเข้าสู่ระบบลูกค้าอีกครั้ง")
+        return _member_card(conn, member_id)
 
 
 class PointChange(BaseModel):
