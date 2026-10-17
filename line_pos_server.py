@@ -2220,12 +2220,23 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
     return {"status": "paid", "order_nos": order_nos, "slip_reference": slip_reference}
 
 
+# Closing a bill without a machine-verified slip. The wording is stored in the
+# payment record and shown in reports, so these never blur into each other.
+MANUAL_CASH = "เงินสด (Cash)"
+MANUAL_PROMPTPAY = "พร้อมเพย์ (ยืนยันโดยพนักงาน)"
+MANUAL_PAYMENT_METHODS = (MANUAL_CASH, MANUAL_PROMPTPAY)
+
+
 @app.post("/api/payments/close")
 def close_payment(req: PaymentCreate, request: Request):
     if not math.isfinite(req.amount) or req.amount <= 0:
         raise HTTPException(400, "Invalid amount")
-    if req.method != "เงินสด (Cash)" or req.slip_reference:
-        raise HTTPException(501, "Use verified EasySlip flow for QR; other payment providers are not configured")
+    # Cash, and a transfer a member of staff has seen land in the shop's own
+    # bank app. The second one carries no slip reference by design: nothing was
+    # verified by machine, and the record should not pretend otherwise. Who
+    # pressed it is stored, so a shop can trace a wrong call back to a person.
+    if req.method not in MANUAL_PAYMENT_METHODS or req.slip_reference:
+        raise HTTPException(501, "ช่องทางนี้ยังไม่ได้เชื่อมผู้ให้บริการรับชำระเงิน")
     with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
         order = cur.execute("SELECT branch_id, status, total_amount FROM order_events WHERE order_no=?", (req.order_no,)).fetchone()

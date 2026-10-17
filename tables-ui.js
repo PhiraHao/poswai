@@ -353,7 +353,9 @@
       if (window.poswaiLiveData) await window.poswaiLiveData.refresh();
       window.setTimeout(() => { sheet.hidden = true; }, 2500);
     } catch (error) {
-      billStatus(error.message);
+      /* Whatever went wrong, the guest still wants to pay and leave. Tell them
+         the way that always works: show the slip to someone who works here. */
+      billStatus(`${error.message} · แจ้งพนักงานเพื่อปิดบิลให้ได้เลย`);
       button.disabled = false;
       button.textContent = 'ส่งสลิปและปิดบิล';
     }

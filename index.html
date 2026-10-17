@@ -1111,6 +1111,7 @@
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
               <button class="btn btn-line" onclick="confirmPaymentAndPrint('เงินสด (Cash)')">💵 เงินสด (เข้าลิ้นชัก)</button>
               <button class="btn btn-primary" onclick="showCashierPromptPayModal()">📲 สร้าง QR พร้อมเพย์</button>
+              <button class="btn btn-line" id="confirmTransferBtn" onclick="confirmBankTransferSeen()">🏦 โอนแล้ว · เห็นเงินเข้าบัญชี</button>
               <button class="btn btn-purple" onclick="confirmPaymentAndPrint('บัตรเครดิต/เดบิต (EDC)')">💳 บัตรเครดิต / เดบิต</button>
               <button class="btn btn-warning" onclick="confirmPaymentAndPrint('e-Wallet (TrueMoney/LINE Pay)')">📱 e-Wallet / สแกนจ่าย</button>
               <button class="btn btn-outline" onclick="printReceiptForTable(state.selectedCashierTable, 'ใบแจ้งหนี้ (Pre-Bill)', false)">🧾 พิมพ์ใบแจ้งหนี้</button>
@@ -3967,6 +3968,27 @@
       printReceiptForTable(tStr, "ใบแจ้งหนี้พร้อม QR ชำระเงิน", false);
     }
 
+    /* Closing a bill on a transfer nobody machine-checked. The question is
+       deliberately about the shop's own bank app, not about the picture the
+       customer is holding: a screenshot proves nothing. */
+    function confirmBankTransferSeen() {
+      const table = state.selectedCashierTable;
+      const total = getTableGrandTotalWithTax(table).grand;
+      if (!(total > 0)) { showToast("โต๊ะนี้ไม่มียอดค้างชำระ"); return; }
+      const ok = confirm(
+        `ปิดบิลโต๊ะ ${table} ยอด ฿${total.toFixed(2)} เป็นการโอนพร้อมเพย์
+
+` +
+        `เปิดแอปธนาคารของร้านแล้วเห็นเงินเข้าครบยอดนี้จริงหรือยัง
+` +
+        `อย่าดูจากรูปสลิปในมือถือลูกค้าอย่างเดียว รูปปลอมได้
+
+` +
+        `กดตกลงเมื่อเห็นเงินเข้าบัญชีร้านแล้วเท่านั้น`);
+      if (!ok) return;
+      confirmPaymentAndPrint("พร้อมเพย์ (ยืนยันโดยพนักงาน)");
+    }
+
     async function confirmPaymentAndPrint(method) {
       const tStr = state.selectedCashierTable;
       const calc = getTableGrandTotalWithTax(tStr);
@@ -3979,7 +4001,10 @@
         showToast("⚠️ ยังไม่มีระบบตรวจสลิปจริง กรุณาตรวจยืนยันกับธนาคารก่อนปิดบิล");
         return;
       }
-      if (method !== "เงินสด (Cash)") {
+      /* Cash, and a transfer a member of staff has confirmed seeing arrive.
+         Everything else still has no provider behind it, and the server
+         refuses those too. */
+      if (!["เงินสด (Cash)", "พร้อมเพย์ (ยืนยันโดยพนักงาน)"].includes(method)) {
         showToast("ช่องทางนี้ยังไม่ได้เชื่อมผู้ให้บริการรับชำระเงินจริง");
         return;
       }
@@ -4978,7 +5003,7 @@
   <script src="/billing-ui.js?v=49"></script>
   <script src="/qr.js?v=72"></script>
   <script src="/live-data.js?v=72"></script>
-  <script src="/tables-ui.js?v=72"></script>
+  <script src="/tables-ui.js?v=73"></script>
   <script src="/inventory-live.js?v=23"></script>
   <link rel="stylesheet" href="/commerce-ui.css?v=29">
   <script src="/commerce-ui.js?v=30"></script>
