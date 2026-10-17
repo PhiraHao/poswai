@@ -54,6 +54,7 @@ const ASSETS = [
   "/assets/landing/prompt-800-latin.woff2",
   "/payment-ui.js?v=21",
   "/billing-ui.js?v=49",
+  "/qr.js?v=71",
   "/live-data.js?v=71",
   "/tables-ui.js?v=70",
   "/inventory-live.js?v=23",

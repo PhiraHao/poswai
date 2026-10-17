@@ -2138,136 +2138,27 @@
       return payload + crc16CcittFalse(payload);
     }
 
-    const QR_VERSION_CAPACITY = [
-      null,
-      { size: 21, dataBytes: 19, ecBytes: 7, align: [] },
-      { size: 25, dataBytes: 34, ecBytes: 10, align: [6, 18] },
-      { size: 29, dataBytes: 55, ecBytes: 15, align: [6, 22] },
-      { size: 33, dataBytes: 80, ecBytes: 20, align: [6, 26] },
-      { size: 37, dataBytes: 108, ecBytes: 26, align: [6, 30] }
-    ];
-
-    function gfMul(x, y, exp, log) {
-      return (x === 0 || y === 0) ? 0 : exp[(log[x] + log[y]) % 255];
-    }
-
-    function computeReedSolomon(data, ecLen) {
-      const exp = new Array(512), log = new Array(256);
-      let x = 1;
-      for (let i = 0; i < 255; i++) {
-        exp[i] = x; log[x] = i; x <<= 1;
-        if (x & 0x100) x ^= 0x11d;
-      }
-      for (let i = 255; i < 512; i++) exp[i] = exp[i - 255];
-      let gen = [1];
-      for (let i = 0; i < ecLen; i++) {
-        const next = new Array(gen.length + 1).fill(0);
-        for (let j = 0; j < gen.length; j++) {
-          next[j] ^= gen[j];
-          next[j + 1] ^= gfMul(gen[j], exp[i], exp, log);
-        }
-        gen = next;
-      }
-      const msg = data.concat(new Array(ecLen).fill(0));
-      for (let i = 0; i < data.length; i++) {
-        const coef = msg[i];
-        if (coef !== 0) {
-          for (let j = 0; j < gen.length; j++) msg[i + j] ^= gfMul(gen[j], coef, exp, log);
-        }
-      }
-      return msg.slice(data.length);
-    }
-
+    /* The drawing half only. The encoding lives in qr.js, which follows the
+       standard; the one that used to live here produced symbols a camera
+       could find and no reader could decode. */
     function drawQrCodeOnCanvas(canvasId, text) {
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
+      if (!window.poswaiQr) throw new Error("ยังโหลดตัวสร้าง QR ไม่เสร็จ");
+      const modules = window.poswaiQr.modules(text);
+      const size = modules.length, quiet = 4;
       const ctx = canvas.getContext("2d");
-      const bytes = Array.from(text).map(c => c.charCodeAt(0) & 0xFF);
-      let ver = 5;
-      for (let v = 1; v <= 5; v++) {
-        if (bytes.length + 2 <= QR_VERSION_CAPACITY[v].dataBytes) { ver = v; break; }
-      }
-      const spec = QR_VERSION_CAPACITY[ver], size = spec.size;
-      const bits = [];
-      const pushBits = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
-      pushBits(4, 4); pushBits(bytes.length, 8);
-      for (const b of bytes) pushBits(b, 8);
-      while (bits.length % 8 !== 0) bits.push(0);
-      const dataCodewords = [];
-      for (let i = 0; i < bits.length; i += 8) {
-        let b = 0;
-        for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
-        dataCodewords.push(b);
-      }
-      let pad = true;
-      while (dataCodewords.length < spec.dataBytes) { dataCodewords.push(pad ? 0xEC : 0x11); pad = !pad; }
-      const allCodewords = dataCodewords.concat(computeReedSolomon(dataCodewords, spec.ecBytes));
-      const matrix = Array.from({ length: size }, () => new Array(size).fill(0));
-      const reserved = Array.from({ length: size }, () => new Array(size).fill(false));
-      const setMod = (r, c, val) => {
-        if (r >= 0 && r < size && c >= 0 && c < size) { matrix[r][c] = val ? 1 : 0; reserved[r][c] = true; }
-      };
-      const placeFinder = (row, col) => {
-        for (let r = -1; r <= 7; r++) {
-          for (let c = -1; c <= 7; c++) {
-            const isBorder = r === -1 || r === 7 || c === -1 || c === 7;
-            const isOuter = r === 0 || r === 6 || c === 0 || c === 6;
-            const isInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-            setMod(row + r, col + c, !isBorder && (isOuter || isInner));
-          }
-        }
-      };
-      placeFinder(0, 0); placeFinder(0, size - 7); placeFinder(size - 7, 0);
-      for (const r of spec.align) {
-        for (const c of spec.align) {
-          if ((r === 6 && c === 6) || (r === 6 && c === size - 7) || (r === size - 7 && c === 6)) continue;
-          for (let dr = -2; dr <= 2; dr++) {
-            for (let dc = -2; dc <= 2; dc++) setMod(r + dr, c + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
-          }
-        }
-      }
-      for (let i = 8; i < size - 8; i++) {
-        if (!reserved[6][i]) setMod(6, i, i % 2 === 0);
-        if (!reserved[i][6]) setMod(i, 6, i % 2 === 0);
-      }
-      for (let i = 0; i < 9; i++) { reserved[8][i] = true; reserved[i][8] = true; }
-      for (let i = 0; i < 8; i++) { reserved[8][size - 1 - i] = true; reserved[size - 1 - i][8] = true; }
-      setMod(size - 8, 8, 1);
-
-      let bitIdx = 0, upward = true;
-      for (let col = size - 1; col >= 1; col -= 2) {
-        if (col === 6) col = 5;
-        for (let cnt = 0; cnt < size; cnt++) {
-          const row = upward ? size - 1 - cnt : cnt;
-          for (let dx = 0; dx < 2; dx++) {
-            const c = col - dx;
-            if (!reserved[row][c]) {
-              let bit = 0;
-              if (bitIdx < allCodewords.length * 8) {
-                bit = (allCodewords[bitIdx >> 3] >> (7 - (bitIdx & 7))) & 1;
-                bitIdx++;
-              }
-              if ((row + c) % 2 === 0) bit ^= 1;
-              matrix[row][c] = bit;
-            }
-          }
-        }
-        upward = !upward;
-      }
-      const fmtBits = 0x77c4;
-      const fmt1 = [[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[8,7],[8,8],[7,8],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8]];
-      const fmt2 = [[size-1,8],[size-2,8],[size-3,8],[size-4,8],[size-5,8],[size-6,8],[size-7,8],[8,size-8],[8,size-7],[8,size-6],[8,size-5],[8,size-4],[8,size-3],[8,size-2],[8,size-1]];
-      for (let i = 0; i < 15; i++) {
-        const b = (fmtBits >> i) & 1;
-        matrix[fmt1[i][0]][fmt1[i][1]] = b;
-        matrix[fmt2[i][0]][fmt2[i][1]] = b;
-      }
-      const quiet = 3, scale = canvas.width / (size + quiet * 2);
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      /* Whole pixels per module, so no reader has to guess at a half-dark
+         edge, and the symbol is centred in whatever box it was given. */
+      const scale = Math.max(1, Math.floor(canvas.width / (size + quiet * 2)));
+      const drawn = size * scale;
+      const margin = Math.floor((canvas.width - drawn) / 2);
       ctx.fillStyle = "#00264d";
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
-          if (matrix[r][c]) ctx.fillRect(Math.floor((c + quiet) * scale), Math.floor((r + quiet) * scale), Math.ceil(scale), Math.ceil(scale));
+          if (modules[r][c]) ctx.fillRect(margin + c * scale, margin + r * scale, scale, scale);
         }
       }
     }
@@ -5077,6 +4968,7 @@
   <script src="/landing.js?v=43"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>
+  <script src="/qr.js?v=71"></script>
   <script src="/live-data.js?v=71"></script>
   <script src="/tables-ui.js?v=70"></script>
   <script src="/inventory-live.js?v=23"></script>
