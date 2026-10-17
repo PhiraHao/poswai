@@ -2045,8 +2045,20 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
         orders = []
         for row in conn.execute(query, params).fetchall():
             items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode FROM order_items WHERE order_no=?", (row[0],)).fetchall()
+            # What the kitchen has done with it, so a guest at the table can see
+            # whether the food is still waiting, cooking, or on its way.
+            tickets = [t[0] for t in conn.execute(
+                "SELECT status FROM kds_station_tickets WHERE order_no=?", (row[0],))]
+            if not tickets:
+                kitchen = "sent"
+            elif all(status == "ready" for status in tickets):
+                kitchen = "ready"
+            elif any(status == "held" for status in tickets):
+                kitchen = "held"
+            else:
+                kitchen = "cooking"
             orders.append({"order_no": row[0], "table_no": row[1], "total_amount": row[2],
-                           "status": row[3], "created_at": row[4],
+                           "status": row[3], "created_at": row[4], "kitchen": kitchen,
                            "items": [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3],
                                       "bom": json.loads(item[4]), "station": item[5],
                                       "courseMode": item[6]} for item in items]})

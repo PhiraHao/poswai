@@ -24,9 +24,22 @@
   callButton.className = 'service-call-primary';
   callButton.textContent = 'เรียกพนักงาน';
   callButton.addEventListener('click', () => sendTableServiceCall('เรียกพนักงานที่โต๊ะ'));
-  const searchRow = $('#menuSearchInput')?.parentElement;
-  if (searchRow) searchRow.append(callButton);
-  else cart.prepend(callButton);
+  /* On the same line as the category pills. Appended to the search row it
+     wrapped onto a line of its own on a phone and sat there looking like an
+     unfinished piece of the page. The pills scroll beside it; the button does
+     not scroll away, because calling someone over is the one thing a guest
+     may need in a hurry. */
+  const pills = document.getElementById('categoryPills');
+  if (pills && pills.parentElement) {
+    const row = document.createElement('div');
+    row.className = 'menu-filter-row';
+    pills.before(row);
+    row.append(callButton, pills);
+  } else {
+    const searchRow = $('#menuSearchInput')?.parentElement;
+    if (searchRow) searchRow.append(callButton);
+    else cart.prepend(callButton);
+  }
 
   const inbox = document.createElement('section');
   inbox.id = 'cashierServiceInbox';

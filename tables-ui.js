@@ -43,6 +43,24 @@
     /* The guest's own bill, opened from the ordering screen. */
 '.tbl-bill-open{display:block;width:100%;margin:10px 0 0;padding:13px 18px;background:#141b24;color:#ffc928;',
     'border:0;border-radius:11px;font-weight:700;cursor:pointer;font-size:.95rem}',
+    /* A bar built for the guest, not the staff nav filtered down to one */
+    '.tbl-bar{position:fixed;left:0;right:0;bottom:0;z-index:65;display:grid;grid-template-columns:repeat(3,1fr);',
+    'background:#fff;border-top:1px solid #e5e7eb;box-shadow:0 -6px 20px #11182714;padding-bottom:env(safe-area-inset-bottom)}',
+    '.tbl-bar button{display:grid;justify-items:center;gap:3px;padding:9px 4px 10px;background:none;border:0;cursor:pointer;',
+    'color:#6b7280;font-size:.72rem;font-weight:700;line-height:1.3;position:relative}',
+    '.tbl-bar button.on{color:#141b24}',
+    '.tbl-bar .glyph{font-size:1.2rem;line-height:1}',
+    '.tbl-bar .dot{position:absolute;top:5px;right:calc(50% - 20px);min-width:17px;height:17px;border-radius:999px;',
+    'background:#c0372b;color:#fff;font-size:.66rem;display:grid;place-items:center;padding:0 4px}',
+    '.tbl-order{border:1px solid #e9edf2;border-radius:13px;padding:12px;margin:0 0 10px}',
+    '.tbl-order-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px}',
+    '.tbl-order-head strong{font-size:.9rem}',
+    '.tbl-order small{color:#6b7280;font-size:.78rem}',
+    '.tbl-chip{padding:3px 10px;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap}',
+    '.tbl-chip.sent{background:#eef2f7;color:#44536a}.tbl-chip.held{background:#fff3cd;color:#8a6100}',
+    '.tbl-chip.cooking{background:#fff0e6;color:#9a4b00}.tbl-chip.ready{background:#e8f6ed;color:#15803d}',
+    '.tbl-order-wrong{margin-top:9px;width:100%;padding:9px;background:#fdeae7;color:#c0372b;border:0;',
+    'border-radius:9px;font-weight:700;cursor:pointer;font-size:.82rem}',
     '.tbl-sheet{position:fixed;inset:0;z-index:70;background:#0009;display:grid;place-items:end center}',
     '.tbl-sheet[hidden]{display:none}',
     '.tbl-sheet-body{background:#fff;width:min(560px,100%);max-height:88vh;overflow:auto;border-radius:20px 20px 0 0;padding:20px 20px 150px}',
@@ -240,7 +258,7 @@
   sheet.innerHTML = `<div class="tbl-sheet-body">
     <div class="tbl-sheet-head"><h3>บิลโต๊ะ <span id="tblBillTable"></span></h3>
       <button type="button" class="ghost" id="tblBillClose">ปิด</button></div>
-    <div id="tblBillLines"></div>
+    <div id="tblOrderList"></div>
     <div class="tbl-total"><span>ยอดที่ต้องชำระ</span><span id="tblBillTotal">฿0.00</span></div>
     <div class="tbl-pay" id="tblPayBox"></div>
     <p id="tblBillStatus" role="status" style="margin:12px 0 0;color:#6b7280"></p>
@@ -254,7 +272,7 @@
   const loadBill = async () => {
     const table = tableNo();
     sheet.querySelector('#tblBillTable').textContent = table;
-    const lines = sheet.querySelector('#tblBillLines');
+    const lines = sheet.querySelector('#tblOrderList');
     const payBox = sheet.querySelector('#tblPayBox');
     lines.replaceChildren();
     payBox.replaceChildren();
@@ -271,21 +289,73 @@
       empty.className = 'tbl-empty';
       empty.textContent = 'โต๊ะนี้ยังไม่มีรายการค้างชำระ';
       lines.append(empty);
+      updateBadge();
       return;
     }
     for (const order of bill.orders) {
-      for (const item of order.items || []) {
-        const row = document.createElement('div');
-        row.className = 'tbl-line';
-        const name = document.createElement('span');
-        name.textContent = `${item.name} × ${Number(item.qty)}`;
-        const price = document.createElement('span');
-        price.textContent = money(Number(item.price) * Number(item.qty));
-        row.append(name, price);
-        lines.append(row);
-      }
+      lines.append(orderCard(order));
     }
     renderPay(payBox);
+    updateBadge();
+  };
+
+  const KITCHEN = {
+    sent: ['ส่งเข้าครัวแล้ว', 'sent'],
+    held: ['พักไว้ก่อน', 'held'],
+    cooking: ['กำลังทำ', 'cooking'],
+    ready: ['พร้อมเสิร์ฟ', 'ready'],
+  };
+
+  /* One order the guest placed, with what the kitchen has done about it and
+     a way out if they ordered the wrong thing. The guest never cancels the
+     order themselves: the food may already be in a pan, and only the shop
+     can decide that. So this raises a call, exactly like waving a hand. */
+  const orderCard = order => {
+    const card = document.createElement('article');
+    card.className = 'tbl-order';
+    const head = document.createElement('div');
+    head.className = 'tbl-order-head';
+    const left = document.createElement('div');
+    const code = document.createElement('strong');
+    code.textContent = window.shortOrderNo ? window.shortOrderNo(order.order_no) : order.order_no;
+    const when = document.createElement('small');
+    when.textContent = ' · ' + new Date(order.created_at + 'Z').toLocaleTimeString('th-TH', {hour: '2-digit', minute: '2-digit'});
+    left.append(code, when);
+    const [label, tone] = KITCHEN[order.kitchen] || KITCHEN.sent;
+    const chip = document.createElement('span');
+    chip.className = 'tbl-chip ' + tone;
+    chip.textContent = label;
+    head.append(left, chip);
+    card.append(head);
+    for (const item of order.items || []) {
+      const row = document.createElement('div');
+      row.className = 'tbl-line';
+      const name = document.createElement('span');
+      name.textContent = `${item.name} × ${Number(item.qty)}`;
+      const price = document.createElement('span');
+      price.textContent = money(Number(item.price) * Number(item.qty));
+      row.append(name, price);
+      card.append(row);
+    }
+    if (order.kitchen !== 'ready') {
+      const wrong = document.createElement('button');
+      wrong.type = 'button';
+      wrong.className = 'tbl-order-wrong';
+      wrong.textContent = 'สั่งผิด? แจ้งพนักงาน';
+      wrong.addEventListener('click', async () => {
+        wrong.disabled = true;
+        const short = window.shortOrderNo ? window.shortOrderNo(order.order_no) : order.order_no;
+        try {
+          await window.sendTableServiceCall(`ขอแก้ไขออเดอร์ ${short}`);
+          wrong.textContent = 'แจ้งพนักงานแล้ว กำลังมาหาคุณ';
+        } catch (error) {
+          wrong.disabled = false;
+          billStatus(error.message);
+        }
+      });
+      card.append(wrong);
+    }
+    return card;
   };
 
   const renderPay = box => {
@@ -361,7 +431,65 @@
     }
   };
 
-  openButton.addEventListener('click', () => { sheet.hidden = false; loadBill(); });
+  openButton.addEventListener('click', () => openSheet('orders'));
+
+  /* The guest's own bottom bar. The staff navigation filtered down to the one
+     tab a customer may open, left-aligned and alone, looked like a half-built
+     screen; this is four things a person at a table actually wants. */
+  const bar = document.createElement('nav');
+  bar.className = 'tbl-bar';
+  bar.hidden = true;
+  bar.setAttribute('aria-label', 'เมนูลูกค้า');
+  const TABS = [
+    {key: 'menu', glyph: '🍽️', label: 'สั่งอาหาร'},
+    {key: 'orders', glyph: '🧾', label: 'ออเดอร์ของฉัน'},
+    {key: 'pay', glyph: '💳', label: 'จ่ายเงิน'},
+  ];
+  const barButtons = {};
+  for (const tab of TABS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    const glyph = document.createElement('span');
+    glyph.className = 'glyph';
+    glyph.textContent = tab.glyph;
+    const label = document.createElement('span');
+    label.textContent = tab.label;
+    button.append(glyph, label);
+    button.addEventListener('click', () => pickTab(tab.key));
+    barButtons[tab.key] = button;
+    bar.append(button);
+  }
+  const badge = document.createElement('span');
+  badge.className = 'dot';
+  badge.hidden = true;
+  barButtons.orders.append(badge);
+
+  const updateBadge = () => {
+    const waiting = bill.orders.filter(order => order.kitchen !== 'ready').length;
+    badge.textContent = String(waiting);
+    badge.hidden = waiting === 0;
+  };
+
+  const markTab = key => {
+    for (const tab of TABS) barButtons[tab.key].classList.toggle('on', tab.key === key);
+  };
+
+  const openSheet = where => {
+    sheet.hidden = false;
+    markTab(where);
+    loadBill().then(() => {
+      const body = sheet.querySelector('.tbl-sheet-body');
+      const target = where === 'pay' ? sheet.querySelector('#tblPayBox') : null;
+      body.scrollTop = target ? target.offsetTop - 70 : 0;
+    });
+  };
+
+  const pickTab = async key => {
+    if (key === 'menu') { sheet.hidden = true; markTab('menu'); window.scrollTo({top: 0, behavior: 'smooth'}); return; }
+    openSheet(key);
+  };
+  sheet.addEventListener('click', event => { if (event.target === sheet) markTab('menu'); });
+  sheet.querySelector('#tblBillClose').addEventListener('click', () => markTab('menu'));
 
   /* ---- mounting -------------------------------------------------------- */
   const mount = () => {
@@ -408,8 +536,17 @@
     if (!panel.hidden && !tables.length) load();
     /* The guest's button belongs to a phone that scanned a sticker, not to a
        member of staff looking at the same screen. */
-    openButton.hidden = !tableToken() || !!window.poswaiAuth?.current;
-    if (openButton.hidden) sheet.hidden = true;
+    const guest = !!tableToken() && !window.poswaiAuth?.current;
+    openButton.hidden = !guest;
+    if (!guest) sheet.hidden = true;
+    bar.hidden = !guest;
+    if (!bar.parentElement) document.body.append(bar);
+    /* The staff navigation has nothing left for a guest once it is filtered,
+       so it steps aside rather than sitting there with a single lonely tab. */
+    const staffNav = document.querySelector('.role-tabs-wrap');
+    if (staffNav) staffNav.hidden = guest;
+    document.body.classList.toggle('tbl-guest', guest);
+    if (guest) markTab('menu');
     lockTable();
   };
 
