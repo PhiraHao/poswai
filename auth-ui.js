@@ -10,6 +10,15 @@
   const ownerFlow = (new URLSearchParams(location.search).get('owner') || '').trim();
   /* Set by the customer sign-in callback: the card itself lives in a cookie. */
   const signedInWithAccount = new URLSearchParams(location.search).get('member') === 'in';
+  /* Set by the staff sign-in callback. */
+  const staffFlow = (new URLSearchParams(location.search).get('staff') || '').trim();
+  const staffError = (new URLSearchParams(location.search).get('staff_error') || '').trim();
+  const STAFF_ERRORS = {
+    unlinked: 'บัญชีนี้ยังไม่ได้ผูกกับรหัสพนักงานคนไหน เข้าด้วยรหัสกับ PIN ก่อน แล้วค่อยผูกในหน้าบัญชีของฉัน',
+    taken: 'บัญชีนี้ผูกกับพนักงานคนอื่นอยู่แล้ว',
+    inactive: 'บัญชีพนักงานนี้ถูกปิดใช้งานแล้ว',
+    locked: 'บัญชีนี้ถูกระงับสิทธิ์สำหรับกะวันนี้',
+  };
   const ownerError = (new URLSearchParams(location.search).get('owner_error') || '').trim();
   const OWNER_ERRORS = {
     state: 'คำขอเข้าสู่ระบบหมดอายุหรือไม่ถูกต้อง กรุณากดเข้าสู่ระบบอีกครั้ง',
@@ -102,6 +111,12 @@
       </div>
 
       <div data-login-pane="staff" hidden>
+        <div class="poswai-channels" id="poswaiStaffChannels">
+          <button type="button" class="poswai-channel line" data-staff-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>เข้าสู่ระบบด้วย LINE</button>
+          <button type="button" class="poswai-channel google" data-staff-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>เข้าสู่ระบบด้วย Google</button>
+        </div>
+        <p class="poswai-auth-hint" id="poswaiStaffChannelHint">ใช้ได้หลังผูกบัญชีไว้กับรหัสพนักงานของตัวเองแล้ว ครั้งแรกเข้าด้วย PIN ก่อน</p>
+        <div class="poswai-or" id="poswaiStaffOr"><span>หรือ</span></div>
         <div class="poswai-device-shop" id="poswaiDeviceShop" hidden>
           <span id="poswaiDeviceShopName"></span>
           <button type="button" id="poswaiChangeShop">เปลี่ยนร้าน</button>
@@ -159,6 +174,16 @@
         <ul id="poswaiMemberHistory"></ul>
         <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiMemberLogout">ออกจากระบบ</button><button class="poswai-auth-secondary" type="button" id="poswaiCloseMemberCard">ปิด</button></div>
       </div>
+    </div>
+    <div id="poswaiAccountPanel" hidden>
+      <p class="poswai-auth-hint" id="poswaiAccountWho"></p>
+      <div class="poswai-channels" id="poswaiStaffLinkChannels">
+        <button type="button" class="poswai-channel line" data-staff-link-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>ผูกบัญชี LINE</button>
+        <button type="button" class="poswai-channel google" data-staff-link-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>ผูกบัญชี Google</button>
+      </div>
+      <p class="poswai-auth-error" id="poswaiAccountError" role="alert"></p>
+      <p class="poswai-auth-switch" id="poswaiAccountManageRow" hidden>ดูแลทีมงาน? <button type="button" id="poswaiOpenManager">จัดการบัญชีพนักงาน</button></p>
+      <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiAccountLogout">ออกจากระบบ</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
     </div>
     <div id="poswaiManagerPanel" hidden>
       <form id="poswaiStaffForm">
@@ -296,10 +321,16 @@
     signup: ['เปิดร้านของคุณ', 'ใช้ฟรี 30 วัน ไม่ต้องใส่บัตรเครดิต', '#poswaiShopName'],
     member: ['สมาชิกร้าน', 'สะสมแต้มทุกครั้งที่ซื้อ · เคยสมัครแล้วกรอกชื่อกับเบอร์เดิมเพื่อดูแต้ม', '#poswaiMemberPhone'],
     chooser: ['เลือกร้านที่จะเข้า', 'บัญชีของคุณเป็นเจ้าของหลายร้าน', '#poswaiChooserList'],
+    account: ['บัญชีของฉัน', 'ผูกบัญชีไว้ครั้งเดียว ครั้งหน้ากดเข้าได้เลยไม่ต้องพิมพ์ PIN', '#poswaiAccountLogout'],
   };
   const open = (panel = 'login') => {
     if (panel === true) panel = 'manager';
     if (panel === 'manager') { showCreateForm(); loadOwnerAccounts(); }
+    if (panel === 'account') {
+      $('#poswaiAccountWho').textContent = current ? `${current.name} · ${ROLE_NAMES[current.role] || current.role}` : '';
+      $('#poswaiAccountError').textContent = '';
+      $('#poswaiAccountManageRow').hidden = !['owner', 'manager'].includes(current?.role);
+    }
     if (panel === 'login') showLoginTab(tableToken ? 'member' : device.shop ? 'staff' : 'owner');
     $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
     if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
@@ -354,10 +385,28 @@
   accountButton.addEventListener('click', async () => {
     if (!current && member) { showMemberCard(member); open('member'); return; }
     if (!current) { open(); return; }
-    if (current.role === 'manager' || current.role === 'owner') { open(true); return; }
-    if (confirm(`ออกจากระบบ ${current.name}?`)) {
-      await api('/api/auth/logout', {}); current = null; update(); open();
-    }
+    open('account');
+  });
+  $('#poswaiOpenManager').addEventListener('click', () => open(true));
+  $('#poswaiAccountLogout').addEventListener('click', async () => {
+    await api('/api/auth/logout', {}); current = null; update(); open();
+  });
+  const staffChannelHref = (channel, mode) => {
+    const query = new URLSearchParams({ shop: shop.slug });
+    if (mode) query.set('mode', mode);
+    return `/api/staff/auth/${channel}/start?${query}`;
+  };
+  $('#poswaiStaffChannels').addEventListener('click', event => {
+    const button = event.target.closest('[data-staff-channel]');
+    if (!button) return;
+    $('#poswaiLoginError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[button.dataset.staffChannel]}…`;
+    location.href = staffChannelHref(button.dataset.staffChannel);
+  });
+  $('#poswaiStaffLinkChannels').addEventListener('click', event => {
+    const button = event.target.closest('[data-staff-link-channel]');
+    if (!button) return;
+    $('#poswaiAccountError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[button.dataset.staffLinkChannel]}…`;
+    location.href = staffChannelHref(button.dataset.staffLinkChannel, 'link');
   });
   $('#poswaiCustomerForm').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -429,6 +478,8 @@
     $('#poswaiShopCode').focus();
   });
   const CHANNEL_NAMES = {line: 'LINE', google: 'Google', facebook: 'Facebook'};
+  const ROLE_NAMES = {owner: 'เจ้าของร้าน', manager: 'ผู้จัดการ', cashier: 'แคชเชียร์',
+    kitchen: 'ครัว', service: 'บริการ', staff: 'พนักงาน'};
   overlay.querySelector('[data-login-pane="owner"] .poswai-channels').addEventListener('click', event => {
     const button = event.target.closest('[data-channel]');
     if (!button) return;
@@ -519,10 +570,13 @@
     `บัญชี ${CHANNEL_NAMES[account?.provider] || ''}`.trim();
   const dropOwnerParams = () => {
     const query = new URLSearchParams(location.search);
-    if (!query.has('owner') && !query.has('owner_error') && !query.has('member')) return;
+    if (!query.has('owner') && !query.has('owner_error') && !query.has('member')
+        && !query.has('staff') && !query.has('staff_error')) return;
     query.delete('owner');
     query.delete('owner_error');
     query.delete('member');
+    query.delete('staff');
+    query.delete('staff_error');
     const rest = query.toString();
     history.replaceState(history.state, '', `${location.pathname}${rest ? `?${rest}` : ''}`);
   };
@@ -768,9 +822,12 @@
     channels = config.login_channels || channels;
     for (const button of overlay.querySelectorAll('[data-member-channel]'))
       button.hidden = !channels[button.dataset.memberChannel];
-    const noMemberChannels = !channels.line && !channels.google;
-    $('#poswaiMemberChannels').hidden = noMemberChannels;
-    $('#poswaiMemberOr').hidden = noMemberChannels;
+    for (const button of overlay.querySelectorAll('[data-staff-channel],[data-staff-link-channel]'))
+      button.hidden = !channels[button.dataset.staffChannel || button.dataset.staffLinkChannel];
+    const noChannels = !channels.line && !channels.google;
+    for (const id of ['#poswaiMemberChannels', '#poswaiMemberOr', '#poswaiStaffChannels',
+                      '#poswaiStaffOr', '#poswaiStaffChannelHint', '#poswaiStaffLinkChannels'])
+      $(id).hidden = noChannels;
     live = !preview || !!config.staff_live;
     if (shop.is_demo) sessionStorage.setItem('poswaiPreviewPeek', '1');
     window.dispatchEvent(new CustomEvent('poswai:shop-ready', { detail: shop }));
@@ -798,6 +855,19 @@
           if (signedInWithAccount) { showMemberCard(member); open('member'); }
         } else if (response.status === 401) keepMemberToken('');
       } catch (_) { /* offline: the card simply waits for the next visit */ }
+    }
+    if (staffError || staffFlow) {
+      dropOwnerParams();
+      if (staffError) {
+        open('login'); showLoginTab('staff');
+        $('#poswaiLoginError').textContent = STAFF_ERRORS[staffError] || STAFF_ERRORS.unlinked;
+        return;
+      }
+      if (staffFlow === 'linked') {
+        open('account');
+        $('#poswaiAccountError').textContent = 'ผูกบัญชีแล้ว ครั้งหน้ากดเข้าสู่ระบบด้วยบัญชีนี้ได้เลย';
+      }
+      return;
     }
     if (ownerError) {
       dropOwnerParams();

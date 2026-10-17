@@ -1,4 +1,4 @@
-"""Owners signing in with a LINE or Google account instead of a shop code.
+"""Owners and staff signing in with a LINE or Google account instead of typing a PIN.
 
 The providers are stood in for at the one place the server talks to them, so the
 state, nonce and claim checks are the real ones under test.
@@ -118,6 +118,16 @@ class OwnerAccountTest(unittest.TestCase):
 
     def destination(self, response):
         return response.headers.get("location", "")
+
+    def staff_sign_in(self, client, provider="line", **params):
+        """Send a member of staff out through a provider and bring them back."""
+        response = client.get(f"/api/staff/auth/{provider}/start", params=params,
+                              follow_redirects=False)
+        self.assertEqual(response.status_code, 302, response.text)
+        query = parse_qs(urlsplit(response.headers["location"]).query)
+        if provider == "google":
+            self.google["nonce"] = query["nonce"][0]
+        return self.callback(client, provider, state=query["state"][0])
 
     # -------------------------------------------------------- refusing bad paths
     def test_a_channel_without_keys_cannot_be_started(self):
@@ -324,6 +334,52 @@ class OwnerAccountTest(unittest.TestCase):
         self.signup(other, "ban-suan", name="ร้านสวน")
         self.assertEqual(other.get("/api/shop/owner-accounts").json()["accounts"], [])
         self.assertEqual(self.client().get("/api/shop/owner-accounts").status_code, 401)
+
+
+    def test_staff_bind_an_account_once_and_then_skip_the_pin(self):
+        """A PIN typed on a counter in front of customers, every shift.
+
+        Binding needs the PIN first, so the account only ever reaches a till
+        its holder could already open."""
+        till = self.client()
+        self.assertEqual(till.post("/api/auth/login",
+                                   json={"staff_id": 1, "pin": "main-owner-pin"}).status_code, 200)
+        linked = self.staff_sign_in(till, mode="link")
+        self.assertIn("staff=linked", self.destination(linked))
+
+        tomorrow = self.client()
+        back = self.staff_sign_in(tomorrow)
+        self.assertIn("staff=in", self.destination(back))
+        session = tomorrow.get("/api/auth/session")
+        self.assertEqual(session.status_code, 200, session.text)
+        self.assertEqual(session.json()["staff_id"], 1)
+
+    def test_an_account_nobody_bound_opens_no_till(self):
+        stranger = self.client()
+        response = self.staff_sign_in(stranger)
+        self.assertIn("staff_error=unlinked", self.destination(response))
+        self.assertEqual(stranger.get("/api/auth/session").status_code, 401)
+
+    def test_an_account_already_bound_is_not_handed_to_a_second_person(self):
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute("INSERT INTO staffs(id,branch_id,name,role,pin_code_hash) "
+                         "VALUES(2,1,'คนที่สอง','cashier',?)", (server.hash_pin("second-staff-pin"),))
+        first = self.client()
+        first.post("/api/auth/login", json={"staff_id": 1, "pin": "main-owner-pin"})
+        self.staff_sign_in(first, mode="link")
+
+        second = self.client()
+        second.post("/api/auth/login", json={"staff_id": 2, "pin": "second-staff-pin"})
+        self.assertIn("staff_error=taken", self.destination(self.staff_sign_in(second, mode="link")))
+        with sqlite3.connect(server.DB_PATH) as conn:
+            bound = conn.execute("SELECT id FROM staffs WHERE social_id IS NOT NULL").fetchall()
+        self.assertEqual(bound, [(1,)])
+
+    def test_binding_an_account_needs_the_pin_first(self):
+        stranger = self.client()
+        response = stranger.get("/api/staff/auth/line/start", params={"mode": "link"},
+                                follow_redirects=False)
+        self.assertEqual(response.status_code, 401)
 
 
 class OwnerSignInPageTest(unittest.TestCase):

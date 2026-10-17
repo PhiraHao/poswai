@@ -97,7 +97,7 @@ def start_login(main_db: Path, *, provider: str, mode: str = "login", slug: str 
     """Record one sign-in attempt and return the state and nonce to send out."""
     if provider not in PROVIDERS:
         raise OwnerAuthError("provider", "ช่องทางเข้าสู่ระบบนี้ไม่มีในระบบ", 404)
-    if mode not in ("login", "link", "member"):
+    if mode not in ("login", "link", "member", "staff", "staff_link"):
         raise OwnerAuthError("mode", "คำขอเข้าสู่ระบบไม่ถูกต้อง", 400)
     state, nonce = secrets.token_urlsafe(32), secrets.token_urlsafe(24)
     now = int(time.time())

@@ -410,6 +410,12 @@ def init_db() -> None:
         """
     )
 
+    # "line:U1234", "google:5678": the account a member of staff signs in with
+    # instead of typing their PIN on a busy counter.
+    if "social_id" not in {row[1] for row in cur.execute("PRAGMA table_info(staffs)")}:
+        cur.execute("ALTER TABLE staffs ADD COLUMN social_id TEXT")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS staff_social_identity ON staffs(social_id)"
+                " WHERE social_id IS NOT NULL")
     cur.execute("""CREATE TABLE IF NOT EXISTS inventory (
         branch_id INTEGER NOT NULL, ingredient_id TEXT NOT NULL, stock REAL NOT NULL DEFAULT 0,
         PRIMARY KEY (branch_id, ingredient_id))""")
@@ -754,14 +760,15 @@ class LoginRequest(BaseModel):
     shop: Optional[str] = None
 
 
-def _open_session(request: Request, response: Response, conn: sqlite3.Connection, staff_id: int) -> int:
+def _open_session(request: Request, response: Response, conn: sqlite3.Connection, staff_id: int,
+                  samesite: str = "strict") -> int:
     token = secrets.token_hex(32)
     expires = int(time.time()) + SESSION_LIFETIME
     conn.execute("DELETE FROM auth_sessions WHERE staff_id=? OR expires_at<=?", (staff_id, int(time.time())))
     conn.execute("INSERT INTO auth_sessions (token_hash,staff_id,expires_at) VALUES (?,?,?)",
                  (hashlib.sha256(token.encode()).hexdigest(), staff_id, expires))
     response.set_cookie("poswai_session", token, max_age=SESSION_LIFETIME, httponly=True,
-                        secure=_secure(request), samesite="strict", path="/")
+                        secure=_secure(request), samesite=samesite, path="/")
     return expires
 
 
@@ -3400,6 +3407,73 @@ def _finish_member_login(request: Request, slug: str, identity: dict) -> Redirec
     return response
 
 
+@app.get("/api/staff/auth/{provider}/start")
+def staff_login_start(provider: str, request: Request, mode: str = "login"):
+    """Sign a member of staff in with their own account, or — with mode=link —
+    bind that account to the staff record already signed in here.
+
+    Binding needs the PIN first, so an account only ever reaches the till that
+    its owner could already open."""
+    client_id, client_secret = _provider_credentials(provider)
+    if not client_id or not client_secret:
+        raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
+    slug = CURRENT_SHOP.get()
+    if slug == DEMO_SHOP:
+        raise HTTPException(403, "ร้านตัวอย่างไม่มีบัญชีพนักงาน")
+    staff_id = require_staff(request)["id"] if mode == "link" else None
+    try:
+        handshake = owner_auth.start_login(DB_PATH, provider=provider,
+                                           mode="staff_link" if mode == "link" else "staff",
+                                           slug=slug, staff_id=staff_id)
+    except owner_auth.OwnerAuthError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+    return RedirectResponse(owner_auth.authorize_url(
+        provider, client_id=client_id, redirect_uri=_owner_redirect_uri(request, provider),
+        state=handshake["state"], nonce=handshake["nonce"]), status_code=302)
+
+
+def _staff_landing(slug: str, outcome: str) -> RedirectResponse:
+    return RedirectResponse(f"/?shop={slug}&{outcome}", status_code=303)
+
+
+def _finish_staff_login(request: Request, pending: dict, identity: dict) -> RedirectResponse:
+    """Finish a staff sign-in that went out through a provider.
+
+    The callback carries no shop, so the slug recorded when it began is what
+    says whose till this is."""
+    slug = pending["slug"] or MAIN_SHOP
+    social_id = f"{identity['provider']}:{identity['external_id']}"
+    linking = pending["mode"] == "staff_link"
+    shop_token = CURRENT_SHOP.set(slug)
+    try:
+        with closing(connect_db()) as conn, conn:
+            conn.row_factory = sqlite3.Row
+            held = conn.execute("SELECT id FROM staffs WHERE social_id=?", (social_id,)).fetchone()
+            if linking:
+                if held and held["id"] != int(pending["staff_id"] or 0):
+                    return _staff_landing(slug, "staff_error=taken")
+                conn.execute("UPDATE staffs SET social_id=? WHERE id=?",
+                             (social_id, int(pending["staff_id"] or 0)))
+                return _staff_landing(slug, "staff=linked")
+            if not held:
+                return _staff_landing(slug, "staff_error=unlinked")
+            row = conn.execute("SELECT id,is_active FROM staffs WHERE id=?", (held["id"],)).fetchone()
+            if not row["is_active"]:
+                return _staff_landing(slug, "staff_error=inactive")
+            today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
+            if conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
+                            (row["id"], today)).fetchone():
+                return _staff_landing(slug, "staff_error=locked")
+            response = _staff_landing(slug, "staff=in")
+            # "lax", not the PIN login's "strict": the browser arrives here from
+            # the provider's own page, and a strict cookie would not come back.
+            _open_session(request, response, conn, row["id"], samesite="lax")
+    finally:
+        CURRENT_SHOP.reset(shop_token)
+    _remember_shop(request, response, slug)
+    return response
+
+
 @app.get("/api/owner/auth/{provider}/callback")
 def owner_login_callback(provider: str, request: Request, code: str = "", state: str = "",
                          error: str = ""):
@@ -3418,6 +3492,8 @@ def owner_login_callback(provider: str, request: Request, code: str = "", state:
         account = owner_auth.upsert_account(DB_PATH, identity)
     except owner_auth.OwnerAuthError as exc:
         return _owner_failure(exc.code)
+    if pending["mode"] in ("staff", "staff_link"):
+        return _finish_staff_login(request, pending, identity)
     if pending["mode"] == "member":
         return _finish_member_login(request, pending["slug"] or MAIN_SHOP, identity)
     if pending["mode"] == "link":
