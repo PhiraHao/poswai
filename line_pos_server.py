@@ -35,7 +35,7 @@ from contextlib import closing
 from contextvars import ContextVar
 from typing import List, Optional
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -47,8 +47,9 @@ from poswai_commissions import allocate_commissions
 from poswai_inventory import (InventoryError, apply_inventory_movement,
                               init_inventory_movements, list_inventory_movements)
 from easyslip import SlipVerificationError, verify_bank_slip
-from poswai_catalog import (CatalogError, deduct_inventory, init_catalog,
-                            list_menu_items, quote_order, upsert_menu_item, STATIONS)
+from poswai_catalog import (CatalogError, deduct_inventory, delete_menu_item, init_catalog,
+                            list_menu_categories, list_menu_items, quote_order,
+                            set_menu_photo, upsert_menu_item, STATIONS, TAX_MODES)
 from poswai_dossier import (DossierError, add_asset, add_timeline_entry, branch_summary,
                             init_dossier, read_dossier, return_asset, set_document,
                             update_profile)
@@ -407,6 +408,12 @@ def init_db() -> None:
     cur.execute("""CREATE TABLE IF NOT EXISTS inventory (
         branch_id INTEGER NOT NULL, ingredient_id TEXT NOT NULL, stock REAL NOT NULL DEFAULT 0,
         PRIMARY KEY (branch_id, ingredient_id))""")
+    # A recipe says "120"; the unit says whether that is grams or bottles.
+    inventory_columns = {row[1] for row in cur.execute("PRAGMA table_info(inventory)")}
+    if "unit" not in inventory_columns:
+        cur.execute("ALTER TABLE inventory ADD COLUMN unit TEXT NOT NULL DEFAULT 'หน่วย'")
+    if "reorder_point" not in inventory_columns:
+        cur.execute("ALTER TABLE inventory ADD COLUMN reorder_point REAL NOT NULL DEFAULT 0")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_items (
         order_no TEXT NOT NULL, item_id TEXT NOT NULL, name TEXT NOT NULL,
         quantity REAL NOT NULL, unit_price REAL NOT NULL, bom_json TEXT NOT NULL)""")
@@ -1042,6 +1049,9 @@ class OrderItem(BaseModel):
     qty: float
     bom: list[dict] = []
     course_mode: str = "FIRE"
+    # Priced and deducted from the shop's own topping list, never from these.
+    addons: list[str] = []
+    level: str = ""
 
 
 class OrderCreate(BaseModel):
@@ -1067,6 +1077,15 @@ class MenuUpsert(BaseModel):
     bom: list[dict] = []
     active: bool = True
     station: str = "ครัวร้อน"
+    category: str = ""
+    description: str = ""
+    cost: float = 0
+    tax_mode: str = "included"
+    service_charge: bool = False
+    sold_out: bool = False
+    option_title: str = ""
+    levels: list[str] = []
+    addons: list[dict] = []
 
 
 @app.get("/api/menu")
@@ -1092,22 +1111,180 @@ def put_menu_item(item_id: str, item: MenuUpsert, request: Request):
                     if not conn.execute("SELECT 1 FROM inventory WHERE branch_id=? AND ingredient_id=?",
                                         (item.branch_id, part.get("ingId"))).fetchone():
                         raise CatalogError("Add ingredient stock before activating Songwai menu", 409)
-            return upsert_menu_item(conn, item.branch_id, item_id, item.name, item.price, item.bom, item.active, item.station)
+            return upsert_menu_item(
+                conn, item.branch_id, item_id, item.name, item.price, item.bom,
+                item.active, item.station, category=item.category,
+                description=item.description, cost=item.cost, tax_mode=item.tax_mode,
+                service_charge=item.service_charge, sold_out=item.sold_out,
+                option_title=item.option_title, levels=item.levels, addons=item.addons)
     except CatalogError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.delete("/api/menu/{item_id}")
+def delete_menu(item_id: str, request: Request, branch_id: int = 1):
+    """Remove a dish from the menu. Bills already printed keep their own copy
+    of the name and price, so nothing a customer paid is rewritten."""
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            photo = delete_menu_item(conn, branch_id, item_id)
+    except CatalogError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    if photo:
+        _remove_menu_photo(photo)
+    return {"branch_id": branch_id, "id": item_id, "deleted": True}
+
+
+@app.get("/api/menu/categories")
+def get_menu_categories(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    return {"branch_id": branch_id, "categories": list_menu_categories_for(branch_id),
+            "stations": list(STATIONS), "tax_modes": list(TAX_MODES)}
+
+
+def list_menu_categories_for(branch_id: int) -> list[str]:
+    with closing(connect_db()) as conn:
+        return list_menu_categories(conn, branch_id)
 
 
 class InventorySet(BaseModel):
     branch_id: int = 1
     stock: float
+    unit: str = "หน่วย"
+    reorder_point: float = 0
+
+
+class InventoryEdit(BaseModel):
+    """Unit and reorder point only. Stock itself moves through a movement, so
+    it keeps its audit trail instead of being quietly overwritten."""
+    branch_id: int = 1
+    unit: str = "หน่วย"
+    reorder_point: float = 0
+
+
+# --- menu photos ---------------------------------------------------------
+# Kept beside the shop databases so a rebuilt container does not lose them.
+MENU_PHOTO_ROOT = DB_PATH.parent / "menu-photos"
+MENU_PHOTO_MAX_BYTES = 3 * 1024 * 1024
+MENU_PHOTO_TYPES = {
+    "image/jpeg": ("jpg", (b"\xff\xd8\xff",)),
+    "image/png": ("png", (b"\x89PNG\r\n\x1a\n",)),
+    "image/webp": ("webp", (b"RIFF",)),
+}
+
+
+def _photo_dir(shop: str) -> Path:
+    # The slug is already restricted to a-z, digits and dashes by the registry.
+    return MENU_PHOTO_ROOT / shop
+
+
+def _photo_name(item_id: str, extension: str) -> str:
+    """Name the file after a hash of the item id: an item id may contain any
+    character at all, and none of them should ever reach the filesystem."""
+    return hashlib.sha256(item_id.encode("utf-8")).hexdigest()[:32] + "." + extension
+
+
+def _photo_kind(data: bytes, content_type: str) -> str:
+    kind = MENU_PHOTO_TYPES.get((content_type or "").split(";")[0].strip().lower())
+    if kind is None:
+        raise HTTPException(400, "รับเฉพาะไฟล์ JPG, PNG หรือ WebP")
+    extension, signatures = kind
+    if not any(data.startswith(signature) for signature in signatures):
+        raise HTTPException(400, "ไฟล์นี้ไม่ใช่รูปภาพจริง ลองบันทึกเป็น JPG หรือ PNG ใหม่")
+    if extension == "webp" and data[8:12] != b"WEBP":
+        raise HTTPException(400, "ไฟล์นี้ไม่ใช่รูปภาพจริง ลองบันทึกเป็น JPG หรือ PNG ใหม่")
+    return extension
+
+
+def _remove_menu_photo(photo: str) -> None:
+    """Delete the file a stored photo path points at, and only such a file."""
+    prefix = "/menu-photos/"
+    if not photo.startswith(prefix):
+        return
+    parts = photo[len(prefix):].split("/")
+    if len(parts) != 2:
+        return
+    target = _photo_dir(parts[0]) / parts[1]
+    try:
+        if target.resolve().parent.parent == MENU_PHOTO_ROOT.resolve():
+            target.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+@app.post("/api/menu/{item_id}/photo")
+async def upload_menu_photo(item_id: str, request: Request, branch_id: int = 1,
+                            file: UploadFile = File(...)):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    data = await file.read(MENU_PHOTO_MAX_BYTES + 1)
+    if not data:
+        raise HTTPException(400, "ไม่พบไฟล์รูป")
+    if len(data) > MENU_PHOTO_MAX_BYTES:
+        raise HTTPException(413, "รูปใหญ่เกิน 3 MB ย่อรูปก่อนแล้วลองใหม่")
+    extension = _photo_kind(data, file.content_type or "")
+    shop = CURRENT_SHOP.get()
+    directory = _photo_dir(shop)
+    directory.mkdir(parents=True, exist_ok=True)
+    # Written to a neighbour first so a failed upload cannot leave half a photo.
+    name = _photo_name(item_id, extension)
+    pending = directory / (name + ".part")
+    pending.write_bytes(data)
+    pending.replace(directory / name)
+    photo = f"/menu-photos/{shop}/{name}"
+    try:
+        with closing(connect_db()) as conn, conn:
+            previous = conn.execute("SELECT photo FROM menu_catalog WHERE branch_id=? AND item_id=?",
+                                    (branch_id, item_id)).fetchone()
+            set_menu_photo(conn, branch_id, item_id, photo)
+    except CatalogError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    if previous and previous[0] and previous[0] != photo:
+        _remove_menu_photo(previous[0])
+    return {"branch_id": branch_id, "id": item_id, "photo": photo}
+
+
+@app.delete("/api/menu/{item_id}/photo")
+def clear_menu_photo(item_id: str, request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            previous = conn.execute("SELECT photo FROM menu_catalog WHERE branch_id=? AND item_id=?",
+                                    (branch_id, item_id)).fetchone()
+            set_menu_photo(conn, branch_id, item_id, "")
+    except CatalogError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    if previous and previous[0]:
+        _remove_menu_photo(previous[0])
+    return {"branch_id": branch_id, "id": item_id, "photo": ""}
+
+
+@app.get("/menu-photos/{shop}/{name}")
+def serve_menu_photo(shop: str, name: str):
+    """Serve one stored photo. Both parts of the path are checked against the
+    shapes this server writes, so no request can walk out of the photo store."""
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,28}[a-z0-9]", shop):
+        raise HTTPException(404, "ไม่พบรูป")
+    match = re.fullmatch(r"([0-9a-f]{32})\.(jpg|png|webp)", name)
+    if not match:
+        raise HTTPException(404, "ไม่พบรูป")
+    target = _photo_dir(shop) / name
+    if not target.is_file():
+        raise HTTPException(404, "ไม่พบรูป")
+    media = {"jpg": "image/jpeg", "png": "image/png", "webp": "image/webp"}[match.group(2)]
+    return FileResponse(target, media_type=media,
+                        headers={"Cache-Control": "public, max-age=60"})
 
 
 @app.get("/api/inventory")
 def get_inventory(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "kitchen"), branch_id=branch_id)
     with closing(connect_db()) as conn:
-        rows = conn.execute("SELECT ingredient_id,stock FROM inventory WHERE branch_id=? ORDER BY ingredient_id", (branch_id,)).fetchall()
-    return {"branch_id": branch_id, "items": [{"id": row[0], "stock": row[1]} for row in rows]}
+        rows = conn.execute("SELECT ingredient_id,stock,unit,reorder_point FROM inventory"
+                            " WHERE branch_id=? ORDER BY ingredient_id", (branch_id,)).fetchall()
+    return {"branch_id": branch_id,
+            "items": [{"id": row[0], "stock": row[1], "unit": row[2], "reorder_point": row[3],
+                       "low": row[3] > 0 and row[1] <= row[3]} for row in rows]}
 
 
 @app.put("/api/inventory/{ingredient_id}")
@@ -1115,13 +1292,44 @@ def put_inventory(ingredient_id: str, item: InventorySet, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
     if not ingredient_id or len(ingredient_id) > 80 or not math.isfinite(item.stock) or item.stock < 0:
         raise HTTPException(400, "Invalid stock")
+    unit, reorder_point = _ingredient_unit(item.unit), _reorder_point(item.reorder_point)
     with closing(connect_db()) as conn, conn:
         try:
-            conn.execute("INSERT INTO inventory(branch_id,ingredient_id,stock) VALUES(?,?,?)",
-                         (item.branch_id, ingredient_id, item.stock))
+            conn.execute("INSERT INTO inventory(branch_id,ingredient_id,stock,unit,reorder_point)"
+                         " VALUES(?,?,?,?,?)",
+                         (item.branch_id, ingredient_id, item.stock, unit, reorder_point))
         except sqlite3.IntegrityError as exc:
-            raise HTTPException(409, "Stock already exists; record a movement instead") from exc
-    return {"branch_id": item.branch_id, "id": ingredient_id, "stock": item.stock}
+            raise HTTPException(409, "มีวัตถุดิบรหัสนี้แล้ว ถ้าจะเพิ่มของให้บันทึกรับเข้าแทน") from exc
+    return {"branch_id": item.branch_id, "id": ingredient_id, "stock": item.stock,
+            "unit": unit, "reorder_point": reorder_point}
+
+
+def _ingredient_unit(value: str) -> str:
+    unit = (value or "").strip() or "หน่วย"
+    if len(unit) > 20:
+        raise HTTPException(400, "ชื่อหน่วยนับยาวเกินไป")
+    return unit
+
+
+def _reorder_point(value: float) -> float:
+    if not math.isfinite(value) or value < 0 or value > 1_000_000_000:
+        raise HTTPException(400, "จุดแจ้งเตือนของใกล้หมดต้องเป็นเลขศูนย์ขึ้นไป")
+    return float(value)
+
+
+@app.patch("/api/inventory/{ingredient_id}")
+def patch_inventory(ingredient_id: str, item: InventoryEdit, request: Request):
+    """Change how an ingredient is counted and when it should be reordered."""
+    require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
+    unit, reorder_point = _ingredient_unit(item.unit), _reorder_point(item.reorder_point)
+    with closing(connect_db()) as conn, conn:
+        cursor = conn.execute("UPDATE inventory SET unit=?,reorder_point=?"
+                              " WHERE branch_id=? AND ingredient_id=?",
+                              (unit, reorder_point, item.branch_id, ingredient_id))
+    if cursor.rowcount != 1:
+        raise HTTPException(404, "ไม่พบวัตถุดิบรหัสนี้")
+    return {"branch_id": item.branch_id, "id": ingredient_id,
+            "unit": unit, "reorder_point": reorder_point}
 
 
 class InventoryMovementCreate(BaseModel):

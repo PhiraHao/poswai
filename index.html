@@ -3377,6 +3377,7 @@
       ensureMenuCustomOptions(menu);
       let extraPrice = 0;
       const addons = [state.selectedModLevel];
+      const pickedAddonNames = [];
       const extraBom = [];
 
       document.querySelectorAll("#modDynamicAddonsContainer .dyn-addon-cb").forEach(cb => {
@@ -3385,6 +3386,7 @@
           const ad = menu.customAddons[idx];
           if (ad) {
             extraPrice += Number(ad.price || 0);
+            pickedAddonNames.push(ad.name);
             addons.push(ad.name.replace(/^\+\s*/, "+").replace(/^-\s*/, "-"));
             if (ad.ingId && ad.ingId !== "NONE" && ad.qty > 0) {
               extraBom.push({ ingId: ad.ingId, qty: ad.qty });
@@ -3396,6 +3398,9 @@
       const courseMode = document.getElementById("modCourseSelect").value; // FIRE or HOLD
       state.cart.push({
         id: menu.id,
+        // Live mode bills by the server's own item id, so a line built here
+        // has to carry it too, exactly as a plain add-to-cart line does.
+        serverId: menu.serverId,
         name: `${menu.name} (${addons.join(", ")})`,
         baseCategory: menu.category,
         station: menu.station || "ครัวร้อน",
@@ -3403,7 +3408,11 @@
         price: menu.price + extraPrice,
         cost: menu.cost,
         qty: 1,
-        extraBom
+        extraBom,
+        // The server prices toppings from its own list, so send what was
+        // ticked rather than relying on the display name above.
+        chosenAddons: pickedAddonNames,
+        chosenLevel: state.selectedModLevel
       });
 
       closeModifierModal();
@@ -3556,7 +3565,8 @@
 
       const apiItems = state.cart.map(i => ({
         id: state.productionMode ? i.serverId : i.id, name: i.name, price: i.price, qty: i.qty,
-        course_mode: i.courseMode || "FIRE", bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || [])
+        course_mode: i.courseMode || "FIRE", bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || []),
+        addons: i.chosenAddons || [], level: i.chosenLevel || ""
       }));
       try {
         await apiMutation("/api/orders", {
@@ -5050,7 +5060,7 @@
   <script src="/landing.js?v=43"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>
-  <script src="/live-data.js?v=54"></script>
+  <script src="/live-data.js?v=58"></script>
   <script src="/inventory-live.js?v=23"></script>
   <link rel="stylesheet" href="/commerce-ui.css?v=29">
   <script src="/commerce-ui.js?v=30"></script>
