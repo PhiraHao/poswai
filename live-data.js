@@ -49,13 +49,14 @@
         state.inventory = inventory.items.map(item => ({id:item.id, name:item.id, stock:item.stock, reorder:0, unit:'หน่วย'}));
       } catch (error) { showToast(`โหลดสต็อกไม่สำเร็จ: ${error.message}`); }
     }
+    renderBomEmpty();
     const selector = document.getElementById('bomMenuSelect');
     if (selector) selector.replaceChildren(...DEFAULT_MENU.map(item => new Option(item.name, item.id)));
     renderAll();
   };
   const panel = document.createElement('section');
   const style = document.createElement('style');
-  style.textContent = `.live-catalog-panel{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:20px;margin:0 0 20px;box-shadow:0 8px 24px #1118270d}.live-catalog-panel h3{margin:0 0 8px}.live-catalog-panel p{color:#6b7280}.live-catalog-panel form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end;padding:14px 0;border-top:1px solid #eee}.live-catalog-panel label{display:grid;gap:5px;font-size:.85rem;font-weight:600}.live-catalog-panel input,.live-catalog-panel select,.live-catalog-panel textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:9px}.live-catalog-panel button{padding:11px 16px;background:#ffc928;color:#141b24;border:0;border-radius:9px;font-weight:700;cursor:pointer}@media(max-width:650px){.live-catalog-panel{padding:15px}.live-catalog-panel form{grid-template-columns:1fr}}`;
+  style.textContent = `.live-catalog-panel{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:20px;margin:0 0 20px;box-shadow:0 8px 24px #1118270d}.live-catalog-panel h3{margin:0 0 8px}.live-catalog-panel p{color:#6b7280}.live-catalog-panel form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;align-items:end;padding:14px 0;border-top:1px solid #eee}.live-catalog-panel label{display:grid;gap:5px;font-size:.85rem;font-weight:600}.live-catalog-panel input,.live-catalog-panel select,.live-catalog-panel textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:9px}.live-catalog-panel button{padding:11px 16px;background:#ffc928;color:#141b24;border:0;border-radius:9px;font-weight:700;cursor:pointer}.live-catalog-panel button.ghost{background:#eef2f7;color:#141b24}.live-bom{grid-column:1/-1;display:grid;gap:8px;padding:12px;background:#fbfcfe;border:1px solid #e5e7eb;border-radius:12px}.live-bom-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}.live-bom-head strong{font-size:.9rem}.live-bom-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) auto;gap:8px;align-items:center}.live-bom-row button{padding:9px 12px;background:#fdeae7;color:#c0372b}.live-bom-empty{color:#6b7280;font-size:.85rem;margin:0}.live-bom-note{margin:0;font-size:.8rem;color:#6b7280}@media(max-width:650px){.live-bom-row{grid-template-columns:1fr;gap:6px}}@media(max-width:650px){.live-catalog-panel{padding:15px}.live-catalog-panel form{grid-template-columns:1fr}}`;
   document.head.append(style);
   panel.className = 'live-catalog-panel';
   panel.hidden = true;
@@ -65,10 +66,17 @@
       <label>ชื่อเมนู <input name="name" required maxlength="200"></label>
       <label>ราคา (บาท) <input name="price" type="number" min="0" max="1000000" step="0.01" required></label>
       <label>สเตชัน <select name="station"><option>ครัวร้อน</option><option>ครัวเย็น/ยำ</option><option>บาร์น้ำ</option></select></label>
-      <label>สูตร BOM (JSON) <textarea name="bom" rows="2" placeholder='[{"ingId":"RICE","qty":1}]'>[]</textarea></label>
+      <div class="live-bom">
+        <div class="live-bom-head">
+          <strong>สูตรตัดสต็อก (ใส่หรือไม่ใส่ก็ได้)</strong>
+          <button type="button" class="ghost" id="liveBomAdd">+ เพิ่มวัตถุดิบ</button>
+        </div>
+        <div id="liveBomRows"></div>
+        <p class="live-bom-note">บอกว่าเมนูนี้ <strong>1 จาน</strong> ใช้อะไรเท่าไหร่ ขายได้แล้วระบบหักสต็อกให้เอง · เว้นว่างไว้ก็ขายได้ แค่ไม่ตัดสต็อก</p>
+      </div>
       <button type="submit">บันทึกเมนู</button></form>
-    <form id="liveStockForm"><label>รหัสวัตถุดิบ <input name="id" required maxlength="80"></label>
-      <label>จำนวนคงเหลือ <input name="stock" type="number" min="0" step="0.000001" required></label>
+    <form id="liveStockForm"><label>รหัสวัตถุดิบ <input name="id" required maxlength="80" placeholder="เช่น PORK, RICE, MILK"></label>
+      <label>จำนวนคงเหลือ <input name="stock" type="number" min="0" step="0.000001" required placeholder="ใช้หน่วยเดียวกันทั้งร้าน"></label>
       <button type="submit">บันทึกสต็อก</button></form><p id="liveCatalogStatus" role="status"></p>`;
   document.querySelector('#view-inventory')?.prepend(panel);
   if (!panel.parentElement) document.body.append(panel);
@@ -77,24 +85,81 @@
     await request(url, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
     await refresh(); status('บันทึกสำเร็จ');
   };
+  /* The recipe editor. Ingredients come from the shop's own stock, because an
+     order naming an ingredient the shop never entered is refused outright. */
+  const bomRows = () => panel.querySelector('#liveBomRows');
+  const ingredients = () => (state.inventory || []).map(item => item.id);
+  const renderBomEmpty = () => {
+    const rows = bomRows();
+    if (rows.querySelector('.live-bom-row')) return;
+    const message = document.createElement('p');
+    message.className = 'live-bom-empty';
+    message.textContent = ingredients().length
+      ? 'ยังไม่ได้ใส่สูตร เมนูนี้จะขายได้โดยไม่ตัดสต็อก'
+      : 'ยังไม่มีวัตถุดิบในระบบ บันทึกวัตถุดิบในช่องด้านล่างก่อน แล้วค่อยกลับมาใส่สูตร';
+    rows.replaceChildren(message);
+  };
+  const addBomRow = (ingredient = '', amount = '') => {
+    const names = ingredients();
+    if (!names.length) { renderBomEmpty(); return; }
+    bomRows().querySelector('.live-bom-empty')?.remove();
+    const row = document.createElement('div');
+    row.className = 'live-bom-row';
+    const pick = document.createElement('select');
+    pick.setAttribute('aria-label', 'วัตถุดิบ');
+    pick.replaceChildren(...names.map(name => new Option(name, name, false, name === ingredient)));
+    const qty = document.createElement('input');
+    qty.type = 'number'; qty.min = '0'; qty.step = 'any'; qty.value = amount;
+    qty.placeholder = 'ใช้ต่อ 1 จาน';
+    qty.setAttribute('aria-label', 'จำนวนที่ใช้ต่อหนึ่งจาน');
+    const remove = document.createElement('button');
+    remove.type = 'button'; remove.textContent = 'ลบ';
+    remove.addEventListener('click', () => { row.remove(); renderBomEmpty(); });
+    row.append(pick, qty, remove);
+    bomRows().append(row);
+    return row;
+  };
+  const readBom = () => {
+    const parts = [];
+    for (const row of bomRows().querySelectorAll('.live-bom-row')) {
+      const name = row.querySelector('select').value;
+      const amount = Number(row.querySelector('input').value);
+      if (!name) continue;
+      if (!(amount > 0)) throw new Error(`ใส่จำนวนที่ใช้ของ ${name} ให้มากกว่า 0`);
+      parts.push({ingId: name, qty: amount});
+    }
+    return parts;
+  };
+  panel.querySelector('#liveBomAdd').addEventListener('click', () => {
+    if (!ingredients().length) { status('บันทึกวัตถุดิบก่อน แล้วค่อยใส่สูตร'); renderBomEmpty(); return; }
+    addBomRow()?.querySelector('input')?.focus();
+  });
   panel.querySelector('#liveMenuForm').addEventListener('submit', async event => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
+    const form = event.currentTarget;
+    const data = new FormData(form);
     try {
-      const bom = JSON.parse(String(data.get('bom') || '[]'));
-      if (!Array.isArray(bom)) throw new Error('สูตร BOM ต้องเป็นรายการ');
+      const bom = readBom();
       await submit(`/api/menu/${encodeURIComponent(String(data.get('id')).trim())}`, {
         branch_id:branch(), name:String(data.get('name')).trim(), price:Number(data.get('price')),
         station:String(data.get('station')), bom, active:true,
       });
+      form.reset();
+      bomRows().replaceChildren();
+      renderBomEmpty();
     } catch (error) { status(error.message); }
   });
   panel.querySelector('#liveStockForm').addEventListener('submit', async event => {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    try { await submit(`/api/inventory/${encodeURIComponent(String(data.get('id')).trim())}`, {
-      branch_id:branch(), stock:Number(data.get('stock')),
-    }); } catch (error) { status(error.message); }
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    try {
+      await submit(`/api/inventory/${encodeURIComponent(String(data.get('id')).trim())}`, {
+        branch_id:branch(), stock:Number(data.get('stock')),
+      });
+      form.reset();
+      renderBomEmpty();   // the new ingredient is now pickable in a recipe
+    } catch (error) { status(error.message); }
   });
   const shopPanel = document.createElement('section');
   shopPanel.className = 'live-catalog-panel';
