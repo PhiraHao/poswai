@@ -52,6 +52,20 @@
     '.tbl-bar .glyph{font-size:1.2rem;line-height:1}',
     '.tbl-bar .dot{position:absolute;top:5px;right:calc(50% - 20px);min-width:17px;height:17px;border-radius:999px;',
     'background:#c0372b;color:#fff;font-size:.66rem;display:grid;place-items:center;padding:0 4px}',
+    '.tbl-member-hero{text-align:center;padding:18px 0 6px}',
+    '.tbl-member-hero span{display:block;color:#6b7280;font-size:.84rem}',
+    '.tbl-member-hero strong{display:block;font-size:2.6rem;line-height:1.2;color:#15803d}',
+    '.tbl-member-hero em{display:block;font-style:normal;font-weight:700;font-size:1.05rem;margin-top:4px}',
+    '.tbl-member-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:14px 0 0}',
+    '.tbl-member-facts div{background:#f7f9fc;border-radius:12px;padding:11px 8px;text-align:center}',
+    '.tbl-member-facts b{display:block;font-size:1.05rem}',
+    '.tbl-member-facts small{color:#6b7280;font-size:.72rem}',
+    '.tbl-member-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:7px}',
+    '.tbl-member-list li{display:flex;justify-content:space-between;gap:10px;border:1px solid #eef1f5;',
+    'border-radius:11px;padding:9px 12px;font-size:.85rem}',
+    '.tbl-member-list li b{color:#15803d}.tbl-member-list li b.down{color:#c0372b}',
+    '.tbl-member-cta{display:block;width:100%;margin:14px 0 0;padding:13px 18px;background:#ffc928;color:#141b24;',
+    'border:0;border-radius:11px;font-weight:700;font-size:.95rem;cursor:pointer}',
     '.tbl-order{border:1px solid #e9edf2;border-radius:13px;padding:12px;margin:0 0 10px}',
     '.tbl-order-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:7px}',
     '.tbl-order-head strong{font-size:.9rem}',
@@ -455,8 +469,10 @@
   bar.setAttribute('aria-label', 'เมนูลูกค้า');
   const TABS = [
     {key: 'menu', glyph: '🍽️', label: 'สั่งอาหาร'},
-    {key: 'orders', glyph: '🧾', label: 'ออเดอร์ของฉัน'},
-    {key: 'pay', glyph: '💳', label: 'จ่ายเงิน'},
+    /* Only a phone sitting at a table has a bill to read or to settle. */
+    {key: 'orders', glyph: '🧾', label: 'ออเดอร์ของฉัน', table: true},
+    {key: 'pay', glyph: '💳', label: 'จ่ายเงิน', table: true},
+    {key: 'member', glyph: '⭐', label: 'สมาชิก'},
   ];
   const barButtons = {};
   for (const tab of TABS) {
@@ -483,8 +499,133 @@
     badge.hidden = waiting === 0;
   };
 
+  /* ---- the member's own page ------------------------------------------
+     A loyalty card is something a customer opens on purpose and reads: how
+     many points, from what, since when. It had been a small dialog with a
+     number in it, which is what the shop needs at the till, not what the
+     customer came for. */
+  const memberSheet = document.createElement('div');
+  memberSheet.className = 'tbl-sheet';
+  memberSheet.hidden = true;
+  memberSheet.innerHTML = `<div class="tbl-sheet-body">
+    <div class="tbl-sheet-head"><h3>สมาชิกร้าน</h3>
+      <button type="button" class="ghost" id="tblMemberClose">ปิด</button></div>
+    <div id="tblMemberBody"></div>
+  </div>`;
+  const closeMember = () => { memberSheet.hidden = true; markTab('menu'); };
+  memberSheet.addEventListener('click', event => { if (event.target === memberSheet) closeMember(); });
+  memberSheet.querySelector('#tblMemberClose').addEventListener('click', closeMember);
+
+  const thaiDate = text => {
+    const when = new Date(String(text || '').replace(' ', 'T'));
+    return Number.isNaN(when.getTime()) ? '' : when.toLocaleDateString('th-TH',
+      {day: 'numeric', month: 'short', year: '2-digit'});
+  };
+
+  const renderMember = card => {
+    const body = memberSheet.querySelector('#tblMemberBody');
+    body.replaceChildren();
+    if (!card) {
+      const note = document.createElement('p');
+      note.className = 'tbl-note';
+      note.textContent = 'สะสมแต้มทุกครั้งที่ซื้อ และรับโปรโมชันจากร้าน '
+        + 'เข้าสู่ระบบด้วย LINE, Google หรือชื่อกับเบอร์ที่เคยให้ไว้';
+      const cta = document.createElement('button');
+      cta.type = 'button';
+      cta.className = 'tbl-member-cta';
+      cta.textContent = 'เข้าสู่ระบบ / สมัครสมาชิก';
+      cta.addEventListener('click', () => { closeMember(); window.poswaiAuth?.openMember?.(); });
+      body.append(note, cta);
+      return;
+    }
+    const hero = document.createElement('div');
+    hero.className = 'tbl-member-hero';
+    hero.innerHTML = '<span>แต้มสะสม</span>';
+    const points = document.createElement('strong');
+    points.textContent = `${card.points ?? 0}`;
+    const who = document.createElement('em');
+    who.textContent = card.display_name || 'สมาชิกร้าน';
+    hero.append(points, who);
+
+    const facts = document.createElement('div');
+    facts.className = 'tbl-member-facts';
+    for (const [value, label] of [
+      [`${card.completed_orders ?? 0}`, 'ครั้งที่ซื้อ'],
+      [money(card.lifetime_amount || 0), 'ยอดสะสม'],
+      [thaiDate(card.member_since) || '—', 'เป็นสมาชิกตั้งแต่'],
+    ]) {
+      const cell = document.createElement('div');
+      const big = document.createElement('b');
+      big.textContent = value;
+      const small = document.createElement('small');
+      small.textContent = label;
+      cell.append(big, small);
+      facts.append(cell);
+    }
+
+    const how = document.createElement('p');
+    how.className = 'tbl-note';
+    how.textContent = `ทุก ${card.point_baht ?? 10} บาทที่จ่าย ได้ 1 แต้ม `
+      + 'บอกเบอร์กับพนักงานตอนจ่ายเงินเพื่อให้แต้มเข้า';
+
+    const title = document.createElement('p');
+    title.className = 'tbl-note';
+    title.textContent = 'รายการแต้มล่าสุด';
+    const list = document.createElement('ul');
+    list.className = 'tbl-member-list';
+    for (const entry of card.history || []) {
+      const row = document.createElement('li');
+      const reason = document.createElement('span');
+      reason.textContent = entry.reason || 'แต้ม';
+      const change = document.createElement('b');
+      change.textContent = `${entry.change > 0 ? '+' : ''}${entry.change}`;
+      if (entry.change < 0) change.className = 'down';
+      row.append(reason, change);
+      list.append(row);
+    }
+    if (!(card.history || []).length) {
+      const empty = document.createElement('p');
+      empty.className = 'tbl-empty';
+      empty.textContent = 'ยังไม่มีรายการแต้ม แต้มแรกมาจากบิลแรกที่จ่าย';
+      list.append(empty);
+    }
+
+    const out = document.createElement('button');
+    out.type = 'button';
+    out.className = 'tbl-member-cta';
+    out.style.background = '#f1f4f8';
+    out.textContent = 'ออกจากระบบ';
+    out.addEventListener('click', () => { closeMember(); window.poswaiAuth?.signOutMember?.(); });
+    body.append(hero, facts, how, title, list, out);
+  };
+
+  const openMemberPage = async () => {
+    memberSheet.hidden = false;
+    markTab('member');
+    const known = window.poswaiAuth?.member;
+    renderMember(known || null);
+    if (!known) return;
+    /* The points may have moved since this phone last looked. */
+    try {
+      const response = await fetch('/api/members/card', {cache: 'no-store', credentials: 'same-origin',
+        headers: known.token ? {'X-Member-Token': known.token} : {}});
+      if (response.ok) renderMember({...known, ...(await response.json())});
+    } catch (_) { /* offline: what the phone already had still reads fine */ }
+  };
+  window.poswaiMemberPage = {open: openMemberPage};
+
   const markTab = key => {
     for (const tab of TABS) barButtons[tab.key].classList.toggle('on', tab.key === key);
+  };
+
+  const showTabs = atTable => {
+    let shown = 0;
+    for (const tab of TABS) {
+      const on = !tab.table || atTable;
+      barButtons[tab.key].hidden = !on;
+      if (on) shown += 1;
+    }
+    bar.style.gridTemplateColumns = `repeat(${shown}, 1fr)`;
   };
 
   const openSheet = where => {
@@ -498,7 +639,9 @@
   };
 
   const pickTab = async key => {
+    memberSheet.hidden = true;
     if (key === 'menu') { sheet.hidden = true; markTab('menu'); window.scrollTo({top: 0, behavior: 'smooth'}); return; }
+    if (key === 'member') { sheet.hidden = true; openMemberPage(); return; }
     openSheet(key);
   };
   sheet.addEventListener('click', event => { if (event.target === sheet) markTab('menu'); });
@@ -517,6 +660,7 @@
       if (settings) settings.before(panel); else home.append(panel);
     }
     if (!sheet.parentElement) document.body.append(sheet);
+    if (!memberSheet.parentElement) document.body.append(memberSheet);
     /* In the cart, under "send order": the guest is already looking there once
        the food is ordered, and the next thing they want is the bill. Floating
        it could not work — the app's own fixed bars cover that strip of screen,
@@ -549,17 +693,24 @@
     if (!panel.hidden && !tables.length) load();
     /* The guest's button belongs to a phone that scanned a sticker, not to a
        member of staff looking at the same screen. */
-    const guest = !!tableToken() && !window.poswaiAuth?.current;
-    openButton.hidden = !guest;
-    if (!guest) sheet.hidden = true;
-    bar.hidden = !guest;
+    const staff = !!window.poswaiAuth?.current;
+    const atTable = !!tableToken() && !staff;
+    /* A customer signed in on their own phone, with no sticker scanned, is
+       still a customer: the staff navigation filtered down to one lonely tab
+       was never what they should be looking at. */
+    const customer = atTable || (!staff && !!window.poswaiAuth?.member);
+    openButton.hidden = !atTable;
+    if (!atTable) sheet.hidden = true;
+    if (!customer) memberSheet.hidden = true;
+    bar.hidden = !customer;
     if (!bar.parentElement) document.body.append(bar);
+    showTabs(atTable);
     /* The staff navigation has nothing left for a guest once it is filtered,
        so it steps aside rather than sitting there with a single lonely tab. */
     const staffNav = document.querySelector('.role-tabs-wrap');
-    if (staffNav) staffNav.hidden = guest;
-    document.body.classList.toggle('tbl-guest', guest);
-    if (guest) markTab('menu');
+    if (staffNav) staffNav.hidden = customer;
+    document.body.classList.toggle('tbl-guest', customer);
+    if (customer && sheet.hidden && memberSheet.hidden) markTab('menu');
     lockTable();
   };
 

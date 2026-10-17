@@ -74,7 +74,7 @@
       <div class="poswai-login-tabs" role="tablist">
         <button type="button" role="tab" data-login-tab="member" aria-selected="false">ลูกค้า</button>
         <button type="button" role="tab" data-login-tab="owner" aria-selected="true">เจ้าของร้าน</button>
-        <button type="button" role="tab" data-login-tab="staff" aria-selected="false">พนักงานหน้าร้าน</button>
+        <button type="button" role="tab" data-login-tab="staff" aria-selected="false">พนักงาน</button>
       </div>
 
       <div data-login-pane="owner">
@@ -383,7 +383,7 @@
     window.dispatchEvent(new CustomEvent('poswai:auth-changed', { detail: current }));
   };
   accountButton.addEventListener('click', async () => {
-    if (!current && member) { showMemberCard(member); open('member'); return; }
+    if (!current && member) { showMemberCard(member); return; }
     if (!current) { open(); return; }
     open('account');
   });
@@ -420,7 +420,7 @@
         display_name: $('#poswaiCustomerName').value.trim(),
         phone: $('#poswaiCustomerPhone').value.trim(),
       }));
-      showMemberCard(member); open('member');
+      showMemberCard(member);
     } catch (error) { $('#poswaiCustomerError').textContent = error.message; }
     finally { submit.disabled = false; submit.textContent = 'เข้าสู่ระบบ'; }
   });
@@ -705,6 +705,10 @@
     update();
   };
   const showMemberCard = card => {
+    try { localStorage.setItem('poswaiMemberPhone', card?.phone || ''); } catch (_) { /* private browsing */ }
+    /* The full page lives in the customer bar; this small card is what is
+       left for a browser that has not loaded it. */
+    if (window.poswaiMemberPage) { close(); window.poswaiMemberPage.open(); return; }
     $('#poswaiMemberJoin').hidden = true;
     $('#poswaiMemberCard').hidden = false;
     $('#poswaiMemberPoints').textContent = `${card.points} แต้ม`;
@@ -766,7 +770,7 @@
   $('#poswaiCloseMember').addEventListener('click', close);
   $('#poswaiCloseMemberCard').addEventListener('click', close);
   const openMember = () => {
-    if (member) { showMemberCard(member); open('member'); return; }
+    if (member) { showMemberCard(member); return; }
     $('#poswaiMemberJoin').hidden = false;
     $('#poswaiMemberCard').hidden = true;
     $('#poswaiMemberError').textContent = '';
@@ -803,7 +807,8 @@
   window.poswaiAuth.logout = logout;
   window.poswaiAuth.openLogin = () => open('login');
   window.poswaiAuth.openSignup = () => open('signup');
-  window.poswaiAuth.openMember = openMember;
+  window.poswaiAuth.openMember = () => { if (!member) { open('login'); showLoginTab('member'); } else openMember(); };
+  window.poswaiAuth.signOutMember = () => signOutMember();
   window.poswaiAuth.enterPreview = enterPreview;
   Object.defineProperty(window.poswaiAuth, 'preview', { get: () => preview });
   window.poswaiAuth.openManager = () => { if (current?.role === 'manager' || current?.role === 'owner') open(true); };
@@ -852,7 +857,7 @@
         if (response.ok) {
           member = { ...(await response.json()), token: saved };
           update();
-          if (signedInWithAccount) { showMemberCard(member); open('member'); }
+          if (signedInWithAccount) showMemberCard(member);
         } else if (response.status === 401) keepMemberToken('');
       } catch (_) { /* offline: the card simply waits for the next visit */ }
     }

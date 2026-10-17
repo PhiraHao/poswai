@@ -46,10 +46,14 @@
 .poswai-landing-preview { border: 0; background: none; color: #34536c; font-size: .8rem; font-weight: 700;
   text-decoration: underline; cursor: pointer; padding: 4px; }
 .poswai-landing-preview[hidden] { display: none; }
-.poswai-login-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 5px; margin: 0 0 16px;
+/* Three doors, one row. Two columns left "พนักงานหน้าร้าน" dangling on a line
+   of its own under the other two, which read as a mistake rather than a tab. */
+.poswai-login-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; margin: 0 0 16px;
   background: #f1f4f8; border-radius: 12px; }
-.poswai-login-tabs button { border: 0; border-radius: 9px; padding: 9px 10px; background: none; color: #5d6b7a;
-  font: inherit; font-size: .88rem; font-weight: 700; cursor: pointer; }
+.poswai-login-tabs button { border: 0; border-radius: 9px; padding: 9px 4px; background: none; color: #5d6b7a;
+  font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; line-height: 1.35;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 360px) { .poswai-login-tabs button { font-size: .76rem; } }
 .poswai-login-tabs button[aria-selected="true"] { background: #fff; color: #17222e; box-shadow: 0 1px 4px rgba(23,34,46,.12); }
 .poswai-channels { display: grid; gap: 9px; }
 .poswai-channel { display: flex; align-items: center; gap: 11px; width: 100%; padding: 11px 14px; border: 1.5px solid #dfe5ec;
