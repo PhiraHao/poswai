@@ -178,14 +178,26 @@ class ReceiptRasterTest(unittest.TestCase):
             self.skipTest("no Thai font on this machine")
 
     def _decode(self, data):
+        """Stitch the bands back into the picture the printer will burn."""
         from PIL import Image
-        start = data.index(bytes([0x1d, 0x76, 0x30, 0x00])) + 4
-        width_bytes = data[start] | (data[start + 1] << 8)
-        height = data[start + 2] | (data[start + 3] << 8)
-        raster = data[start + 4:start + 4 + width_bytes * height]
-        self.assertEqual(len(raster), width_bytes * height, "raster is the wrong length")
-        return Image.frombytes("1", (width_bytes * 8, height),
-                               bytes(byte ^ 0xFF for byte in raster))
+        marker = bytes([0x1d, 0x76, 0x30, 0x00])
+        bands, at = [], data.find(marker)
+        self.assertNotEqual(at, -1, "no image command at all")
+        while at != -1:
+            head = at + 4
+            width_bytes = data[head] | (data[head + 1] << 8)
+            rows = data[head + 2] | (data[head + 3] << 8)
+            body = data[head + 4:head + 4 + width_bytes * rows]
+            self.assertEqual(len(body), width_bytes * rows, "a band is the wrong length")
+            bands.append(Image.frombytes("1", (width_bytes * 8, rows),
+                                         bytes(byte ^ 0xFF for byte in body)))
+            at = data.find(marker, head + 4 + width_bytes * rows)
+        whole = Image.new("1", (bands[0].width, sum(band.height for band in bands)), 1)
+        top = 0
+        for band in bands:
+            whole.paste(band, (0, top))
+            top += band.height
+        return whole
 
     def test_thai_comes_out_as_thai_shaped_ink(self):
         picture = self._decode(self.agent.render("ขอบคุณที่ใช้บริการครับ", self.font))
@@ -218,6 +230,19 @@ class ReceiptRasterTest(unittest.TestCase):
         one_line = self._decode(self.agent.render("สั้น", self.font))
         wrapped = self._decode(self.agent.render("ก" * 80, self.font))
         self.assertGreater(wrapped.height, one_line.height * 2)
+
+    def test_the_picture_goes_out_in_short_bands(self):
+        """One tall image overruns these printers somewhere in the middle.
+
+        A band of rows comes out as noise, and which band it is moves with the
+        length of the receipt — so it looks like a text problem until the same
+        line prints correctly twice below the mangled one."""
+        data = self.agent.render(chr(10).join(["บรรทัด"] * 12), self.font)
+        commands = data.count(bytes([0x1d, 0x76, 0x30, 0x00]))
+        self.assertGreater(commands, 4, "still one big image")
+        for piece in data.split(bytes([0x1d, 0x76, 0x30, 0x00]))[1:]:
+            rows = piece[2] | (piece[3] << 8)
+            self.assertLessEqual(rows, self.agent.BAND_ROWS)
 
     def test_the_slip_ends_with_enough_paper_to_tear(self):
         data = self.agent.render("บิล", self.font)

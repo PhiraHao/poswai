@@ -32,6 +32,10 @@ from pathlib import Path
 
 CONFIG_PATH = Path(__file__).with_name("print-agent.ini")
 PAPER_DOTS = 384          # 58mm paper, 203 dpi
+# How many dot rows go in one image command. Small enough that the printer
+# keeps up with the data, large enough that a receipt is not thousands of
+# commands. 24 rows is the size these printers are happiest with.
+BAND_ROWS = 24
 POLL_SECONDS = 3
 ERROR_BACKOFF_SECONDS = 15
 THAI_FONTS = (
@@ -108,21 +112,30 @@ def render(text: str, font_path: str, size: int = 22) -> bytes:
     mono = image.point(lambda value: 0 if value < 160 else 255, mode="1")
 
     width_bytes = PAPER_DOTS // 8
-    raster = bytearray()
     pixels = mono.load()
-    for y in range(height):
-        for byte_index in range(width_bytes):
-            byte = 0
-            for bit in range(8):
-                # In ESC/POS a set bit burns a dot, which is the opposite of
-                # the image, where 0 is black.
-                if not pixels[byte_index * 8 + bit, y]:
-                    byte |= 0x80 >> bit
-            raster.append(byte)
-    header = bytes([0x1D, 0x76, 0x30, 0x00,
-                    width_bytes & 0xFF, width_bytes >> 8,
-                    height & 0xFF, height >> 8])
-    return b"\x1b@" + header + bytes(raster) + b"\n\n\n\n\x1dV\x00"
+
+    def band(top: int, rows: int) -> bytes:
+        out = bytearray([0x1D, 0x76, 0x30, 0x00,
+                         width_bytes & 0xFF, width_bytes >> 8,
+                         rows & 0xFF, rows >> 8])
+        for y in range(top, top + rows):
+            for byte_index in range(width_bytes):
+                byte = 0
+                for bit in range(8):
+                    # In ESC/POS a set bit burns a dot, which is the opposite
+                    # of the image, where 0 is black.
+                    if not pixels[byte_index * 8 + bit, y]:
+                        byte |= 0x80 >> bit
+                out.append(byte)
+        return bytes(out)
+
+    # One tall image in a single command overruns these printers: somewhere in
+    # the middle a band of rows comes out as noise, and which band moves with
+    # the length of the receipt. Printing it as a stack of short images gives
+    # the head time to keep up, and each one stands on its own.
+    picture = b"".join(band(top, min(BAND_ROWS, height - top))
+                       for top in range(0, height, BAND_ROWS))
+    return b"\x1b@" + picture + b"\n\n\n\n\x1dV\x00"
 
 
 # ------------------------------------------------------------- where it goes
