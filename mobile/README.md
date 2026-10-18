@@ -144,9 +144,31 @@ localStorage.setItem('poswai.app.server', 'http://192.168.1.50:8000')
 
 ## ไอโฟน
 
-โค้ดรองรับไอโฟนครบแล้ว (`capacitor.config.json` มีส่วน `ios` · POS58 มี BLE ไอโฟนคุยได้)
-แต่ **build ไอโฟนต้องใช้เครื่อง Mac และบัญชีนักพัฒนา Apple 3,500฿/ปี** ซึ่งยังไม่มี
-วันไหนพร้อม สั่ง `npx cap add ios` บน Mac ได้เลย ไม่ต้องแก้โค้ดอะไร
+โปรเจกต์ไอโฟนอยู่ใน git แล้วที่ `ios/` (สร้าง 19 ต.ค. 69 บน Windows) พร้อม:
+- ข้อความขอสิทธิ์ภาษาไทย: Bluetooth (เครื่องพิมพ์), กล้อง (สแกน), เครือข่ายในร้าน (เครื่องพิมพ์ LAN)
+- ลิงก์ `poswai://` สำหรับกลับมาหลังเข้าสู่ระบบ LINE/Google · ไอคอน 1024 และหน้าเปิดแอปจากโลโก้ใหม่
+- `ITSAppUsesNonExemptEncryption = false` (ใช้แค่ HTTPS) จะได้ไม่ต้องตอบเรื่องการเข้ารหัสทุกครั้งที่ส่ง
+
+**build ต้องใช้เครื่อง Mac (Xcode) และบัญชีนักพัฒนา Apple ~3,500฿/ปี** ซึ่งยังไม่มี บน Mac:
+```bash
+cd mobile
+```
+```bash
+npm install
+```
+```bash
+npm run build
+```
+```bash
+npx cap sync ios
+```
+```bash
+npx cap open ios
+```
+แล้วใน Xcode: Signing & Capabilities → เลือกทีมของบัญชี Apple → Product → Archive → ส่ง App Store Connect
+
+ยังไม่มีบนไอโฟน: **พิมพ์ผ่าน LAN** (ปลั๊กอิน `plugins/tcp-printer` มีแต่ Android ต้องเขียน Swift
+ด้วย Network framework เพิ่ม) — พิมพ์ผ่าน Bluetooth ใช้ได้ แอปจะบอกเองว่ารุ่นนี้ยังพิมพ์ LAN ไม่ได้
 
 ## ขั้นต่อไป
 

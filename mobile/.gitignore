@@ -1,7 +1,14 @@
 node_modules/
 www/
 /android/
-/ios/
+# iOS stays in git (a Mac opens it as is); only what Xcode and cap sync make is left out.
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/App/build/
+ios/App/DerivedData/
+ios/**/xcuserdata/
+ios/App/Pods/
 *.apk
 plugins/*/android/build/
 keystore/
