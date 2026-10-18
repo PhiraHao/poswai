@@ -94,8 +94,8 @@
   root.innerHTML = `
     <header class="aui-top">
       <button type="button" class="aui-brand" data-act="account" aria-label="บัญชีและร้าน">
-        <img src="${asset('brand-mark.webp')}" alt="" class="aui-mark">
-        <span><strong>POS WAI</strong><small><span data-slot="branch"></span>${icon('down', 'aui-i-xs')}</small></span>
+        <img src="${asset('brand-logo.webp')}" alt="POS WAI" class="aui-logo">
+        <span class="aui-shopname"><small><span data-slot="branch"></span>${icon('down', 'aui-i-xs')}</small></span>
       </button>
       <div class="aui-top-actions">
         <button type="button" class="aui-iconbtn" data-act="bell" aria-label="การแจ้งเตือน">${icon('bell')}<i data-slot="bell" hidden></i></button>
