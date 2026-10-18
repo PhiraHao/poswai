@@ -10,6 +10,10 @@
    tested under node as well as in the app. */
 
 export const PAPER_DOTS = 384;        // 58mm paper at 203 dpi
+/* Dots across the printable width at 203 dpi: a 58mm roll prints 48mm, an
+   80mm roll 72mm — the counter printers most restaurants run. */
+export const PAPER = {58: 384, 80: 576};
+export const paperDots = (mm) => PAPER[Number(mm)] || PAPER_DOTS;
 export const STRIP_ROWS = 24;         // one ESC * strip
 
 /* A Thai vowel or tone mark sits on the letter before it and has no width of
@@ -132,15 +136,16 @@ export function readLine(raw) {
 }
 
 /** Draw the receipt and hand back the dots. Browsers only: it needs a canvas. */
-export function drawReceipt(text, {fontSize = 24, lineHeight = 32, pad = 4} = {}) {
+export function drawReceipt(text, {fontSize = 24, lineHeight = 32, pad = 4, paper = 58} = {}) {
+  const dots = paperDots(paper);
   const canvas = document.createElement('canvas');
-  canvas.width = PAPER_DOTS;
+  canvas.width = dots;
   const measure = canvas.getContext('2d', {willReadFrequently: true});
   const font = `${fontSize}px "Noto Sans Thai", "Sarabun", "Tahoma", sans-serif`;
   measure.font = font;
   const width = text => measure.measureText(text).width;
   const left = pad;
-  const right = PAPER_DOTS - pad;
+  const right = dots - pad;
   const room = right - left;
   const gap = Math.round(fontSize * 0.6);
 

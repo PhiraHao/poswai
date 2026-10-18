@@ -102,3 +102,15 @@ test('a title indented with spaces is centred', () => {
 test('an empty line stays an empty line', () => {
   assert.deepEqual(readLine('   '), {kind: 'blank'});
 });
+
+import {PAPER, paperDots} from '../www/escpos.js';
+
+test('an 80mm roll is drawn 576 dots wide, a 58mm roll 384', () => {
+  assert.equal(paperDots(80), 576);
+  assert.equal(paperDots('80'), 576);
+  assert.equal(paperDots(58), 384);
+  assert.equal(paperDots(undefined), 384, 'a printer chosen before the setting existed stays 58mm');
+  const data = escStar(PAPER[80], 24, () => false);
+  assert.deepEqual([...data.slice(5, 10)], [0x1b, 0x2a, 33, 576 & 0xff, 576 >> 8],
+    'the strip header must say 576 dots, or an 80mm printer draws garbage');
+});

@@ -49,6 +49,7 @@
     'border:1px solid #e9edf2;border-radius:12px;padding:11px 13px;margin:10px 0 0}',
     '.pdirect strong{font-size:.9rem}.pdirect small{display:block;color:#6b7280;font-size:.76rem}',
     '.pdirect .who{flex:1;min-width:150px}',
+    '.pdirect-paper{padding:7px 9px;border:1px solid #d1d5db;border-radius:9px;background:#fff}',
   ].join('');
   document.head.append(style);
 
@@ -64,11 +65,21 @@
   const connect = document.createElement('button');
   connect.type = 'button';
   connect.className = 'btn btn-sm btn-primary';
+  /* The roll width: 58mm unless the shop picks 80, the counter printers. */
+  const paperSize = () => (Number(remembered()?.paper) === 80 ? 80 : 58);
+  const paper = document.createElement('select');
+  paper.className = 'pdirect-paper';
+  paper.setAttribute('aria-label', 'ขนาดกระดาษ');
+  paper.append(new Option('กระดาษ 58 มม.', '58'), new Option('กระดาษ 80 มม.', '80'));
+  paper.addEventListener('change', () => {
+    remember({...(remembered() || {name: link?.name || ''}), paper: Number(paper.value)});
+    window.showToast?.(`ตั้งเป็นกระดาษ ${paper.value} มม. แล้ว`);
+  });
   const test = document.createElement('button');
   test.type = 'button';
   test.className = 'btn btn-sm btn-outline';
   test.textContent = 'พิมพ์ใบทดสอบ';
-  box.append(who, connect, test);
+  box.append(who, paper, connect, test);
 
   const show = () => {
     note.textContent = link
@@ -76,11 +87,12 @@
       : 'เชื่อมเครื่องพิมพ์ Bluetooth แล้วสั่งพิมพ์ได้จากเครื่องนี้เลย ไม่ต้องมีคอมในร้าน';
     connect.textContent = link ? 'เปลี่ยนเครื่องพิมพ์' : 'เชื่อมเครื่องพิมพ์';
     test.disabled = !link;
+    paper.value = String(paperSize());
   };
 
   const print = async text => {
     const {escpos, ble} = await load();
-    await ble.write(link, escpos.chunks(escpos.drawReceipt(text)));
+    await ble.write(link, escpos.chunks(escpos.drawReceipt(text, {paper: paperSize()})));
   };
 
   connect.addEventListener('click', async () => {
@@ -103,7 +115,7 @@
         if (!chosen) return;
         link = {...(await ble.connect(chosen.id)), name: chosen.name};
       }
-      remember({name: link.name});
+      remember({name: link.name, paper: paperSize()});
       window.showToast?.(`✅ เชื่อมกับ ${link.name || 'เครื่องพิมพ์'} แล้ว`);
     } catch (error) {
       window.showToast?.(`⚠️ ${error.message}`);

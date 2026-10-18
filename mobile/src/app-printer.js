@@ -49,6 +49,10 @@
     try { value ? localStorage.setItem(KEY, JSON.stringify(value)) : localStorage.removeItem(KEY); } catch { /* */ }
     (value ? PREFS?.set({key: KEY, value: JSON.stringify(value)}) : PREFS?.remove({key: KEY}))?.catch(() => {});
   };
+  /* The roll width belongs to the printer: kept with it, 58mm unless the
+     shop says otherwise or the printer's own name says 80 (POS80, XP-80…). */
+  const paperOf = (saved) => (Number(saved?.paper) === 80 ? 80 : 58);
+  const guessPaper = (name) => (/(^|[^0-9])80([^0-9]|$)/.test(String(name || '')) ? 80 : 58);
   let restoring = Boolean(PREFS);
   const restored = (PREFS?.get({key: KEY}) || Promise.resolve({})).then(({value}) => {
     if (value && !remembered()) { try { localStorage.setItem(KEY, value); } catch { /* */ } }
@@ -186,7 +190,7 @@
   /** Write one receipt; a failure carries how many pieces had already gone out. */
   const send = async (text) => {
     const {escpos} = await load();
-    const pieces = escpos.chunks(escpos.drawReceipt(text), piece);
+    const pieces = escpos.chunks(escpos.drawReceipt(text, {paper: paperOf(remembered())}), piece);
     let sent = 0;
     try {
       for (const bytes of pieces) {
@@ -287,7 +291,7 @@
   const status = () => {
     const saved = remembered();
     if (link) return {tone: 'ok', title: link.name || 'เครื่องพิมพ์', text: 'เชื่อมต่ออยู่ · ใบเสร็จจะออกที่เครื่องนี้'};
-    if (saved) return {tone: 'idle', title: saved.name, text: 'จำไว้แล้ว · จะเชื่อมให้เองตอนสั่งพิมพ์'};
+    if (saved) return {tone: 'idle', title: saved.name, text: `กระดาษ ${paperOf(saved)} มม. · จำไว้แล้ว · จะเชื่อมให้เองตอนสั่งพิมพ์`};
     return {tone: 'none', title: 'ยังไม่ได้เลือกเครื่องพิมพ์', text: 'กดค้นหา แล้วเลือกเครื่องพิมพ์ Bluetooth ของร้าน'};
   };
 
@@ -313,6 +317,20 @@
       actions.append(find);
     }
     if (remembered()) {
+      if (manage) {
+        const paper = el('div', {className: 'app-printer-paper', role: 'group'},
+          el('span', {textContent: 'ขนาดกระดาษ'}));
+        paper.setAttribute('aria-label', 'ขนาดกระดาษ');
+        for (const mm of [58, 80]) {
+          const choice = button(`${mm} มม.`, paperOf(remembered()) === mm ? 'is-on' : '', () => {
+            remember({...remembered(), paper: mm});
+            render({text: `ตั้งเป็นกระดาษ ${mm} มม. แล้ว ลองพิมพ์ใบทดสอบดูได้เลย`});
+          });
+          choice.setAttribute('aria-pressed', String(paperOf(remembered()) === mm));
+          paper.append(choice);
+        }
+        actions.append(paper);
+      }
       actions.append(button('พิมพ์ใบทดสอบ', 'app-printer-secondary', (event) => testPrint(event.currentTarget)));
       if (manage) {
         actions.append(button('เลิกใช้เครื่องนี้', 'app-printer-quiet', () => inTurn(async () => {
@@ -353,7 +371,7 @@
     inTurn(async () => {
       try {
         await connect(device);
-        remember({id: device.id, name: device.name});
+        remember({id: device.id, name: device.name, paper: guessPaper(device.name)});
         navigator.vibrate?.(15);
         busy = false;
         render({text: `เชื่อมกับ ${device.name} แล้ว ลองพิมพ์ใบทดสอบได้เลย`});

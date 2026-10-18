@@ -32,6 +32,7 @@ from pathlib import Path
 
 CONFIG_PATH = Path(__file__).with_name("print-agent.ini")
 PAPER_DOTS = 384          # 58mm paper, 203 dpi
+PAPER = {58: 384, 80: 576}   # printable dots across the roll, by roll width in mm
 # Breathing room between image commands. The printer has no flow control:
 # fed flat out it drops bytes and prints a band of noise. Raise it in the
 # ini (band_pause) if a receipt still comes out with a ruined line.
@@ -85,13 +86,15 @@ def wrap(line: str, fits) -> list[str]:
     return pieces or [""]
 
 
-def render(text: str, font_path: str, size: int = 22) -> bytes:
-    """The receipt as ESC/POS raster, so Thai looks like Thai."""
+def render(text: str, font_path: str, size: int = 22, paper: int = 58) -> bytes:
+    """The receipt as ESC/POS raster, so Thai looks like Thai. `paper` is the
+    roll width in mm: 58, or 80 for the counter printers."""
+    dots = PAPER.get(int(paper), PAPER_DOTS)
     from PIL import Image, ImageDraw, ImageFont
 
     font = ImageFont.truetype(font_path, size)
     pad, line_height = 6, size + 7
-    room = PAPER_DOTS - 2 * pad
+    room = dots - 2 * pad
     measure = ImageDraw.Draw(Image.new("L", (1, 1)))
     fits = lambda piece: measure.textlength(piece, font=font) <= room
 
@@ -105,7 +108,7 @@ def render(text: str, font_path: str, size: int = 22) -> bytes:
             lines.append(piece)
 
     height = max(line_height, line_height * len(lines) + 2 * pad)
-    image = Image.new("L", (PAPER_DOTS, height), 255)
+    image = Image.new("L", (dots, height), 255)
     draw = ImageDraw.Draw(image)
     for index, line in enumerate(lines):
         draw.text((pad, pad + index * line_height), line, font=font, fill=0)
@@ -120,8 +123,8 @@ def render(text: str, font_path: str, size: int = 22) -> bytes:
         shop's receipts, in a place that moved with every copy, while this one
         prints the same page clean.
         """
-        out = bytearray([0x1B, 0x2A, 33, PAPER_DOTS & 0xFF, PAPER_DOTS >> 8])
-        for x in range(PAPER_DOTS):
+        out = bytearray([0x1B, 0x2A, 33, dots & 0xFF, dots >> 8])
+        for x in range(dots):
             for byte_index in range(3):
                 value = 0
                 for bit in range(8):
@@ -286,7 +289,8 @@ def load_settings() -> configparser.SectionProxy:
 
 # ------------------------------------------------------------------- running
 def print_text(text: str, section: configparser.SectionProxy) -> None:
-    send(render(text, section["font"], int(section.get("font_size", "22"))),
+    send(render(text, section["font"], int(section.get("font_size", "22")),
+                int(section.get("paper", "58"))),
          section["target"], float(section.get("band_pause", BAND_PAUSE_SECONDS)))
 
 
