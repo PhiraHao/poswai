@@ -36,6 +36,10 @@ PAPER_DOTS = 384          # 58mm paper, 203 dpi
 # keeps up with the data, large enough that a receipt is not thousands of
 # commands. 24 rows is the size these printers are happiest with.
 BAND_ROWS = 24
+# Breathing room between image commands. The printer has no flow control:
+# fed flat out it drops bytes and prints a band of noise. Raise it in the
+# ini (band_pause) if a receipt still comes out with a ruined line.
+BAND_PAUSE_SECONDS = 0.08
 POLL_SECONDS = 3
 ERROR_BACKOFF_SECONDS = 15
 THAI_FONTS = (
@@ -139,12 +143,36 @@ def render(text: str, font_path: str, size: int = 22) -> bytes:
 
 
 # ------------------------------------------------------------- where it goes
-def send(data: bytes, target: str) -> None:
+def in_chunks(data: bytes) -> list[bytes]:
+    """One image command at a time, so the sending can be paced.
+
+    These printers have no flow control worth the name: fed faster than the
+    head can print, they drop bytes, and the rest of that image command comes
+    out as noise until the next one resynchronises. That is why the ruined
+    line keeps moving and why the identical line below it prints perfectly.
+    """
+    marker = bytes([0x1D, 0x76, 0x30, 0x00])
+    pieces, at = [], data.find(marker)
+    if at == -1:
+        return [data]
+    if at:
+        pieces.append(data[:at])
+    while at != -1:
+        following = data.find(marker, at + 4)
+        pieces.append(data[at:following] if following != -1 else data[at:])
+        at = following
+    return pieces
+
+
+def send(data: bytes, target: str, pause: float = BAND_PAUSE_SECONDS) -> None:
     """`windows:<printer name>` for an installed driver, `file:<path>` otherwise."""
     kind, _, where = target.partition(":")
     if kind == "file":
         with open(where, "wb") as device:
-            device.write(data)
+            for piece in in_chunks(data):
+                device.write(piece)
+                device.flush()
+                time.sleep(pause)
         return
     if kind != "windows":
         raise SystemExit(f"ไม่รู้จักปลายทาง {target!r} (ใช้ windows:ชื่อเครื่องพิมพ์ หรือ file:พาธ)")
@@ -152,10 +180,12 @@ def send(data: bytes, target: str) -> None:
 
     handle = win32print.OpenPrinter(where)
     try:
-        job = win32print.StartDocPrinter(handle, 1, ("POS WAI receipt", None, "RAW"))
+        win32print.StartDocPrinter(handle, 1, ("POS WAI receipt", None, "RAW"))
         try:
             win32print.StartPagePrinter(handle)
-            win32print.WritePrinter(handle, data)
+            for piece in in_chunks(data):
+                win32print.WritePrinter(handle, piece)
+                time.sleep(pause)
             win32print.EndPagePrinter(handle)
         finally:
             win32print.EndDocPrinter(handle)
@@ -219,8 +249,9 @@ def ask_settings() -> configparser.ConfigParser:
         font = input("ยังไม่เจอฟอนต์ไทย ใส่พาธไฟล์ .ttf: ").strip()
 
     settings = configparser.ConfigParser()
-    settings["agent"] = {"base_url": base, "shop": shop, "key": key,
-                         "target": target, "font": font, "font_size": "22"}
+    settings["agent"] = {"base_url": base, "shop": shop, "key": key, "target": target,
+                         "font": font, "font_size": "22",
+                         "band_pause": str(BAND_PAUSE_SECONDS)}
     with CONFIG_PATH.open("w", encoding="utf-8") as handle:
         settings.write(handle)
     print(f"\nบันทึกไว้ที่ {CONFIG_PATH} แล้ว · แก้ไฟล์นี้ได้ถ้าต้องเปลี่ยนทีหลัง\n")
@@ -242,7 +273,8 @@ def load_settings() -> configparser.SectionProxy:
 
 # ------------------------------------------------------------------- running
 def print_text(text: str, section: configparser.SectionProxy) -> None:
-    send(render(text, section["font"], int(section.get("font_size", "22"))), section["target"])
+    send(render(text, section["font"], int(section.get("font_size", "22"))),
+         section["target"], float(section.get("band_pause", BAND_PAUSE_SECONDS)))
 
 
 def main() -> None:

@@ -244,6 +244,21 @@ class ReceiptRasterTest(unittest.TestCase):
             rows = piece[2] | (piece[3] << 8)
             self.assertLessEqual(rows, self.agent.BAND_ROWS)
 
+    def test_the_bytes_go_out_one_command_at_a_time(self):
+        """Sending is paced, so the chunks must line up with the commands.
+
+        A chunk that starts in the middle of an image command would be paced
+        just as happily and print just as badly."""
+        data = self.agent.render(chr(10).join(["บรรทัด"] * 10), self.font)
+        pieces = self.agent.in_chunks(data)
+        marker = bytes([0x1d, 0x76, 0x30, 0x00])
+        self.assertGreater(len(pieces), 3, "everything still goes out in one write")
+        self.assertEqual(b"".join(pieces), data, "the bytes changed on the way out")
+        for piece in pieces[1:]:
+            with self.subTest(head=piece[:4].hex()):
+                self.assertTrue(piece.startswith(marker), "a chunk starts mid-command")
+                self.assertEqual(piece.count(marker), 1, "two commands in one chunk")
+
     def test_the_slip_ends_with_enough_paper_to_tear(self):
         data = self.agent.render("บิล", self.font)
         self.assertTrue(data.startswith(bytes([0x1b, 0x40])), "the printer is not reset first")
