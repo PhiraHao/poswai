@@ -31,6 +31,19 @@
     shop: 'ร้านที่จะผูกบัญชีใช้งานไม่ได้แล้ว',
     unconfigured: 'ยังไม่ได้เปิดใช้ช่องทางนี้',
   };
+  /* In the app there is no page to navigate to: its pages are files it ships,
+     and the server is somewhere else. POSWAI_APP takes those hops over — the
+     sign-in into a real browser tab, the shop switch into a reload in place.
+     In a browser POSWAI_APP is absent and every one of these stays a plain
+     navigation, exactly as before. */
+  const go = url => { if (!window.POSWAI_APP?.go(url)) location.href = url; };
+  /* The app holds its session itself; a browser has it in an httponly cookie
+     and is handed nothing here. */
+  const keepSession = result => {
+    if (result?.session) window.POSWAI_APP?.keepStaff(result.session);
+    const slug = typeof result?.shop === 'string' ? result.shop : result?.shop?.slug;
+    if (slug) window.POSWAI_APP?.useShop(slug);
+  };
   let current = null;
   /* The customer signed in on this phone. Not a staff session: it carries no
      cookie and opens nothing but its own points, so the phone keeps it. */
@@ -332,7 +345,7 @@
       $('#poswaiAccountManageRow').hidden = !['owner', 'manager'].includes(current?.role);
     }
     if (panel === 'login') {
-      showLoginTab(tableToken ? 'member' : (inApp() || device.shop) ? 'staff' : 'owner');
+      showLoginTab(tableToken ? 'member' : device.shop ? 'staff' : 'owner');
     }
     $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
     if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
@@ -401,8 +414,16 @@
   $('#poswaiStaffChannels').addEventListener('click', event => {
     const button = event.target.closest('[data-staff-channel]');
     if (!button) return;
-    $('#poswaiLoginError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[button.dataset.staffChannel]}…`;
-    location.href = staffChannelHref(button.dataset.staffChannel);
+    const channel = button.dataset.staffChannel;
+    if (inApp()) {
+      /* Unlike the owner's, this sign-in ends in a staff session for one shop,
+         which the app has no way yet to be handed. The PIN is right here. */
+      $('#poswaiLoginError').textContent =
+        `ในแอปเข้าด้วย ${CHANNEL_NAMES[channel]} ยังไม่ได้ · ใส่รหัสพนักงานกับ PIN ด้านบน`;
+      return;
+    }
+    $('#poswaiLoginError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[channel]}…`;
+    location.href = staffChannelHref(channel);
   });
   $('#poswaiStaffLinkChannels').addEventListener('click', event => {
     const button = event.target.closest('[data-staff-link-channel]');
@@ -436,6 +457,7 @@
         shop: code || undefined,
       });
       $('#poswaiStaffPin').value = '';
+      keepSession(current);
       if (current.shop) shop = { ...shop, slug: current.shop, is_demo: false };
       rememberLogin(current.shop || shop.slug, current);
       sessionStorage.removeItem('poswaiPreviewPeek');
@@ -493,12 +515,6 @@
     if (!button) return;
     const channel = button.dataset.channel;
     const name = CHANNEL_NAMES[channel];
-    if (inApp()) {
-      $('#poswaiOwnerError').textContent =
-        `ในแอปเข้าด้วย ${name} ไม่ได้ ${name} ไม่อนุญาต · ใช้ชื่อร้านกับ PIN ที่แท็บพนักงาน `
-        + 'หรือเข้าด้วยบัญชีนี้จากเบราว์เซอร์';
-      return;
-    }
     if (!channels[channel]) {
       $('#poswaiOwnerError').textContent =
         `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${name} ระหว่างนี้ใช้ชื่อร้านและ PIN ไปก่อน`;
@@ -506,7 +522,7 @@
     }
     $('#poswaiOwnerError').textContent = `กำลังพาไปหน้า ${name}…`;
     // The handshake is the server's: it writes the state and nonce, we only follow.
-    location.href = `/api/owner/auth/${channel}/start`;
+    go(`/api/owner/auth/${channel}/start`);
   });
   $('#poswaiMemberChannels').addEventListener('click', event => {
     const button = event.target.closest('[data-member-channel]');
@@ -577,7 +593,8 @@
       $('#poswaiOwnerPin').value = '';
       sessionStorage.removeItem('poswaiPreviewPeek');
       // The new shop runs for real, so reload the page on its own address.
-      location.href = `/?shop=${encodeURIComponent(result.shop.slug)}`;
+      keepSession(result);
+      go(`/?shop=${encodeURIComponent(result.shop.slug)}`);
     } catch (error) { $('#poswaiSignupError').textContent = error.message; }
     finally { submit.disabled = false; submit.textContent = 'เปิดร้าน'; }
   });
@@ -602,11 +619,11 @@
   const enterOwnerShop = async slug => {
     $('#poswaiChooserError').textContent = '';
     try {
-      await api('/api/owner/enter', { slug });
+      keepSession(await api('/api/owner/enter', { slug }));
       sessionStorage.removeItem('poswaiPreviewPeek');
       // Reload on the shop's own address so its menu, billing notice and
       // permissions all come from that shop and nothing is left over.
-      location.href = `/?shop=${encodeURIComponent(slug)}`;
+      go(`/?shop=${encodeURIComponent(slug)}`);
     } catch (error) {
       open('chooser');
       $('#poswaiChooserError').textContent = error.message;
@@ -900,8 +917,26 @@
       $('#poswaiOwnerError').textContent = OWNER_ERRORS[ownerError] || OWNER_ERRORS.provider;
       return;
     }
+    if (window.POSWAI_APP) {
+      window.POSWAI_APP.onSignedIn = ({ outcome }) => resumeOwnerSignIn(outcome);
+      window.POSWAI_APP.onSignInFailed = reason => {
+        open('login');
+        showLoginTab('owner');
+        $('#poswaiOwnerError').textContent = reason === 'closed'
+          ? 'ปิดหน้าเข้าสู่ระบบไปก่อนเสร็จ กรุณากดเข้าสู่ระบบอีกครั้ง'
+          : (OWNER_ERRORS[reason] || OWNER_ERRORS.provider);
+      };
+      /* The server closed this session — expired, or signed out elsewhere.
+         Drop what the phone kept rather than keep showing a shop it cannot read. */
+      window.POSWAI_APP.onSignedOut = () => {
+        window.POSWAI_APP.forget();
+        current = null;
+        update();
+        open('login');
+      };
+    }
     if (ownerFlow) { await resumeOwnerSignIn(ownerFlow); return; }
-    const installedApp = window.matchMedia?.('(display-mode: standalone)').matches;
+    const installedApp = window.POSWAI_APP?.native() || window.matchMedia?.('(display-mode: standalone)').matches;
     if (!current && !tableToken && installedApp && sessionStorage.getItem('poswaiPreviewPeek') !== '1') open();
   }).catch(() => {});
 })();

@@ -67,6 +67,7 @@ from line_integration import (build_leave_flex, parse_leave_postback,
                               push_leave_request, verify_liff_id_token,
                               verify_webhook_signature)
 from line_notifications import enqueue as enqueue_line_notification, flush as flush_line_notifications, init_notifications
+import poswai_mobile as mobile
 import poswai_shops as shops
 import poswai_owner_auth as owner_auth
 from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
@@ -730,7 +731,7 @@ async def protect_preview(request: Request, call_next):
 
 
 def require_staff(request: Request, roles: tuple[str, ...] = (), branch_id: int | None = None) -> dict:
-    token = request.cookies.get("poswai_session", "")
+    token = mobile.staff_token(request)
     if len(token) != 64 or not re.fullmatch(r"[0-9a-f]{64}", token):
         raise HTTPException(401, "กรุณาเข้าสู่ระบบพนักงานก่อน")
     with closing(connect_db()) as conn, conn:
@@ -764,7 +765,9 @@ class LoginRequest(BaseModel):
 
 
 def _open_session(request: Request, response: Response, conn: sqlite3.Connection, staff_id: int,
-                  samesite: str = "strict") -> int:
+                  samesite: str = "strict") -> tuple[str, int]:
+    """Open a staff session. Returns the token with the expiry: the page uses the
+    cookie and ignores the token, the app keeps the token and has no cookie."""
     token = secrets.token_hex(32)
     expires = int(time.time()) + SESSION_LIFETIME
     conn.execute("DELETE FROM auth_sessions WHERE staff_id=? OR expires_at<=?", (staff_id, int(time.time())))
@@ -772,7 +775,7 @@ def _open_session(request: Request, response: Response, conn: sqlite3.Connection
                  (hashlib.sha256(token.encode()).hexdigest(), staff_id, expires))
     response.set_cookie("poswai_session", token, max_age=SESSION_LIFETIME, httponly=True,
                         secure=_secure(request), samesite=samesite, path="/")
-    return expires
+    return token, expires
 
 
 @app.post("/api/auth/login")
@@ -816,10 +819,14 @@ def staff_login(req: LoginRequest, request: Request, response: Response):
         if locked:
             raise HTTPException(403, "บัญชีนี้ถูกระงับสิทธิ์สำหรับกะวันนี้")
         conn.execute("DELETE FROM auth_login_attempts WHERE staff_id=?", (row["id"],))
-        expires = _open_session(request, response, conn, row["id"])
+        token, expires = _open_session(request, response, conn, row["id"])
     _remember_shop(request, response, CURRENT_SHOP.get())
-    return {"staff_id": row["id"], "branch_id": row["branch_id"], "name": row["name"],
+    body = {"staff_id": row["id"], "branch_id": row["branch_id"], "name": row["name"],
             "role": row["role"], "expires_at": expires, "shop": CURRENT_SHOP.get()}
+    if mobile.is_app(request):
+        # The app has nowhere to put a cookie, so it is handed the token itself.
+        body["session"] = token
+    return body
 
 
 @app.get("/api/auth/session")
@@ -831,7 +838,7 @@ def staff_session(request: Request):
 
 @app.post("/api/auth/logout")
 def staff_logout(request: Request, response: Response):
-    token = request.cookies.get("poswai_session", "")
+    token = mobile.staff_token(request)
     if token:
         with closing(connect_db()) as conn, conn:
             conn.execute("DELETE FROM auth_sessions WHERE token_hash=?", (hashlib.sha256(token.encode()).hexdigest(),))
@@ -3348,13 +3355,13 @@ def open_shop(req: ShopSignup, request: Request, response: Response):
                                (owner_name, pin_hash))
             store_leave_quota(conn, cur.lastrowid, None)
             owner_id = cur.lastrowid
-            expires = _open_session(request, response, conn, owner_id)
+            _, expires = _open_session(request, response, conn, owner_id)
     except Exception:
         _prepared_databases.discard(shops.shop_db_path(DB_PATH, slug))
         shops.shop_db_path(DB_PATH, slug).unlink(missing_ok=True)
         shops.release_shop(DB_PATH, slug)
         raise
-    account = owner_auth.session_account(DB_PATH, request.cookies.get(OWNER_COOKIE, ""))
+    account = owner_auth.session_account(DB_PATH, mobile.owner_token(request, OWNER_COOKIE))
     if account:
         # Opened from an owner account: bind it now so the next sign-in needs no shop code.
         owner_auth.link_shop(DB_PATH, account_id=account["id"], slug=slug, staff_id=owner_id)
@@ -3439,7 +3446,7 @@ def _owner_failure(code: str) -> RedirectResponse:
 
 
 def _owner_account(request: Request) -> dict:
-    account = owner_auth.session_account(DB_PATH, request.cookies.get(OWNER_COOKIE, ""))
+    account = owner_auth.session_account(DB_PATH, mobile.owner_token(request, OWNER_COOKIE))
     if not account:
         raise HTTPException(401, "กรุณาเข้าสู่ระบบด้วยบัญชีเจ้าของร้านก่อน")
     return account
@@ -3453,11 +3460,21 @@ def _set_owner_cookie(request: Request, response: Response, token: str) -> None:
 
 
 @app.get("/api/owner/auth/{provider}/start")
-def owner_login_start(provider: str, request: Request, mode: str = "login"):
-    """Begin a sign-in, or — with mode=link — bind a provider to the open shop."""
+def owner_login_start(provider: str, request: Request, mode: str = "login", app: str = ""):
+    """Begin a sign-in, or — with mode=link — bind a provider to the open shop.
+
+    app=1 marks a sign-in opened by the POS WAI app in a real browser tab, which
+    is the only embedded-browser arrangement Google permits. The provider still
+    calls this server back at the address its console already knows; what
+    changes is the last hop, which goes to the app instead of to a web page.
+    """
     client_id, client_secret = _provider_credentials(provider)
     if not client_id or not client_secret:
         raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
+    from_app = app not in ("", "0", "false")
+    if from_app and mode != "login":
+        # Linking a provider to a shop needs the staff session the page holds.
+        raise HTTPException(400, "คำขอเข้าสู่ระบบไม่ถูกต้อง")
     slug, staff_id = "", None
     if mode == "link":
         # Only the owner already signed into this shop may hand it to an account.
@@ -3468,7 +3485,7 @@ def owner_login_start(provider: str, request: Request, mode: str = "login"):
         staff_id = staff["id"]
     try:
         handshake = owner_auth.start_login(DB_PATH, provider=provider, mode=mode, slug=slug,
-                                           staff_id=staff_id)
+                                           staff_id=staff_id, app_login=from_app)
     except owner_auth.OwnerAuthError as exc:
         raise HTTPException(exc.status, exc.message) from exc
     return RedirectResponse(owner_auth.authorize_url(
@@ -3588,6 +3605,25 @@ def _finish_staff_login(request: Request, pending: dict, identity: dict) -> Redi
     return response
 
 
+def _finish_app_owner_login(account: dict) -> RedirectResponse:
+    """Send a finished sign-in back into the app over its own link.
+
+    The token travels in the link because that is the one channel the phone
+    routes to the app and to nothing else. It is single-use in practice: the app
+    stores it and the link is never written down anywhere.
+    """
+    linked = owner_auth.account_shops(DB_PATH, account["id"])
+    if not linked:
+        outcome, slug = "new", ""
+    elif len(linked) == 1:
+        outcome, slug = "enter", linked[0]["slug"]
+    else:
+        outcome, slug = "choose", ""
+    token, _ = owner_auth.open_session(DB_PATH, account["id"])
+    return RedirectResponse(mobile.app_link("auth", owner=token, outcome=outcome, shop=slug),
+                            status_code=303)
+
+
 @app.get("/api/owner/auth/{provider}/callback")
 def owner_login_callback(provider: str, request: Request, code: str = "", state: str = "",
                          error: str = ""):
@@ -3610,6 +3646,8 @@ def owner_login_callback(provider: str, request: Request, code: str = "", state:
         return _finish_staff_login(request, pending, identity)
     if pending["mode"] == "member":
         return _finish_member_login(request, pending["slug"] or MAIN_SHOP, identity)
+    if pending.get("app_login"):
+        return _finish_app_owner_login(account)
     if pending["mode"] == "link":
         record = shops.get_shop(DB_PATH, pending["slug"])
         if not record or record["status"] != "active" or not pending["staff_id"]:
@@ -3667,16 +3705,19 @@ def owner_enter_shop(req: OwnerShopChoice, request: Request, response: Response)
         if not row or not row["is_active"]:
             raise HTTPException(409, "บัญชีพนักงานของเจ้าของร้านนี้ถูกปิดใช้งาน "
                                      "กรุณาเข้าด้วยรหัสร้านและ PIN แล้วผูกบัญชีใหม่")
-        expires = _open_session(request, response, conn, row["id"])
+        token, expires = _open_session(request, response, conn, row["id"])
     _remember_shop(request, response, slug)
-    return {"shop": {"slug": slug, "name": record["name"]}, "staff_id": row["id"],
+    body = {"shop": {"slug": slug, "name": record["name"]}, "staff_id": row["id"],
             "branch_id": row["branch_id"], "name": row["name"], "role": row["role"],
             "expires_at": expires}
+    if mobile.is_app(request):
+        body["session"] = token
+    return body
 
 
 @app.post("/api/owner/logout")
 def owner_logout(request: Request, response: Response):
-    owner_auth.close_session(DB_PATH, request.cookies.get(OWNER_COOKIE, ""))
+    owner_auth.close_session(DB_PATH, mobile.owner_token(request, OWNER_COOKIE))
     response.delete_cookie(OWNER_COOKIE, path="/")
     return {"status": "logged_out"}
 

@@ -1,0 +1,184 @@
+/* The bridge between the POS WAI pages and the phone they now live on.
+ *
+ * In the browser these pages are served by the shop's server, so "/api/orders"
+ * means that server and the session rides along in a cookie. In the app the very
+ * same pages are files inside the app: "/api/orders" would mean the app itself,
+ * and no cookie survives a cross-origin trip (iOS refuses one outright).
+ *
+ * This file closes that gap before any page script runs. It must load first.
+ * Nothing else in the POS had to be rewritten for the app; that is the point.
+ */
+(() => {
+  'use strict';
+
+  const DEFAULT_SERVER = 'https://poswai.zzaxstudio.com';
+  // Paths that mean the shop's server rather than a file this app ships.
+  const REMOTE = ['/api/', '/menu-photos/', '/t/'];
+  const STORE = {
+    server: 'poswai.app.server',
+    staff: 'poswai.app.session',
+    owner: 'poswai.app.owner',
+    shop: 'poswai.app.shop',
+  };
+
+  /* localStorage, not the Preferences plugin: the first request happens before
+     any async read could finish, and this origin belongs to the app alone. */
+  const read = (key) => {
+    try { return localStorage.getItem(key) || ''; } catch { return ''; }
+  };
+  const write = (key, value) => {
+    try { value ? localStorage.setItem(key, value) : localStorage.removeItem(key); } catch { /* private mode */ }
+  };
+
+  const plugin = (name) => window.Capacitor?.Plugins?.[name];
+  const native = () => Boolean(window.Capacitor?.isNativePlatform?.());
+  const server = () => (read(STORE.server) || DEFAULT_SERVER).replace(/\/+$/, '');
+
+  const app = {
+    get server() { return server(); },
+    get shop() { return read(STORE.shop); },
+    get staffToken() { return read(STORE.staff); },
+    get ownerToken() { return read(STORE.owner); },
+  };
+
+  // ------------------------------------------------------------------ the keys
+  app.signedIn = () => Boolean(read(STORE.staff));
+
+  app.keepStaff = (token) => write(STORE.staff, token || '');
+  app.keepOwner = (token) => write(STORE.owner, token || '');
+  app.keepShop = (slug) => write(STORE.shop, slug || '');
+
+  app.forget = () => {
+    write(STORE.staff, '');
+    write(STORE.owner, '');
+  };
+
+  /* Which shop this phone is working in. Every request says so, because the app
+     has no cookie for the server to remember it by. */
+  app.useShop = (slug) => {
+    if (slug && slug !== app.shop) app.keepShop(slug);
+  };
+
+  // --------------------------------------------------------------- the requests
+  const remote = (path) => REMOTE.some((prefix) => path.startsWith(prefix));
+
+  /** Where a path the pages ask for actually lives. */
+  app.resolve = (path) => {
+    if (typeof path !== 'string' || !path.startsWith('/')) return path;
+    if (!remote(path)) return path;                 // a file this app ships
+    const url = new URL(server() + path);
+    if (app.shop && !url.searchParams.has('shop')) url.searchParams.set('shop', app.shop);
+    return url.toString();
+  };
+
+  const headers = (given) => {
+    const sent = new Headers(given || {});
+    sent.set('x-poswai-app', '1');
+    if (app.staffToken) sent.set('x-poswai-session', app.staffToken);
+    if (app.ownerToken) sent.set('x-poswai-owner', app.ownerToken);
+    return sent;
+  };
+
+  const plainFetch = window.fetch.bind(window);
+
+  window.fetch = (input, init) => {
+    const path = typeof input === 'string' ? input : input?.url;
+    if (typeof path !== 'string' || !path.startsWith('/')) return plainFetch(input, init);
+    const target = app.resolve(path);
+    if (target === path) return plainFetch(input, init);   // local file, untouched
+    const sent = {...(init || {}), headers: headers(init?.headers)};
+    // No cookie to send and none to receive: the token in the header is the session.
+    sent.credentials = 'omit';
+    return plainFetch(target, sent).then((reply) => {
+      // A session the server has closed is gone here too, or the app would keep
+      // showing a shop it can no longer read.
+      if (reply.status === 401 && app.staffToken) app.onSignedOut?.();
+      return reply;
+    });
+  };
+
+  /* Menu photos come from the server with a rooted path, and the pages put that
+     path straight into an <img>. Rather than hunt down every such place, let the
+     one that fails ask the server instead. Local images never reach this. */
+  document.addEventListener('error', (event) => {
+    const image = event.target;
+    if (!(image instanceof HTMLImageElement)) return;
+    const source = image.getAttribute('src') || '';
+    if (!source.startsWith('/') || !remote(source) || image.dataset.poswaiRetried) return;
+    image.dataset.poswaiRetried = '1';
+    image.src = app.resolve(source);
+  }, true);
+
+  // ------------------------------------------------------------ the sign-in hop
+  const AUTH_LINK = 'poswai://auth';
+  let waiting = null;
+
+  /** Where a page wanted to navigate. Returns true when the app took it over. */
+  app.go = (url) => {
+    const owner = /^\/api\/owner\/auth\/([a-z]+)\/start/.exec(url || '');
+    if (owner) { app.signInWith(owner[1]); return true; }
+    const shop = /^\/\?shop=([^&]+)/.exec(url || '');
+    if (shop) { app.enterShop(decodeURIComponent(shop[1])); return true; }
+    if (url === '/') { app.reopen(); return true; }
+    return false;
+  };
+
+  /* Google refuses a sign-in inside an app's own web view, and is right to: the
+     page could read what is typed there. A real browser tab is the arrangement
+     it does permit, and the server sends the finished session back to us over
+     poswai://auth — a link only this app answers. */
+  app.signInWith = async (channel) => {
+    const browser = plugin('Browser');
+    const target = `${server()}/api/owner/auth/${channel}/start?app=1`;
+    if (!browser) { window.open(target, '_blank'); return; }
+    waiting = channel;
+    await browser.open({url: target, presentationStyle: 'popover'});
+  };
+
+  const finishSignIn = (url) => {
+    let handed;
+    try { handed = new URL(url); } catch { return; }
+    const got = handed.searchParams;
+    plugin('Browser')?.close().catch(() => {});
+    waiting = null;
+    const failed = got.get('error');
+    if (failed) { app.onSignInFailed?.(failed); return; }
+    const token = got.get('owner');
+    if (!token) return;
+    app.keepOwner(token);
+    app.onSignedIn?.({outcome: got.get('outcome') || 'choose', shop: got.get('shop') || ''});
+  };
+
+  plugin('App')?.addListener('appUrlOpen', ({url}) => {
+    if (typeof url === 'string' && url.startsWith(AUTH_LINK)) finishSignIn(url);
+  });
+
+  /* The tab was closed without finishing. Say so rather than leave a spinner. */
+  plugin('Browser')?.addListener('browserFinished', () => {
+    if (waiting) { waiting = null; app.onSignInFailed?.('closed'); }
+  });
+
+  // -------------------------------------------------------------- opening a shop
+  /* In the browser this is a page load on the shop's own address. Here the page
+     is already loaded, so remember the shop and start it over. */
+  app.enterShop = (slug) => {
+    app.useShop(slug);
+    app.reopen();
+  };
+
+  app.reopen = () => { window.location.replace('index.html'); };
+
+  /* A till that dims mid-order and asks for the phone's own code is a till the
+     queue is waiting on. The screen stays up while this app is in front, and is
+     released the moment it is not, so it never holds the phone awake in a pocket. */
+  const awake = plugin('KeepAwake');
+  if (awake) {
+    awake.keepAwake().catch(() => {});
+    plugin('App')?.addListener('appStateChange', ({isActive}) => {
+      (isActive ? awake.keepAwake() : awake.allowSleep()).catch(() => {});
+    });
+  }
+
+  app.native = native;
+  window.POSWAI_APP = app;
+})();

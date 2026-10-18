@@ -1,0 +1,26 @@
+{
+  "name": "poswai-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "แอป POS WAI สำหรับแอนดรอยด์และไอโฟน — หน้าจออยู่ในเครื่อง คุยกับเซิร์ฟเวอร์แค่ข้อมูล",
+  "scripts": {
+    "build": "node build-www.mjs",
+    "sync": "node build-www.mjs && cap sync",
+    "android": "cap open android",
+    "ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor-community/bluetooth-le": "^8.3.0",
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3",
+    "@capacitor/splash-screen": "^8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3"
+  }
+}

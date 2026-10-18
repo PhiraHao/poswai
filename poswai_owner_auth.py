@@ -83,7 +83,11 @@ def _connect(main_db: Path) -> sqlite3.Connection:
         mode TEXT NOT NULL DEFAULT 'login',
         slug TEXT NOT NULL DEFAULT '',
         staff_id INTEGER,
+        app_login INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL)""")
+    # Databases written before the app existed have no app_login column.
+    if not any(row[1] == "app_login" for row in conn.execute("PRAGMA table_info(owner_login_states)")):
+        conn.execute("ALTER TABLE owner_login_states ADD COLUMN app_login INTEGER NOT NULL DEFAULT 0")
     return conn
 
 
@@ -93,8 +97,14 @@ def _hash(token: str) -> str:
 
 # ---------------------------------------------------------------- the handshake
 def start_login(main_db: Path, *, provider: str, mode: str = "login", slug: str = "",
-                staff_id: int | None = None) -> dict:
-    """Record one sign-in attempt and return the state and nonce to send out."""
+                staff_id: int | None = None, app_login: bool = False) -> dict:
+    """Record one sign-in attempt and return the state and nonce to send out.
+
+    app_login marks a sign-in that began inside the POS WAI app. The provider
+    still calls this server back — the app never talks to the provider — but the
+    finished session has to reach the app rather than a cookie jar, so the
+    callback hands it over through the app's own link instead.
+    """
     if provider not in PROVIDERS:
         raise OwnerAuthError("provider", "ช่องทางเข้าสู่ระบบนี้ไม่มีในระบบ", 404)
     if mode not in ("login", "link", "member", "staff", "staff_link"):
@@ -103,9 +113,10 @@ def start_login(main_db: Path, *, provider: str, mode: str = "login", slug: str 
     now = int(time.time())
     with closing(_connect(main_db)) as conn, conn:
         conn.execute("DELETE FROM owner_login_states WHERE created_at<?", (now - STATE_LIFETIME,))
-        conn.execute("INSERT INTO owner_login_states(state_hash,provider,nonce,mode,slug,staff_id,created_at)"
-                     " VALUES(?,?,?,?,?,?,?)",
-                     (_hash(state), provider, nonce, mode, slug, staff_id, now))
+        conn.execute("INSERT INTO owner_login_states"
+                     "(state_hash,provider,nonce,mode,slug,staff_id,app_login,created_at)"
+                     " VALUES(?,?,?,?,?,?,?,?)",
+                     (_hash(state), provider, nonce, mode, slug, staff_id, 1 if app_login else 0, now))
     return {"state": state, "nonce": nonce}
 
 
@@ -116,12 +127,13 @@ def consume_state(main_db: Path, *, provider: str, state: str) -> dict:
     now = int(time.time())
     with closing(_connect(main_db)) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT provider,nonce,mode,slug,staff_id,created_at FROM owner_login_states"
-                           " WHERE state_hash=?", (_hash(state),)).fetchone()
+        row = conn.execute("SELECT provider,nonce,mode,slug,staff_id,created_at,app_login"
+                           " FROM owner_login_states WHERE state_hash=?", (_hash(state),)).fetchone()
         conn.execute("DELETE FROM owner_login_states WHERE state_hash=?", (_hash(state),))
     if not row or row[0] != provider or now - row[5] > STATE_LIFETIME:
         raise OwnerAuthError("state", "คำขอเข้าสู่ระบบหมดอายุหรือไม่ถูกต้อง กรุณาลองใหม่", 400)
-    return {"provider": row[0], "nonce": row[1], "mode": row[2], "slug": row[3], "staff_id": row[4]}
+    return {"provider": row[0], "nonce": row[1], "mode": row[2], "slug": row[3], "staff_id": row[4],
+            "app_login": bool(row[6])}
 
 
 # ---------------------------------------------------------------- the providers
