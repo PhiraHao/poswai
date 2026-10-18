@@ -11,6 +11,10 @@
 (() => {
   'use strict';
 
+  // Before the first paint: app-shell.css styles only what carries this class,
+  // so the web, which never loads this file, is never touched by it.
+  document.documentElement.classList.add('poswai-app');
+
   const DEFAULT_SERVER = 'https://poswai.zzaxstudio.com';
   // Paths that mean the shop's server rather than a file this app ships.
   const REMOTE = ['/api/', '/menu-photos/', '/t/'];
@@ -83,6 +87,19 @@
 
   const plainFetch = window.fetch.bind(window);
 
+  /* Menu photos arrive in the data as rooted paths ("/menu-photos/shop/x.jpg")
+     and go straight into an <img>. In the app that would ask the app itself
+     for the photo — and the page's own fallback swaps in a placeholder the
+     instant that fails, so a photo is never seen. Pointing those paths at the
+     server as the data arrives fixes every place that shows one at once. */
+  const PHOTO_PATH = /"\/(menu-photos\/)/g;
+  const pointAtServer = async (reply) => {
+    if (!(reply.headers.get('content-type') || '').includes('application/json')) return reply;
+    const text = await reply.text();
+    const fixed = text.includes('"/menu-photos/') ? text.replace(PHOTO_PATH, `"${server()}/$1`) : text;
+    return new Response(fixed, {status: reply.status, statusText: reply.statusText, headers: reply.headers});
+  };
+
   window.fetch = (input, init) => {
     const path = typeof input === 'string' ? input : input?.url;
     if (typeof path !== 'string' || !path.startsWith('/')) return plainFetch(input, init);
@@ -91,7 +108,7 @@
     const sent = {...(init || {}), headers: headers(init?.headers)};
     // No cookie to send and none to receive: the token in the header is the session.
     sent.credentials = 'omit';
-    return plainFetch(target, sent).then((reply) => {
+    return plainFetch(target, sent).then(pointAtServer).then((reply) => {
       /* A session the server has closed is gone here too, or the app would keep
          showing a shop it can no longer read. Only the session endpoint speaks
          for the session, though: plenty of others answer 401 for reasons of

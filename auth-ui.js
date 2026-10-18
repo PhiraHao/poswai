@@ -573,7 +573,7 @@
       try {
         const result = await (await fetch(`/api/shops/check?slug=${encodeURIComponent(field.value)}`)).json();
         hint.textContent = !result.valid ? 'ชื่อร้านในลิงก์ใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว'
-            : result.available ? `ใช้ได้ · ลิงก์ร้านคุณคือ ${location.origin}/?shop=${result.slug}` : 'ชื่อนี้มีคนใช้แล้ว';
+            : result.available ? `ใช้ได้ · ลิงก์ร้านคุณคือ ${window.POSWAI_APP?.server || location.origin}/?shop=${result.slug}` : 'ชื่อนี้มีคนใช้แล้ว';
         hint.className = `poswai-auth-hint${result.valid && result.available ? ' ok' : ' bad'}`;
       } catch (_) { hint.textContent = ''; }
     }, 350);

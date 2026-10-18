@@ -53,6 +53,12 @@ async function page() {
   const head = html.indexOf('  <link rel="stylesheet" href="/ui.css">');
   if (head < 0) throw new Error('index.html changed shape: no stylesheet block to anchor to');
   html = html.slice(0, head) + bridge + html.slice(head);
+
+  /* The app's own skin goes last in <head> so it has the final word over the
+     web's stylesheets, and its script last in <body> so the page it adjusts
+     is already there. */
+  html = html.replace('</head>', '  <link rel="stylesheet" href="/app-shell.css">\n</head>');
+  html = html.replace('</body>', '  <script src="/app-shell.js"></script>\n</body>');
   return html;
 }
 
@@ -63,7 +69,9 @@ await mkdir(out, {recursive: true});
 await mkdir(join(out, 'print'), {recursive: true});
 
 await writeFile(join(out, 'index.html'), html, 'utf8');
-await cp(join(here, 'src', 'app-bridge.js'), join(out, 'app-bridge.js'));
+for (const own of ['app-bridge.js', 'app-shell.css', 'app-shell.js']) {
+  await cp(join(here, 'src', own), join(out, own));
+}
 await cp(join(web, 'assets'), join(out, 'assets'), {recursive: true});
 
 // The policy pages carry their own stylesheet, and the app links to them from
@@ -72,7 +80,7 @@ const legal = await Promise.all(LOOSE.filter((name) => name.endsWith('.html'))
   .map((name) => readFile(join(web, name), 'utf8')));
 
 const copies = [
-  ...referenced(html + legal.join('')).filter((name) => name !== 'app-bridge.js')
+  ...referenced(html + legal.join('')).filter((name) => !name.startsWith('app-'))
     .map((name) => [join(web, name), name]),
   ...LOOSE.map((name) => [join(web, name), name]),
   // Under print/, the path the pages already import them by on the web.

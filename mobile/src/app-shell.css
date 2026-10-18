@@ -1,0 +1,802 @@
+/* POS WAI — the app's own skin.
+ *
+ * The pages inside the app are the web's pages, and on a phone the web is
+ * styled by four stylesheets that grew up separately (ui, workspace and the
+ * redesign layers), each with its own idea of how big a label is. This file
+ * loads last and only inside the app, and is the final word on the things that
+ * make a screen read as a phone app rather than a web page: one type scale, one
+ * spacing scale, touch targets a thumb can hit, an app bar that never overlaps
+ * itself and a tab bar that fits the screen exactly.
+ *
+ * The web is untouched: every rule here sits under html.poswai-app, a class
+ * only the app's bridge sets.
+ *
+ * Type scale — five sizes, nothing else:  12 caption · 14 secondary ·
+ * 16 body · 18 section title · 22 page title.
+ * Spacing — 4 · 8 · 12 · 16 · 24.   Touch — 44px minimum, 8px apart.
+ */
+
+html.poswai-app {
+  --app-bg: #f4f6f9;
+  --app-surface: #ffffff;
+  --app-ink: #141b24;
+  --app-ink-2: #4a5563;          /* 7.4:1 on white: muted, never faint */
+  --app-line: #e3e8ef;
+  --app-brand: #ffc928;
+  --app-brand-soft: #fff4c7;
+  --app-brand-ink: #3d2f00;
+  --app-danger: #c2382f;
+  --app-ok: #1e8e5a;
+
+  --t-cap: 12px;
+  --t-sm: 14px;
+  --t-body: 16px;
+  --t-title: 18px;
+  --t-h1: 22px;
+
+  --app-bar: 56px;
+  --tab-bar: 64px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --app-radius: 12px;
+  --app-radius-sm: 10px;
+
+  -webkit-text-size-adjust: 100%;
+  background: var(--app-bg);
+}
+
+html.poswai-app body {
+  /* The web makes body a two-column grid at 769px and up, sidebar first. Here
+     the navigation is a bar fixed to the bottom at every width, so a tablet or
+     a phone turned on its side would keep an empty sidebar column. */
+  display: block !important;
+  background: var(--app-bg);
+  color: var(--app-ink);
+  font-family: "Noto Sans Thai", "Leelawadee UI", Tahoma, sans-serif;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  /* A till is tapped all day: no 300ms wait, no rubber-band reload. */
+  touch-action: manipulation;
+  overscroll-behavior-y: contain;
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Text a cashier types or copies stays selectable. */
+html.poswai-app input,
+html.poswai-app textarea,
+html.poswai-app [contenteditable] { -webkit-user-select: text; user-select: text; }
+
+/* ======================================================= the app bar === */
+html.poswai-app .sim-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  height: calc(var(--app-bar) + var(--safe-top));
+  padding: var(--safe-top) 12px 0;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-line);
+  box-shadow: none;
+}
+html.poswai-app .sim-topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--app-bar);
+  padding: 0;
+  flex-wrap: nowrap;
+}
+/* Logo mark only: the shop is what the bar is about, not our name. */
+html.poswai-app .brand-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+html.poswai-app .line-badge {
+  flex: none;
+  gap: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+html.poswai-app .line-badge > span:last-child { display: none; }
+html.poswai-app .line-badge .brand-symbol,
+html.poswai-app .line-badge img { width: 32px; height: 32px; }
+
+/* The branch is the one thing in the bar that changes what the till shows,
+   so it gets the width that is left — and never more. */
+html.poswai-app #branchSelect {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  height: 44px;
+  margin: 0;
+  padding: 0 32px 0 12px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius-sm);
+  background-color: var(--app-bg);
+  color: var(--app-ink);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  line-height: 44px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+html.poswai-app .net-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin: 0;
+}
+/* Demo controls belong to the website's showroom, not to a shop's till. */
+html.poswai-app #autoDemoBtn { display: none !important; }
+/* The online dot is a status, not a switch: flipping a working till into
+   offline mode by brushing a corner of the screen is not a feature. */
+html.poswai-app #netToggleBtn {
+  order: 1;
+  pointer-events: none;
+  width: 12px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  background: none !important;
+  box-shadow: none;
+}
+html.poswai-app #netToggleBtn #netStatusText { display: none; }
+html.poswai-app #netToggleBtn #netStatusDot {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  font-size: 0;
+  background: var(--app-ok);
+  box-shadow: 0 0 0 3px #d9f2e6;
+}
+html.poswai-app #netToggleBtn.offline #netStatusDot { background: var(--app-danger); box-shadow: 0 0 0 3px #f8dcd9; }
+
+html.poswai-app .sync-badge {
+  order: 0;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--t-cap);
+  line-height: 28px;
+}
+
+/* Language: one chip, 44 square. The picker it opens is the page's own. */
+html.poswai-app .compact-language-picker {
+  position: relative;
+  flex: none;
+  order: 2;
+  height: 44px;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: none !important;
+}
+html.poswai-app .compact-language-picker .btn,
+html.poswai-app #topLangBtnTH,
+html.poswai-app #topLangBtnEN,
+html.poswai-app #topLangBtnCN {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 10px !important;
+  border: 1px solid var(--app-line) !important;
+  border-radius: var(--app-radius-sm) !important;
+  background: var(--app-surface) !important;
+  color: var(--app-ink) !important;
+  font-size: var(--t-sm) !important;
+  font-weight: 600;
+  line-height: 1 !important;
+  white-space: nowrap;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+/* A drawn chevron: the page's "⌄" glyph sits on the baseline and reads as a v. */
+html.poswai-app .compact-language-picker .btn::after {
+  content: "" !important;
+  display: inline-block !important;
+  position: static !important;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 2px !important;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg) !important;
+  font-size: 0;
+}
+/* The other languages drop below the chip as a small menu, not beside it. */
+html.poswai-app .compact-language-picker > button:not(.selected-language) {
+  position: absolute;
+  right: 0;
+  z-index: 61;
+  min-width: 72px;
+}
+
+/* The person signed in: a round initial, 44 across. app-shell.js puts the
+   initial in data-initial; the name stays for screen readers. */
+html.poswai-app .poswai-auth-button {
+  position: relative;
+  order: 3;
+  flex: none;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--app-ink);
+  color: transparent;
+  font-size: 0;
+  overflow: hidden;
+}
+html.poswai-app .poswai-auth-button[data-signed-out] {
+  width: auto;
+  padding: 0 16px;
+  border-radius: var(--app-radius-sm);
+  background: var(--app-brand);
+  color: var(--app-ink);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+html.poswai-app .poswai-auth-button[data-signed-out]::before { content: none; }
+html.poswai-app .poswai-auth-button::before {
+  content: attr(data-initial);
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--app-brand);
+  font-size: var(--t-title);
+  font-weight: 700;
+}
+
+/* ===================================================== the tab bar === */
+html.poswai-app .role-tabs-wrap {
+  position: fixed;
+  inset: auto 0 0 0;
+  z-index: 70;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch;
+  width: 100%;
+  height: calc(var(--tab-bar) + var(--safe-bottom));
+  padding: 0 4px var(--safe-bottom);
+  background: var(--app-surface);
+  border-top: 1px solid var(--app-line);
+  box-shadow: 0 -4px 16px rgba(20, 27, 36, .06);
+}
+html.poswai-app .role-tabs-wrap[hidden] { display: none !important; }
+html.poswai-app .role-tabs-wrap .nav-brand,
+html.poswai-app .role-tabs-wrap .nav-section-label,
+html.poswai-app .role-tabs-wrap .nav-footer { display: none !important; }
+/* The tabs and the More button share one row of equal columns. */
+html.poswai-app .role-tabs-wrap .role-tabs {
+  display: contents;
+}
+html.poswai-app .role-tab,
+html.poswai-app .mobile-more {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: var(--tab-bar);
+  min-height: var(--tab-bar);
+  margin: 0;
+  padding: 8px 0 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--app-ink-2);
+  font-size: var(--t-cap);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  text-align: center;
+  transform: none;
+  transition: color .15s ease;
+}
+html.poswai-app .role-tab:not([data-in-bar]) { display: none; }
+html.poswai-app .role-tab > span:not(.tab-badge),
+html.poswai-app .mobile-more > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+html.poswai-app .role-tab small { display: none !important; }
+/* The icon sits on a pill; the active tab fills it. */
+html.poswai-app .role-tab svg,
+html.poswai-app .mobile-more svg {
+  box-sizing: content-box;
+  width: 24px;
+  height: 24px;
+  padding: 3px 18px;
+  border-radius: 999px;
+  flex: none;
+  transition: background-color .15s ease;
+}
+html.poswai-app .role-tab:hover,
+html.poswai-app .mobile-more:hover { background: none; color: var(--app-ink); transform: none; }
+html.poswai-app .role-tab.active { color: var(--app-ink); background: none; box-shadow: none; font-weight: 700; }
+html.poswai-app .role-tab.active svg { background: var(--app-brand); color: var(--app-ink); }
+html.poswai-app .mobile-more[aria-expanded="true"] { color: var(--app-ink); background: none; }
+html.poswai-app .mobile-more[data-current] { color: var(--app-ink); font-weight: 700; }
+html.poswai-app .mobile-more[data-current] svg { background: var(--app-brand); }
+html.poswai-app .mobile-more[aria-expanded="true"] svg { background: var(--app-brand-soft); }
+
+/* Counts sit on the icon's corner, not wherever the button's box ends. */
+html.poswai-app .role-tab .tab-badge {
+  position: absolute;
+  top: 4px;
+  left: calc(50% + 8px);
+  right: auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--app-danger);
+  color: #fff;
+  font-size: var(--t-cap);
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  border: 2px solid var(--app-surface);
+  box-sizing: content-box;
+}
+
+/* The page's own "more" panel is replaced by the sheet below; the class it
+   adds must not drag the tab row into a grid. */
+html.poswai-app .role-tabs-wrap.mobile-open::before { display: none; }
+html.poswai-app .role-tabs-wrap.mobile-open .role-tabs { display: contents; position: static; }
+html.poswai-app .role-tabs-wrap.mobile-open .role-tab:not([data-in-bar]) { display: none; }
+html.poswai-app .mobile-more[data-empty] { display: none !important; }
+
+/* =================================================== the More sheet === */
+html.poswai-app .app-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(20, 27, 36, .45);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease;
+}
+html.poswai-app .app-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 81;
+  padding: 8px 16px calc(16px + var(--safe-bottom));
+  background: var(--app-surface);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -12px 40px rgba(20, 27, 36, .18);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform .25s cubic-bezier(.2, .8, .2, 1), visibility 0s linear .25s;
+}
+html.poswai-app .app-sheet[data-open] { transform: none; visibility: visible; transition-delay: 0s; }
+html.poswai-app .app-sheet[data-open] + .app-sheet-scrim,
+html.poswai-app .app-sheet-scrim[data-open] { opacity: 1; pointer-events: auto; }
+html.poswai-app .app-sheet-grip {
+  width: 40px;
+  height: 4px;
+  margin: 4px auto 12px;
+  border-radius: 999px;
+  background: var(--app-line);
+}
+html.poswai-app .app-sheet h2 {
+  margin: 0 0 8px;
+  font-size: var(--t-title);
+  font-weight: 700;
+}
+html.poswai-app .app-sheet-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+html.poswai-app .app-sheet-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 0 16px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  color: var(--app-ink);
+  font: inherit;
+  font-size: var(--t-body);
+  font-weight: 600;
+  text-align: left;
+}
+html.poswai-app .app-sheet-item[aria-current="page"] { border-color: var(--app-brand); background: var(--app-brand-soft); }
+html.poswai-app .app-sheet-item svg {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+html.poswai-app .app-sheet-item small {
+  display: block;
+  color: var(--app-ink-2);
+  font-size: var(--t-cap);
+  font-weight: 400;
+}
+html.poswai-app .app-sheet-item .app-sheet-chevron { margin-left: auto; width: 20px; height: 20px; color: var(--app-ink-2); }
+
+/* ================================================== the content area === */
+html.poswai-app main.container {
+  max-width: none;
+  margin: 0;
+  padding: 16px 16px calc(var(--tab-bar) + var(--safe-bottom) + 24px);
+}
+/* The order screen also carries the floating basket bar above the tabs. */
+html.poswai-app body[data-active-tab="customer"] main.container {
+  padding-bottom: calc(var(--tab-bar) + var(--safe-bottom) + 88px);
+}
+html.poswai-app .mobile-cart-dock {
+  left: 16px;
+  right: 16px;
+  bottom: calc(var(--tab-bar) + var(--safe-bottom) + 12px);
+  min-height: 52px;
+  border-radius: var(--app-radius);
+  font-size: var(--t-body);
+  z-index: 65;
+}
+html.poswai-app .mobile-cart-dock * { font-size: var(--t-body); }
+
+/* Page heading: one line of title, one line of what this page is for. */
+html.poswai-app .module-intro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+html.poswai-app .module-intro > div { min-width: 0; flex: 1 1 100%; }
+html.poswai-app .module-intro > button,
+html.poswai-app .module-intro > a {
+  flex: 1 1 calc(50% - 6px);
+  min-width: 0;
+  min-height: 48px;
+  margin: 8px 0 0;
+  padding: 0 12px;
+  border-radius: var(--app-radius-sm);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  line-height: 1.3;
+  box-shadow: none;
+  transform: none;
+}
+html.poswai-app .module-intro h1 {
+  margin: 0;
+  font-size: var(--t-h1);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+html.poswai-app .module-intro p {
+  margin: 2px 0 0;
+  color: var(--app-ink-2);
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+html.poswai-app .module-state {
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: var(--t-cap);
+  font-weight: 600;
+  line-height: 28px;
+  white-space: nowrap;
+}
+
+/* ============================================ type, applied everywhere === */
+html.poswai-app h1 { font-size: var(--t-h1); line-height: 1.3; }
+html.poswai-app h2 { font-size: var(--t-title); line-height: 1.35; }
+html.poswai-app h3,
+html.poswai-app h4 { font-size: var(--t-body); line-height: 1.4; }
+html.poswai-app small,
+html.poswai-app .muted,
+html.poswai-app .text-muted,
+html.poswai-app .hint,
+html.poswai-app .help-text { font-size: var(--t-cap); line-height: 1.45; }
+html.poswai-app label { font-size: var(--t-sm); }
+html.poswai-app p { font-size: var(--t-sm); }
+html.poswai-app td,
+html.poswai-app th { font-size: var(--t-sm); }
+html.poswai-app th { font-weight: 600; color: var(--app-ink-2); }
+
+/* ============================================= controls a thumb can hit === */
+html.poswai-app .btn,
+html.poswai-app button.btn,
+html.poswai-app .cat-pill,
+html.poswai-app .chip,
+html.poswai-app .pill {
+  min-height: 44px;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  line-height: 1.2;
+}
+html.poswai-app .btn { padding-left: 16px; padding-right: 16px; border-radius: var(--app-radius-sm); }
+html.poswai-app .btn-sm { min-height: 40px; padding-left: 12px; padding-right: 12px; }
+/* Square icon buttons: + − × keep their shape at full touch size. */
+html.poswai-app .btn.btn-sm:is([aria-label], :not(:has(*))):where(:not(.cat-pill)) { min-width: 44px; }
+html.poswai-app .cat-pill { padding: 0 16px; border-radius: 999px; }
+
+html.poswai-app input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=hidden]),
+html.poswai-app select,
+html.poswai-app textarea {
+  min-height: 44px;
+  font-size: var(--t-body);   /* 16px: anything smaller makes the phone zoom in on focus */
+  border-radius: var(--app-radius-sm);
+}
+html.poswai-app input[type=checkbox],
+html.poswai-app input[type=radio] { width: 22px; height: 22px; }
+
+/* Cards: one radius, one border, one shadow. */
+html.poswai-app .card,
+html.poswai-app .panel {
+  border-radius: var(--app-radius);
+  border-color: var(--app-line);
+  box-shadow: 0 1px 2px rgba(20, 27, 36, .04);
+}
+
+/* Anything that slid under the fixed bars is reachable again. */
+html.poswai-app :target { scroll-margin-top: calc(var(--app-bar) + 16px); }
+
+@media (prefers-reduced-motion: reduce) {
+  html.poswai-app *, html.poswai-app *::before, html.poswai-app *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
+}
+
+/* ======================================== type by role, every screen ===
+ * Measured on the phone, the screens used fourteen sizes between them, from
+ * 10px labels to 23px numbers. Each rule below names a role, not a screen, so
+ * a new screen built from the same parts lands on the scale by itself.
+ * !important is deliberate here: this block is the final word on type, and
+ * the stylesheets it overrides already use it themselves. */
+
+/* Big numbers on summary tiles: one size, the page-title size. */
+html.poswai-app main :is(.ops-stat, .live-kpi, .kpi, .stat, .stat-card, .kds-count) strong,
+html.poswai-app main #liveSales,
+html.poswai-app main .kds-lane-head strong {
+  font-size: var(--t-h1) !important;
+  line-height: 1.25 !important;
+}
+/* What the number is: caption, never smaller. */
+html.poswai-app main :is(.ops-stat, .live-kpi, .kpi, .stat, .stat-card) > span,
+html.poswai-app main .kds-lane-header > span,
+html.poswai-app main .ops-result-count,
+html.poswai-app main .people-sample,
+html.poswai-app main strong > small,
+html.poswai-app main .live-switch .label {
+  font-size: var(--t-cap) !important;
+  line-height: 1.4 !important;
+}
+
+/* Card and section titles. */
+html.poswai-app main .card-title { font-size: var(--t-title) !important; line-height: 1.35 !important; }
+html.poswai-app main :is(form, .staff-template-list, .service-inbox-heading) > strong,
+html.poswai-app main #staffDetailTitle {
+  font-size: var(--t-body) !important;
+  line-height: 1.4 !important;
+}
+
+/* Running text and empty states. */
+html.poswai-app main :is(p, li, summary, .void-lead, .kds-empty strong, .staff-template-empty, .void-empty) {
+  font-size: var(--t-sm) !important;
+  line-height: 1.5 !important;
+}
+
+/* Status badges: one caption-sized pill. */
+html.poswai-app main .badge {
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: var(--t-cap) !important;
+  font-weight: 600;
+  line-height: 24px !important;
+  white-space: nowrap;
+}
+
+/* Tables: readable cells, and a table wider than the phone scrolls inside its
+   own card instead of pushing the whole screen sideways. */
+html.poswai-app main table { font-size: var(--t-sm); }
+html.poswai-app main table th { font-size: var(--t-cap) !important; font-weight: 600; letter-spacing: 0; }
+html.poswai-app main table td,
+html.poswai-app main table td strong { font-size: var(--t-sm) !important; }
+html.poswai-app main :is(.staff-permission-table, table.wide) {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Every button inside a screen: 14px, a full thumb tall. The tab bar's own
+   buttons are sized above and are outside <main>. */
+html.poswai-app main button,
+html.poswai-app main .button,
+html.poswai-app main summary {
+  min-height: 44px;
+  font-size: var(--t-sm) !important;
+}
+html.poswai-app main :is(.acts, .staff-admin-actions) button { min-width: 44px; padding-left: 12px; padding-right: 12px; }
+/* The "+" on a menu card is an icon, drawn at icon size. */
+html.poswai-app main .menu-footer .btn { font-size: var(--t-h1) !important; min-width: 44px; }
+/* Dates and similar read-only values in toolbars. */
+html.poswai-app main .live-report-toolbar span,
+html.poswai-app main #liveReportDate { font-size: var(--t-sm) !important; }
+
+/* Sub-tabs inside a screen (สต็อก · พนักงาน · รายงาน): one scrolling strip,
+   like every phone app, instead of a row that wraps or runs off the edge. */
+html.poswai-app main :is(.people-tabs, .ops-tabs, .live-tabs, [role="tablist"]) {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  padding: 0 0 4px;
+}
+html.poswai-app main :is(.people-tabs, .ops-tabs, .live-tabs, [role="tablist"])::-webkit-scrollbar { display: none; }
+html.poswai-app main :is(.people-tabs, .ops-tabs, .live-tabs, [role="tablist"]) > :is(button, a, [role="tab"]) {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 999px;
+  font-size: var(--t-sm) !important;
+  font-weight: 600;
+  white-space: nowrap;
+  scroll-snap-align: start;
+}
+
+/* people-redesign.css pins the staff screen with #view-staff … !important;
+   the same roles, said with enough weight to land. */
+html.poswai-app #view-staff table th { font-size: var(--t-cap) !important; }
+html.poswai-app #view-staff table td,
+html.poswai-app #view-staff table td strong { font-size: var(--t-sm) !important; }
+html.poswai-app #view-staff #staffQuotaBanner { font-size: var(--t-cap) !important; line-height: 1.45 !important; }
+
+/* Every screen opens with its own title. Panels added later (the live menu
+   catalogue on สต็อก) were inserted above it; they now follow it. */
+html.poswai-app main .view-section.active { display: flex; flex-direction: column; }
+html.poswai-app main .view-section.active > .module-intro { order: -1; }
+
+/* ============================================ the menu list on สต็อก ===
+ * On the web this is a six-column table. A phone has room for one dish per
+ * row, so each row becomes a list item:  photo · name and code · price,
+ * then category and the on-sale switch, then its three actions. */
+html.poswai-app main .live-table-wrap { overflow: visible; border: 0; background: none; padding: 0; }
+html.poswai-app main .live-table,
+html.poswai-app main .live-table tbody { display: block; width: 100%; min-width: 0 !important; border: 0; background: none; }
+html.poswai-app main .live-table thead {
+  position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+html.poswai-app main #liveMenuTable tr {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  grid-template-areas: "img name price" "img cat cat" "status status status" "acts acts acts";
+  column-gap: 12px;
+  row-gap: 4px;
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+}
+html.poswai-app main .live-table td { display: block; padding: 0; border: 0; background: none; min-width: 0; }
+/* "Nothing here yet" spans the whole card, whichever table it is in. */
+html.poswai-app main .live-table td.live-empty-row,
+html.poswai-app main #liveStockTable td.live-empty-row,
+html.poswai-app main #liveMenuTable td.live-empty-row {
+  grid-column: 1 / -1;
+  grid-area: auto;
+  padding: 16px 0;
+  text-align: center;
+  color: var(--app-ink-2);
+  font-size: var(--t-sm) !important;
+  font-weight: 400;
+}
+html.poswai-app main #liveMenuTable td:nth-child(1) { grid-area: img; align-self: start; }
+html.poswai-app main #liveMenuTable td:nth-child(2) { grid-area: name; }
+html.poswai-app main #liveMenuTable td:nth-child(3) { grid-area: cat; align-self: start; color: var(--app-ink-2); font-size: var(--t-cap) !important; }
+html.poswai-app main #liveMenuTable td:nth-child(4) { grid-area: price; font-weight: 700; font-size: var(--t-body) !important; text-align: right; }
+html.poswai-app main #liveMenuTable td:nth-child(5) { grid-area: status; margin-top: 8px; }
+html.poswai-app main #liveMenuTable td:nth-child(6) { grid-area: acts; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--app-line); }
+html.poswai-app main .live-table .thumb { width: 56px; height: 56px; border-radius: var(--app-radius-sm); object-fit: cover; }
+html.poswai-app main #liveMenuTable td:nth-child(2) strong { display: block; font-size: var(--t-body) !important; line-height: 1.35; word-break: normal; overflow-wrap: break-word; }
+html.poswai-app main #liveMenuTable td:nth-child(2) .tag { font-size: var(--t-cap) !important; color: var(--app-ink-2) !important; }
+html.poswai-app main .live-table .acts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+html.poswai-app main .live-table .acts button { width: 100%; }
+
+/* ============================================ the report tiles (รายงาน) ===
+ * Four full-width cards stacked one under another is a web page. A phone
+ * dashboard leads with the one number that matters, full width, and puts the
+ * rest side by side beneath it. */
+html.poswai-app main .live-report-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px !important;
+}
+html.poswai-app main .live-report-card {
+  min-width: 0;
+  margin: 0;
+  padding: 16px !important;
+  border-radius: var(--app-radius) !important;
+}
+html.poswai-app main .live-report-card.live-report-primary { grid-column: 1 / -1; }
+html.poswai-app main .live-report-card > span { font-size: var(--t-sm) !important; color: var(--app-ink-2); }
+html.poswai-app main .live-report-card > small { font-size: var(--t-cap) !important; color: var(--app-ink-2); }
+/* Side-by-side tiles get the section-title size, so a sentence such as
+   "ยังไม่มีข้อมูล" in place of a number still fits on one tile. */
+html.poswai-app main .live-report-card:not(.live-report-primary) > strong {
+  display: block;
+  margin: 4px 0;
+  font-size: var(--t-title) !important;
+  line-height: 1.3 !important;
+  overflow-wrap: break-word;
+}
+html.poswai-app main .live-report-primary > strong { display: block; margin: 4px 0; }
+
+/* ======================================== the stock list on สต็อก ===
+ * Ingredient · status, then three labelled figures, then the actions. The
+ * table's own header is hidden on a phone, so each figure carries its label. */
+html.poswai-app main #liveStockTable tr {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas: "name name status" "stock unit alert" "acts acts acts";
+  gap: 8px 12px;
+  align-items: start;
+  margin: 0 0 8px;
+  padding: 12px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+}
+html.poswai-app main #liveStockTable tr.low { border-color: #f3c58b; background: #fff8ef; }
+html.poswai-app main #liveStockTable tr.low td { background: none; }
+html.poswai-app main #liveStockTable td:nth-child(1) { grid-area: name; font-size: var(--t-body) !important; font-weight: 700; }
+html.poswai-app main #liveStockTable td:nth-child(2) { grid-area: stock; }
+html.poswai-app main #liveStockTable td:nth-child(3) { grid-area: unit; }
+html.poswai-app main #liveStockTable td:nth-child(4) { grid-area: alert; }
+html.poswai-app main #liveStockTable td:nth-child(5) { grid-area: status; justify-self: end; }
+html.poswai-app main #liveStockTable td:nth-child(6) { grid-area: acts; padding-top: 8px; border-top: 1px solid var(--app-line); }
+html.poswai-app main #liveStockTable td:is(:nth-child(2), :nth-child(3), :nth-child(4)) { font-size: var(--t-body) !important; font-weight: 600; }
+html.poswai-app main #liveStockTable td:is(:nth-child(2), :nth-child(3), :nth-child(4))::before {
+  display: block;
+  color: var(--app-ink-2);
+  font-size: var(--t-cap);
+  font-weight: 400;
+}
+html.poswai-app main #liveStockTable td:nth-child(2)::before { content: "คงเหลือ"; }
+html.poswai-app main #liveStockTable td:nth-child(3)::before { content: "หน่วย"; }
+html.poswai-app main #liveStockTable td:nth-child(4)::before { content: "เตือนเมื่อต่ำกว่า"; }
+html.poswai-app main #liveStockTable td.live-empty-row::before { content: none; }
+html.poswai-app main #liveStockTable .acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }

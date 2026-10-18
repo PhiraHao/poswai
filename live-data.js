@@ -803,7 +803,7 @@
       shopPanel.querySelector('[name="name"]').value = settings.name || '';
       shopPanel.querySelector('[name="promptpay_id"]').value = settings.promptpay_id || '';
       shopPanel.querySelector('#liveShopLink').textContent = settings.editable
-        ? `ลิงก์เข้าร้านของคุณ ${location.origin}/?shop=${settings.slug} · ชื่อร้านในลิงก์ ${settings.slug}` +
+        ? `ลิงก์เข้าร้านของคุณ ${window.POSWAI_APP?.server || location.origin}/?shop=${settings.slug} · ชื่อร้านในลิงก์ ${settings.slug}` +
           (settings.trial_ends_at ? ` · ทดลองใช้ฟรีถึง ${settings.trial_ends_at}` : '')
         : 'ร้านนี้ตั้งค่าจากเซิร์ฟเวอร์ ติดต่อทีมงานหากต้องการแก้';
       shopPanel.querySelector('#liveShopForm').hidden = !settings.editable;

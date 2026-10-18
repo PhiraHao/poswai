@@ -102,7 +102,10 @@
     if (typeof drawQrCodeOnCanvas !== 'function') throw new Error('ยังโหลดตัววาด QR ไม่เสร็จ');
     drawQrCodeOnCanvas(canvas.id, text);
   };
-  const absolute = link => new URL(link, location.origin).href;
+  /* A QR goes on a table for customers' phones, so it must name the public
+     server. Inside the POS WAI app this page lives at https://localhost,
+     which means nothing to anyone else's phone. */
+  const absolute = link => new URL(link, window.POSWAI_APP?.server || location.origin).href;
 
   /* ================= the shop's side: tables and stickers ============== */
   const panel = document.createElement('section');
