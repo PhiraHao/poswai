@@ -49,11 +49,12 @@
     try { value ? localStorage.setItem(KEY, JSON.stringify(value)) : localStorage.removeItem(KEY); } catch { /* */ }
     (value ? PREFS?.set({key: KEY, value: JSON.stringify(value)}) : PREFS?.remove({key: KEY}))?.catch(() => {});
   };
-  PREFS?.get({key: KEY}).then(({value}) => {
+  let restoring = Boolean(PREFS);
+  const restored = (PREFS?.get({key: KEY}) || Promise.resolve({})).then(({value}) => {
     if (value && !remembered()) { try { localStorage.setItem(KEY, value); } catch { /* */ } }
     // A printer chosen before this copy existed gets one now.
     else if (!value && remembered()) PREFS.set({key: KEY, value: JSON.stringify(remembered())}).catch(() => {});
-  }).catch(() => {});
+  }).catch(() => {}).finally(() => { restoring = false; });
 
   let parts = null;
   const load = async () => {
@@ -97,8 +98,10 @@
      printer found by the old one cannot be connected by the new. */
   let initialized = null;
   const initialize = () => {
-    initialized ??= BLE.initialize({androidNeverForLocation: true})
-      .catch((error) => { initialized = null; throw error; });
+    initialized ??= Promise.race([
+      BLE.initialize({androidNeverForLocation: true}),
+      wait(10000).then(() => { throw new Error('Bluetooth ของมือถือไม่ตอบ ลองปิดแล้วเปิด Bluetooth ใหม่'); }),
+    ]).catch((error) => { initialized = null; throw error; });
     return initialized;
   };
 
@@ -191,7 +194,7 @@
            room in the radio's queue, so every eighth piece goes with response
            as a checkpoint. A channel that cannot take without-response gets
            with-response every time. */
-        const checkpoint = !link.withoutResponse || (IOS && sent % 8 === 7);
+        const checkpoint = !link.withoutResponse || (IOS && link.withResponse && sent % 8 === 7);
         const write = checkpoint ? BLE.write : BLE.writeWithoutResponse;
         await write.call(BLE, {deviceId: link.id, service: link.service, characteristic: link.write, value: hex(bytes)});
         sent += 1;
@@ -206,27 +209,41 @@
   let lastFailed = null;        // the receipt that did not come out, for "พิมพ์ซ้ำ"
   let lastError = '';
 
-  const print = (text) => inTurn(async () => {
+  const PARTIAL = 'ใบเสร็จออกไม่ครบ การเชื่อมต่อหลุดระหว่างพิมพ์ ฉีกส่วนที่ออกมาทิ้งแล้วกดพิมพ์ซ้ำ';
+  /** Send once; a failure after some pieces went out becomes the "torn receipt" error. */
+  const attempt = async (text) => {
+    try {
+      await send(text);
+    } catch (error) {
+      await forgetLink();
+      if (error.sent) throw Object.assign(new Error(PARTIAL, {cause: error}), {sent: error.sent});
+      throw error;
+    }
+  };
+
+  const print = (text, {test = false} = {}) => inTurn(async () => {
+    await restored;
     try {
       await ensureLink();
       try {
-        await send(text);
+        await attempt(text);
       } catch (first) {
         /* Nothing reached the printer: almost always a link that went stale
            while the till sat idle, so one fresh connection is safe. Once some
            of the receipt is out the printer is in the middle of an image, and
            sending it again from the top would print half of it twice and then
            noise. That one stops and is offered for reprinting instead. */
-        await forgetLink();
-        if (first.sent) throw new Error('ใบเสร็จออกไม่ครบ การเชื่อมต่อหลุดระหว่างพิมพ์ ดึงกระดาษออกแล้วกดพิมพ์ซ้ำ');
+        if (first.sent) throw first;
         await ensureLink();
-        await send(text);
+        await attempt(text);
       }
-      lastFailed = null;
+      if (lastFailed === text) lastFailed = null;
     } catch (error) {
-      lastFailed = text;
+      // A test page is not a receipt anyone is waiting for.
+      if (!test) lastFailed = text;
       // The plugin's own words, kept for whoever helps the shop find out why.
-      lastError = `${error?.message || error}${error?.sent ? ` (after ${error.sent} pieces)` : ''}`;
+      const cause = error?.cause || error;
+      lastError = `${cause?.message || cause}${error?.sent ? ` (after ${error.sent} pieces)` : ''}`;
       throw new Error(thai(error));
     }
   });
@@ -235,7 +252,7 @@
     /* Ready means "send it here": a remembered printer is connected on demand,
        so a till that restarted does not quietly fall back to the queue.
        print-agent-ui.js shows the one toast when this throws. */
-    get ready() { return Boolean(link || remembered()); },
+    get ready() { return Boolean(link || remembered() || restoring); },
     /* At the till the receipt stays on screen with its own "ส่งไปเครื่องพิมพ์"
        button, which sends this same text again: that is the way to reprint. */
     print: (text) => print(text).catch((error) => {
@@ -282,6 +299,7 @@
 
   function render(message) {
     if (!sheet) return;
+    const found = scan.active ? [...(sheet.querySelector('.app-printer-list')?.children || [])] : [];
     const now = status();
     const manage = window.POSWAI_APP.printer.mayManage();
     const actions = el('div', {className: 'app-printer-actions'});
@@ -290,7 +308,7 @@
     }
     if (manage) {
       const find = button(scan.active ? 'กำลังค้นหา…' : (remembered() ? 'ค้นหาเครื่องอื่น' : 'ค้นหาเครื่องพิมพ์'),
-        lastFailed ? 'app-printer-secondary' : 'app-printer-primary', startScan);
+        `${lastFailed ? 'app-printer-secondary' : 'app-printer-primary'} app-printer-find`, startScan);
       find.disabled = scan.active || busy;
       actions.append(find);
     }
@@ -319,7 +337,7 @@
       !manage && !remembered()
         ? el('p', {className: 'app-printer-hint', textContent: 'ให้แคชเชียร์ ผู้จัดการ หรือเจ้าของร้านเป็นคนเลือกเครื่องพิมพ์'})
         : null,
-      el('div', {className: 'app-printer-list'}),
+      el('div', {className: 'app-printer-list'}, ...found),
       actions,
     ].filter(Boolean));
   }
@@ -375,8 +393,8 @@
       if (current()) {
         await BLE.stopLEScan().catch(() => {});
         scan.active = false;
-        const again = sheet?.querySelector('.app-printer-actions button');
-        if (again && again.textContent === 'กำลังค้นหา…') { again.disabled = busy; again.textContent = 'ค้นหาอีกครั้ง'; }
+        const again = sheet?.querySelector('.app-printer-find');
+        if (again) { again.disabled = busy; again.textContent = 'ค้นหาอีกครั้ง'; }
         if (!seen.size) list()?.replaceChildren(el('p', {className: 'app-printer-hint',
           textContent: 'ไม่เจอเครื่องพิมพ์ ลองปิดแล้วเปิดเครื่องพิมพ์ แล้วกดค้นหาอีกครั้ง'}));
       }
@@ -393,17 +411,17 @@
     '', '      ขอบคุณที่ใช้บริการ',
   ].join('\n');
 
-  const run = async (node, text, done) => {
+  const run = async (node, text, done, options) => {
     node.disabled = true;
     node.textContent = 'กำลังพิมพ์…';
     try {
-      await print(text);
+      await print(text, options);
       render({text: done});
     } catch (error) {
       render({text: error.message});
     }
   };
-  const testPrint = (node) => run(node, TEST_RECEIPT, 'ส่งใบทดสอบแล้ว ดูที่เครื่องพิมพ์ได้เลย');
+  const testPrint = (node) => run(node, TEST_RECEIPT, 'ส่งใบทดสอบแล้ว ดูที่เครื่องพิมพ์ได้เลย', {test: true});
   const reprint = (node) => run(node, lastFailed, 'พิมพ์ใบล่าสุดซ้ำแล้ว');
 
   const open = () => {

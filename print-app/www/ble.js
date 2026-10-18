@@ -58,7 +58,8 @@ async function appConnect(id, {timeout = 15000} = {}) {
     if (writable) {
       return {id, service: known.service, write: writable.uuid.toLowerCase(),
         // iOS drops a without-response write to a channel that does not take one.
-        withoutResponse: writable.properties?.writeWithoutResponse !== false};
+        withoutResponse: writable.properties?.writeWithoutResponse !== false,
+        withResponse: Boolean(writable.properties?.write)};
     }
   }
   await ble.disconnect({deviceId: id});
