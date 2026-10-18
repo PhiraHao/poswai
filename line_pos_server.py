@@ -3692,7 +3692,7 @@ def _finish_member_login(request: Request, slug: str, identity: dict) -> Redirec
 
 
 @app.get("/api/staff/auth/{provider}/start")
-def staff_login_start(provider: str, request: Request, mode: str = "login"):
+def staff_login_start(provider: str, request: Request, mode: str = "login", app: str = ""):
     """Sign a member of staff in with their own account, or — with mode=link —
     bind that account to the staff record already signed in here.
 
@@ -3706,9 +3706,12 @@ def staff_login_start(provider: str, request: Request, mode: str = "login"):
         raise HTTPException(403, "ร้านตัวอย่างไม่มีบัญชีพนักงาน")
     staff_id = require_staff(request)["id"] if mode == "link" else None
     try:
+        # app=1: begun in the POS WAI app's browser tab; the result goes back
+        # to the app over its own link (see _finish_staff_login).
         handshake = owner_auth.start_login(DB_PATH, provider=provider,
                                            mode="staff_link" if mode == "link" else "staff",
-                                           slug=slug, staff_id=staff_id)
+                                           slug=slug, staff_id=staff_id,
+                                           app_login=app not in ("", "0", "false"))
     except owner_auth.OwnerAuthError as exc:
         raise HTTPException(exc.status, exc.message) from exc
     return RedirectResponse(owner_auth.authorize_url(
@@ -3728,6 +3731,17 @@ def _finish_staff_login(request: Request, pending: dict, identity: dict) -> Redi
     slug = pending["slug"] or MAIN_SHOP
     social_id = f"{identity['provider']}:{identity['external_id']}"
     linking = pending["mode"] == "staff_link"
+    from_app = bool(pending.get("app_login"))
+
+    def landing(outcome: str, session: str = "") -> RedirectResponse:
+        """The web lands on the shop's page; the app is handed the outcome — and
+        on success the session, which it keeps itself — over poswai://auth."""
+        if not from_app:
+            return _staff_landing(slug, outcome)
+        key, _, value = outcome.partition("=")
+        return RedirectResponse(mobile.app_link("auth", **{key: value}, shop=slug, session=session),
+                                status_code=303)
+
     shop_token = CURRENT_SHOP.set(slug)
     try:
         with closing(connect_db()) as conn, conn:
@@ -3735,19 +3749,22 @@ def _finish_staff_login(request: Request, pending: dict, identity: dict) -> Redi
             held = conn.execute("SELECT id FROM staffs WHERE social_id=?", (social_id,)).fetchone()
             if linking:
                 if held and held["id"] != int(pending["staff_id"] or 0):
-                    return _staff_landing(slug, "staff_error=taken")
+                    return landing("staff_error=taken")
                 conn.execute("UPDATE staffs SET social_id=? WHERE id=?",
                              (social_id, int(pending["staff_id"] or 0)))
-                return _staff_landing(slug, "staff=linked")
+                return landing("staff=linked")
             if not held:
-                return _staff_landing(slug, "staff_error=unlinked")
+                return landing("staff_error=unlinked")
             row = conn.execute("SELECT id,is_active FROM staffs WHERE id=?", (held["id"],)).fetchone()
             if not row["is_active"]:
-                return _staff_landing(slug, "staff_error=inactive")
+                return landing("staff_error=inactive")
             today = datetime.datetime.now(BANGKOK_TZ).date().isoformat()
             if conn.execute("SELECT 1 FROM staff_shifts WHERE staff_id=? AND work_date=? AND pos_pin_locked=1",
                             (row["id"], today)).fetchone():
-                return _staff_landing(slug, "staff_error=locked")
+                return landing("staff_error=locked")
+            if from_app:
+                token, _ = _open_session(request, Response(), conn, row["id"])
+                return landing("staff=in", session=token)
             response = _staff_landing(slug, "staff=in")
             # "lax", not the PIN login's "strict": the browser arrives here from
             # the provider's own page, and a strict cookie would not come back.

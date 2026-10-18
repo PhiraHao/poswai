@@ -222,6 +222,46 @@ class AppSessionTest(unittest.TestCase):
                            params={"code": "auth-code", "state": state}, follow_redirects=False)
         self.assertIn("owner_error", again.headers["location"])
 
+    # ------------------------------------------------- a staff member's account
+    def link_staff_account(self, provider_sub="G-staff"):
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute("UPDATE staffs SET social_id=? WHERE id=1", (f"google:{provider_sub}",))
+        self.google["sub"] = provider_sub
+
+    def staff_app_sign_in(self, client):
+        started = client.get("/api/staff/auth/google/start", params={"app": "1"}, follow_redirects=False)
+        self.assertEqual(started.status_code, 302, started.text)
+        query = parse_qs(urlsplit(started.headers["location"]).query)
+        self.google["nonce"] = query["nonce"][0]
+        return client.get("/api/owner/auth/google/callback",
+                          params={"code": "auth-code", "state": query["state"][0]}, follow_redirects=False)
+
+    def test_staff_signing_in_from_the_app_is_handed_a_session(self):
+        self.link_staff_account()
+        client = self.client()
+        landed = urlsplit(self.staff_app_sign_in(client).headers["location"])
+        handed = parse_qs(landed.query)
+        self.assertEqual((landed.scheme, handed["staff"][0]), (mobile.APP_LINK_SCHEME, "in"))
+        client.cookies.clear()
+        seen = client.get("/api/auth/session", headers={mobile.STAFF_HEADER: handed["session"][0]})
+        self.assertEqual(seen.json()["name"], "ฟ้า")
+
+    def test_an_unlinked_account_comes_back_to_the_app_as_a_reason(self):
+        landed = parse_qs(urlsplit(self.staff_app_sign_in(self.client()).headers["location"]).query)
+        self.assertEqual(landed["staff_error"][0], "unlinked")
+        self.assertNotIn("session", landed)
+
+    def test_staff_signing_in_on_the_web_still_lands_on_the_page(self):
+        self.link_staff_account()
+        client = self.client()
+        started = client.get("/api/staff/auth/google/start", follow_redirects=False)
+        query = parse_qs(urlsplit(started.headers["location"]).query)
+        self.google["nonce"] = query["nonce"][0]
+        landed = client.get("/api/owner/auth/google/callback",
+                            params={"code": "auth-code", "state": query["state"][0]}, follow_redirects=False)
+        self.assertEqual(urlsplit(landed.headers["location"]).scheme, "")
+        self.assertIn("poswai_session", landed.cookies)
+
     # ------------------------------------------------------------ the app link
     def test_the_app_link_drops_what_did_not_happen(self):
         self.assertEqual(mobile.app_link("auth", owner="t", shop="", outcome=None),

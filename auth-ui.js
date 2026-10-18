@@ -415,21 +415,22 @@
     const button = event.target.closest('[data-staff-channel]');
     if (!button) return;
     const channel = button.dataset.staffChannel;
-    if (inApp()) {
-      /* Unlike the owner's, this sign-in ends in a staff session for one shop,
-         which the app has no way yet to be handed. The PIN is right here. */
-      $('#poswaiLoginError').textContent =
-        `ในแอปเข้าด้วย ${CHANNEL_NAMES[channel]} ยังไม่ได้ · ใส่รหัสพนักงานกับ PIN ด้านบน`;
-      return;
-    }
     $('#poswaiLoginError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[channel]}…`;
-    location.href = staffChannelHref(channel);
+    go(staffChannelHref(channel));
   });
   $('#poswaiStaffLinkChannels').addEventListener('click', event => {
     const button = event.target.closest('[data-staff-link-channel]');
     if (!button) return;
     $('#poswaiAccountError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[button.dataset.staffLinkChannel]}…`;
-    location.href = staffChannelHref(button.dataset.staffLinkChannel, 'link');
+    if (inApp()) {
+      /* Binding needs to know who is signed in, and the browser tab the app
+         opens has no session; the only way to tell it would be the token in
+         the address, left in that browser's history. A one-time step, so it is
+         done on the web: after that, signing in with the account works here. */
+      $('#poswaiAccountError').textContent = 'ผูกบัญชีครั้งแรกให้ทำที่เว็บ poswai.zzaxstudio.com ผูกแล้วกลับมาเข้าด้วยบัญชีนี้ในแอปได้เลย';
+      return;
+    }
+    go(staffChannelHref(button.dataset.staffLinkChannel, 'link'));
   });
   $('#poswaiCustomerForm').addEventListener('submit', async (event) => {
     event.preventDefault();

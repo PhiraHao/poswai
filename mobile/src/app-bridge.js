@@ -215,6 +215,9 @@
   app.go = (url) => {
     const owner = /^\/api\/owner\/auth\/([a-z]+)\/start/.exec(url || '');
     if (owner) { app.signInWith(owner[1]); return true; }
+    // A member of staff with their own LINE or Google: the same tab-and-back hop.
+    const staff = /^\/api\/staff\/auth\/[a-z]+\/start/.exec(url || '');
+    if (staff) { app.openSignIn(url); return true; }
     const shop = /^\/\?shop=([^&]+)/.exec(url || '');
     if (shop) { app.enterShop(decodeURIComponent(shop[1])); return true; }
     if (url === '/') { app.reopen(); return true; }
@@ -225,12 +228,17 @@
      page could read what is typed there. A real browser tab is the arrangement
      it does permit, and the server sends the finished session back to us over
      poswai://auth — a link only this app answers. */
-  app.signInWith = async (channel) => {
+  app.signInWith = (channel) => app.openSignIn(`/api/owner/auth/${channel}/start`);
+
+  /** Open any of the server's sign-in starts in a real browser tab, marked as the app's. */
+  app.openSignIn = async (path) => {
     const browser = plugin('Browser');
-    const target = `${server()}/api/owner/auth/${channel}/start?app=1`;
-    if (!browser) { window.open(target, '_blank'); return; }
-    waiting = channel;
-    await browser.open({url: target, presentationStyle: 'popover'});
+    const url = new URL(server() + path);
+    url.searchParams.set('app', '1');
+    if (app.shop && !url.searchParams.has('shop')) url.searchParams.set('shop', app.shop);
+    if (!browser) { window.open(url.toString(), '_blank'); return; }
+    waiting = path;
+    await browser.open({url: url.toString(), presentationStyle: 'popover'});
   };
 
   const finishSignIn = (url) => {
@@ -241,6 +249,15 @@
     waiting = null;
     const failed = got.get('error');
     if (failed) { app.onSignInFailed?.(failed); return; }
+    /* A staff sign-in: the page already knows how to say every outcome when
+       it opens with ?staff= or ?staff_error=, so it is reopened with that. */
+    if (got.has('staff') || got.has('staff_error')) {
+      if (got.get('session')) app.keepStaff(got.get('session'));
+      if (got.get('shop')) app.useShop(got.get('shop'));
+      const outcome = got.has('staff') ? `staff=${got.get('staff')}` : `staff_error=${got.get('staff_error')}`;
+      app.reopen(outcome);
+      return;
+    }
     const token = got.get('owner');
     if (!token) return;
     app.keepOwner(token);
@@ -264,7 +281,7 @@
     app.reopen();
   };
 
-  app.reopen = () => { window.location.replace('index.html'); };
+  app.reopen = (query = '') => { window.location.replace(`index.html${query ? `?${query}` : ''}`); };
 
   /* A till that dims mid-order and asks for the phone's own code is a till the
      queue is waiting on. The screen stays up while this app is in front, and is
