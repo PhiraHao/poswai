@@ -5,3 +5,4 @@ www/
 *.apk
 plugins/*/android/build/
 keystore/
+store/*.aab
