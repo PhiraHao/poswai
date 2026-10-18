@@ -331,7 +331,9 @@
       $('#poswaiAccountError').textContent = '';
       $('#poswaiAccountManageRow').hidden = !['owner', 'manager'].includes(current?.role);
     }
-    if (panel === 'login') showLoginTab(tableToken ? 'member' : device.shop ? 'staff' : 'owner');
+    if (panel === 'login') {
+      showLoginTab(tableToken ? 'member' : (inApp() || device.shop) ? 'staff' : 'owner');
+    }
     $('#poswaiNewRole option[value="manager"]').hidden = current?.role !== 'owner';
     if (current?.role !== 'owner' && $('#poswaiNewRole').value === 'manager') $('#poswaiNewRole').value = 'staff';
     for (const name of Object.keys(PANELS)) {
@@ -478,6 +480,12 @@
     $('#poswaiShopCode').focus();
   });
   const CHANNEL_NAMES = {line: 'LINE', google: 'Google', facebook: 'Facebook'};
+  /* Inside the POS WAI app the page lives in a web view, and Google refuses to
+     sign anyone in from one (error 400, disallowed_useragent). Sending the
+     owner out to the phone's browser would work for the login itself and
+     leave the session there, behind the app, which is worse than saying so.
+     The shop's own code and PIN sign in perfectly well in here. */
+  const inApp = () => Boolean(window.Capacitor?.isNativePlatform?.() ?? window.Capacitor);
   const ROLE_NAMES = {owner: 'เจ้าของร้าน', manager: 'ผู้จัดการ', cashier: 'แคชเชียร์',
     kitchen: 'ครัว', service: 'บริการ', staff: 'พนักงาน'};
   overlay.querySelector('[data-login-pane="owner"] .poswai-channels').addEventListener('click', event => {
@@ -485,6 +493,12 @@
     if (!button) return;
     const channel = button.dataset.channel;
     const name = CHANNEL_NAMES[channel];
+    if (inApp()) {
+      $('#poswaiOwnerError').textContent =
+        `ในแอปเข้าด้วย ${name} ไม่ได้ ${name} ไม่อนุญาต · ใช้ชื่อร้านกับ PIN ที่แท็บพนักงาน `
+        + 'หรือเข้าด้วยบัญชีนี้จากเบราว์เซอร์';
+      return;
+    }
     if (!channels[channel]) {
       $('#poswaiOwnerError').textContent =
         `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${name} ระหว่างนี้ใช้ชื่อร้านและ PIN ไปก่อน`;
@@ -498,6 +512,11 @@
     const button = event.target.closest('[data-member-channel]');
     if (!button) return;
     const channel = button.dataset.memberChannel;
+    if (inApp()) {
+      $('#poswaiCustomerError').textContent =
+        `ในแอปเข้าด้วย ${CHANNEL_NAMES[channel]} ไม่ได้ · ใช้ชื่อกับเบอร์ที่สมัครไว้`;
+      return;
+    }
     if (!channels[channel]) {
       $('#poswaiCustomerError').textContent =
         `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${CHANNEL_NAMES[channel]} ระหว่างนี้ใช้ชื่อกับเบอร์ไปก่อน`;
