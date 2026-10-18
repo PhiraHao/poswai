@@ -194,6 +194,26 @@ class ReceiptRasterTest(unittest.TestCase):
         self.assertGreater(inked, 200, "nothing was drawn")
         self.assertLess(inked, picture.width * picture.height // 2, "the paper came out black")
 
+    def test_a_broken_line_never_starts_with_a_vowel_or_tone_mark(self):
+        """Thai marks sit on the letter before them and have no width.
+
+        Breaking between a letter and its mark leaves the mark stranded at
+        the start of the next line, stacked on nothing — which is what the
+        shop's first printed bill did to "โต๊ะ: 1 | วันที่: ..."."""
+        line = "โต๊ะ: 1 | วันที่: 18/10/2569 13:52:17 " + "ผัดกะเพราหมูสับ" * 4
+        pieces = self.agent.wrap(line, lambda piece: len(piece) <= 18)
+        self.assertGreater(len(pieces), 1, "nothing was broken, so nothing was tested")
+        for piece in pieces:
+            with self.subTest(piece=piece):
+                self.assertNotIn(piece[:1], self.agent.THAI_MARKS)
+        self.assertEqual("".join(pieces).replace(" ", ""), line.replace(" ", ""),
+                         "letters went missing in the break")
+
+    def test_a_line_with_spaces_breaks_at_a_space(self):
+        pieces = self.agent.wrap("TAX ID: 0505566001234 (VAT Included)",
+                                 lambda piece: len(piece) <= 26)
+        self.assertEqual(pieces, ["TAX ID: 0505566001234 (VAT", "Included)"])
+
     def test_a_long_line_is_broken_rather_than_clipped(self):
         one_line = self._decode(self.agent.render("สั้น", self.font))
         wrapped = self._decode(self.agent.render("ก" * 80, self.font))

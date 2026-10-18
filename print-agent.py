@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import configparser
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -43,27 +44,61 @@ THAI_FONTS = (
 
 
 # --------------------------------------------------------------- what to print
+# A Thai vowel or tone mark sits on the letter before it and has no width of
+# its own. Starting a line with one leaves it stacked on nothing, which is how
+# "โต๊ะ 1 | วันที่ ..." came out of the printer as scattered marks.
+THAI_MARKS = frozenset("ัิีึืฺุู"
+                       "็่้๊๋์ํ๎")
+
+
+def wrap(line: str, fits) -> list[str]:
+    """Break a too-long line at spaces, and inside a word only between letters.
+
+    Thai writes without spaces, so a long run of it has to be broken somewhere;
+    what must never happen is breaking a letter away from the marks that belong
+    on top of it.
+    """
+    pieces: list[str] = []
+    current = ""
+    for word in re.split(r"(\s+)", line):
+        if not word:
+            continue
+        if fits(current + word):
+            current += word
+            continue
+        if current.strip():
+            pieces.append(current.rstrip())
+            current = ""
+        if word.isspace():
+            continue
+        for char in word:
+            if current and char not in THAI_MARKS and not fits(current + char):
+                pieces.append(current)
+                current = ""
+            current += char
+    if current.strip():
+        pieces.append(current.rstrip())
+    return pieces or [""]
+
+
 def render(text: str, font_path: str, size: int = 22) -> bytes:
     """The receipt as ESC/POS raster, so Thai looks like Thai."""
     from PIL import Image, ImageDraw, ImageFont
 
     font = ImageFont.truetype(font_path, size)
     pad, line_height = 6, size + 7
-    lines: list[str] = []
+    room = PAPER_DOTS - 2 * pad
     measure = ImageDraw.Draw(Image.new("L", (1, 1)))
+    fits = lambda piece: measure.textlength(piece, font=font) <= room
+
+    lines: list[str] = []
     for raw in text.replace("\r", "").split("\n"):
-        if measure.textlength(raw, font=font) <= PAPER_DOTS - 2 * pad or not raw.strip():
+        if fits(raw) or not raw.strip():
             lines.append(raw)
             continue
         # Too wide for the paper: break it rather than let the printer clip it.
-        current = ""
-        for char in raw:
-            if measure.textlength(current + char, font=font) > PAPER_DOTS - 2 * pad:
-                lines.append(current)
-                current = char
-            else:
-                current += char
-        lines.append(current)
+        for piece in wrap(raw, fits):
+            lines.append(piece)
 
     height = max(line_height, line_height * len(lines) + 2 * pad)
     image = Image.new("L", (PAPER_DOTS, height), 255)
