@@ -158,6 +158,20 @@
     }
     if (typeof renderCart === 'function') renderCart();
   };
+  /** What the kitchen's printer prints: the table, the time, each dish with its choices. */
+  const kitchenTicket = (note) => {
+    const time = new Date().toLocaleTimeString('th-TH', {hour: '2-digit', minute: '2-digit'});
+    const lines = [`    ใบครัว · โต๊ะ ${pos().customerTable}`, `    ${time}${ui.mode === 'กลับบ้าน' ? ' · กลับบ้าน' : ''}`, '--------------------------------'];
+    for (const line of pos().cart) {
+      lines.push(`${line.name}  x${line.qty}`);
+      const extra = [line.chosenLevel, ...(line.chosenAddons || []).map((a) => a.name || a)].filter(Boolean).join(', ');
+      if (extra) lines.push(`+ ${extra}`);
+      if (line.courseMode === 'HOLD') lines.push('+ พักไว้ก่อน รอสั่งทำ');
+    }
+    if (note && note !== '-') lines.push('--------------------------------', `หมายเหตุ: ${note}`);
+    lines.push('--------------------------------');
+    return lines.join('\n');
+  };
   const photo = (m) => m?.photo || asset('menu-placeholder.svg');
 
   const sellView = () => {
@@ -764,9 +778,15 @@
         el.disabled = true;
         el.textContent = 'กำลังส่ง...';
         const before = pos().cart.length;
+        const ticket = kitchenTicket(note?.value || '');
         try { await submitOrderFromCustomer(); }
         finally { el.disabled = false; }
-        if (!pos().cart.length && before) { history.back(); go('sell'); }
+        if (!pos().cart.length && before) {
+          history.back();
+          go('sell');
+          const kitchen = window.POSWAI_APP?.printer?.kitchen;
+          if (kitchen?.ready) kitchen.print(ticket).catch((error) => toast(`ส่งออเดอร์แล้ว แต่ใบครัวไม่ออก: ${error.message}`));
+        }
         else el.innerHTML = `ส่งเข้าครัว ${icon('arrow', 'aui-i-xs')}`;
         break;
       }

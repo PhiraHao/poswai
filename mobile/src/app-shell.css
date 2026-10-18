@@ -1006,3 +1006,22 @@ html.poswai-app .app-printer-actions .app-printer-paper { display: flex; align-i
 html.poswai-app .app-printer-paper span { flex: 1; font-size: var(--t-sm); font-weight: 600; }
 html.poswai-app .app-printer-actions .app-printer-paper button { flex: 0 0 auto; min-width: 84px; background: #eef1f3; color: var(--app-ink); border: 0; }
 html.poswai-app .app-printer-actions .app-printer-paper button.is-on { background: #ffc928; font-weight: 700; }
+
+/* LAN printers and the kitchen printer, in the printer sheet. */
+html.poswai-app .app-printer-lan { display: grid; gap: 8px; padding: 10px; border: 1px solid #e6e9ee; border-radius: 12px; }
+html.poswai-app .app-printer-lan-row { display: flex; gap: 8px; }
+html.poswai-app .app-printer-lan-row > * { flex: 1; }
+html.poswai-app .app-printer-lan input { min-height: 44px; padding: 0 12px; border: 1px solid #d8dde3; border-radius: 10px; font-size: 16px; }
+html.poswai-app .app-printer-lan input[type="number"] { flex: 0 0 96px; }
+html.poswai-app .app-printer-lan-row button { min-height: 44px; border-radius: 12px; font-weight: 700; }
+html.poswai-app .app-printer-kitchen { margin-top: 14px; padding-top: 12px; border-top: 1px solid #eceff3; display: grid; gap: 8px; }
+html.poswai-app .app-printer-kitchen h3 { margin: 0; font-size: var(--t-body); }
+html.poswai-app .app-printer-kitchen .app-printer-hint { text-align: left; margin: 0; }
+html.poswai-app .app-printer-kitchen button { min-height: 44px; border-radius: 12px; font-weight: 700; border: 1px solid #dfe3e8; background: #fff; }
+html.poswai-app .app-printer-kitchen .app-printer-quiet { border: 0; background: none; color: #c0372b; }
+/* Nothing in the sheet may push it wider than the phone. */
+html.poswai-app .app-printer-actions > *, html.poswai-app .app-printer-lan-row > * { min-width: 0; }
+html.poswai-app .app-printer-lan input { width: 100%; min-width: 0; box-sizing: border-box; }
+html.poswai-app .app-printer-lan input[type="number"] { flex: 0 0 88px; }
+html.poswai-app .app-printer-actions .app-printer-paper button { flex: 0 1 auto; white-space: normal; line-height: 1.25; padding: 6px 12px; }
+html.poswai-app .app-printer-paper span { min-width: 0; }

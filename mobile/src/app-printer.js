@@ -49,6 +49,49 @@
     try { value ? localStorage.setItem(KEY, JSON.stringify(value)) : localStorage.removeItem(KEY); } catch { /* */ }
     (value ? PREFS?.set({key: KEY, value: JSON.stringify(value)}) : PREFS?.remove({key: KEY}))?.catch(() => {});
   };
+  /* A printer on the shop's network (LAN/Wi-Fi) takes the same bytes on TCP
+     port 9100, through the app's own TcpPrinter plugin. The kitchen printer
+     is always one of those: it sits by the stove, not beside this phone. */
+  const TCP = window.Capacitor?.Plugins?.TcpPrinter;
+  const KITCHEN_KEY = 'poswai.app.kitchen';
+  const kitchenSaved = () => { try { return JSON.parse(localStorage.getItem(KITCHEN_KEY) || 'null'); } catch { return null; } };
+  const rememberKitchen = (value) => {
+    try { value ? localStorage.setItem(KITCHEN_KEY, JSON.stringify(value)) : localStorage.removeItem(KITCHEN_KEY); } catch { /* */ }
+    (value ? PREFS?.set({key: KITCHEN_KEY, value: JSON.stringify(value)}) : PREFS?.remove({key: KITCHEN_KEY}))?.catch(() => {});
+  };
+  (PREFS?.get({key: KITCHEN_KEY}) || Promise.resolve({})).then(({value}) => {
+    if (value && !kitchenSaved()) { try { localStorage.setItem(KITCHEN_KEY, value); } catch { /* */ } }
+  }).catch(() => {});
+  /* ESC p 0: pulse the drawer port (RJ11 on the back of the counter printer). */
+  const DRAWER_KICK = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+  const isLan = (saved) => saved?.kind === 'lan';
+  const base64 = (bytes) => {
+    let text = '';
+    for (let at = 0; at < bytes.length; at += 0x8000) text += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+    return btoa(text);
+  };
+  /** The receipt as the printer's bytes, with the drawer pulse when asked. */
+  const bytesFor = async (text, saved, {drawer = false, big = false} = {}) => {
+    const {escpos} = await load();
+    const options = {paper: paperOf(saved), ...(big ? {fontSize: 32, lineHeight: 42} : {})};
+    const page = escpos.drawReceipt(text, options);
+    return drawer && saved?.drawer ? escpos.join([page, DRAWER_KICK]) : page;
+  };
+  const sendLan = async (saved, bytes) => {
+    if (!TCP) throw new Error('แอปรุ่นนี้ยังพิมพ์ผ่าน LAN ไม่ได้ อัปเดตแอปก่อน');
+    try {
+      await TCP.send({host: saved.host, port: Number(saved.port) || 9100, data: base64(bytes), timeout: 6000});
+    } catch (error) {
+      const why = String(error?.message || error);
+      throw new Error(/timed? ?out|unreachable|refused|No route|EHOSTUNREACH|ECONNREFUSED/i.test(why)
+        ? `ต่อเครื่องพิมพ์ ${saved.host} ไม่ได้ ตรวจว่าเปิดเครื่อง และมือถืออยู่ Wi-Fi เดียวกับเครื่องพิมพ์`
+        : `พิมพ์ผ่าน LAN ไม่สำเร็จ (${why})`);
+    }
+  };
+  /* A cash close says so in its title line; only that one opens the drawer. */
+  const isCashReceipt = (text) => /เงินสด/.test(String(text).split('\n').slice(0, 4).join(' '));
+  const validHost = (value) => /^(\d{1,3}\.){3}\d{1,3}$/.test(value) && value.split('.').every((n) => Number(n) <= 255);
+
   /* The roll width belongs to the printer: kept with it, 58mm unless the
      shop says otherwise or the printer's own name says 80 (POS80, XP-80…). */
   const paperOf = (saved) => (Number(saved?.paper) === 80 ? 80 : 58);
@@ -188,9 +231,9 @@
   };
 
   /** Write one receipt; a failure carries how many pieces had already gone out. */
-  const send = async (text) => {
+  const send = async (text, options = {}) => {
     const {escpos} = await load();
-    const pieces = escpos.chunks(escpos.drawReceipt(text, {paper: paperOf(remembered())}), piece);
+    const pieces = escpos.chunks(await bytesFor(text, remembered(), options), piece);
     let sent = 0;
     try {
       for (const bytes of pieces) {
@@ -215,9 +258,9 @@
 
   const PARTIAL = 'ใบเสร็จออกไม่ครบ การเชื่อมต่อหลุดระหว่างพิมพ์ ฉีกส่วนที่ออกมาทิ้งแล้วกดพิมพ์ซ้ำ';
   /** Send once; a failure after some pieces went out becomes the "torn receipt" error. */
-  const attempt = async (text) => {
+  const attempt = async (text, options) => {
     try {
-      await send(text);
+      await send(text, options);
     } catch (error) {
       await forgetLink();
       if (error.sent) throw Object.assign(new Error(PARTIAL, {cause: error}), {sent: error.sent});
@@ -227,10 +270,18 @@
 
   const print = (text, {test = false} = {}) => inTurn(async () => {
     await restored;
+    const options = {drawer: !test && isCashReceipt(text)};
     try {
+      const saved = remembered();
+      if (isLan(saved)) {
+        // One socket, one whole receipt: there is no half-sent page to tear off.
+        await sendLan(saved, await bytesFor(text, saved, options));
+        if (lastFailed === text) lastFailed = null;
+        return;
+      }
       await ensureLink();
       try {
-        await attempt(text);
+        await attempt(text, options);
       } catch (first) {
         /* Nothing reached the printer: almost always a link that went stale
            while the till sat idle, so one fresh connection is safe. Once some
@@ -239,7 +290,7 @@
            noise. That one stops and is offered for reprinting instead. */
         if (first.sent) throw first;
         await ensureLink();
-        await attempt(text);
+        await attempt(text, options);
       }
       if (lastFailed === text) lastFailed = null;
     } catch (error) {
@@ -290,6 +341,7 @@
 
   const status = () => {
     const saved = remembered();
+    if (isLan(saved)) return {tone: 'ok', title: saved.name, text: `LAN ${saved.host} · กระดาษ ${paperOf(saved)} มม.${saved.drawer ? ' · เปิดลิ้นชักเงิน' : ''}`};
     if (link) return {tone: 'ok', title: link.name || 'เครื่องพิมพ์', text: 'เชื่อมต่ออยู่ · ใบเสร็จจะออกที่เครื่องนี้'};
     if (saved) return {tone: 'idle', title: saved.name, text: `กระดาษ ${paperOf(saved)} มม. · จำไว้แล้ว · จะเชื่อมให้เองตอนสั่งพิมพ์`};
     return {tone: 'none', title: 'ยังไม่ได้เลือกเครื่องพิมพ์', text: 'กดค้นหา แล้วเลือกเครื่องพิมพ์ Bluetooth ของร้าน'};
@@ -299,6 +351,63 @@
     const node = el('button', {type: 'button', className, textContent: label});
     node.addEventListener('click', onClick);
     return node;
+  };
+
+  let lanForm = null;           // 'receipt' | 'kitchen' while its address form is open
+
+  const lanFields = (which) => {
+    const saved = which === 'kitchen' ? kitchenSaved() : (isLan(remembered()) ? remembered() : null);
+    const form = el('form', {className: 'app-printer-lan'});
+    const host = el('input', {type: 'text', inputMode: 'decimal', placeholder: 'เช่น 192.168.1.100', value: saved?.host || '', required: true});
+    const port = el('input', {type: 'number', inputMode: 'numeric', value: String(saved?.port || 9100), min: '1', max: '65535'});
+    host.setAttribute('aria-label', 'IP ของเครื่องพิมพ์');
+    port.setAttribute('aria-label', 'พอร์ต');
+    form.append(
+      el('p', {className: 'app-printer-hint', textContent: which === 'kitchen'
+        ? 'IP ของเครื่องพิมพ์ในครัว ดูได้จากใบที่เครื่องพิมพ์พิมพ์ออกมาเอง (กดปุ่ม FEED ค้างตอนเปิดเครื่อง)'
+        : 'IP ของเครื่องพิมพ์ใบเสร็จ ดูได้จากใบที่เครื่องพิมพ์พิมพ์ออกมาเอง (กดปุ่ม FEED ค้างตอนเปิดเครื่อง)'}),
+      el('div', {className: 'app-printer-lan-row'}, host, port),
+      el('div', {className: 'app-printer-lan-row'},
+        button('ยกเลิก', 'app-printer-quiet', () => { lanForm = null; render(); }),
+        el('button', {type: 'submit', className: 'app-printer-primary', textContent: 'บันทึก'})));
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = host.value.trim();
+      if (!validHost(value)) { render({text: 'ใส่ IP ให้ครบ 4 ชุด เช่น 192.168.1.100'}); return; }
+      const entry = {kind: 'lan', host: value, port: Number(port.value) || 9100,
+        name: which === 'kitchen' ? `ครัว · ${value}` : `LAN · ${value}`,
+        paper: saved?.paper || 80, drawer: Boolean(saved?.drawer)};
+      lanForm = null;
+      if (which === 'kitchen') { rememberKitchen(entry); render({text: 'บันทึกเครื่องพิมพ์ในครัวแล้ว ลองพิมพ์ใบทดสอบได้เลย'}); return; }
+      inTurn(async () => { endScan(); await forgetLink(); remember(entry); render({text: 'บันทึกแล้ว ลองพิมพ์ใบทดสอบได้เลย'}); });
+    });
+    setTimeout(() => host.focus(), 50);
+    return form;
+  };
+
+  const kitchenBlock = (manage) => {
+    const saved = kitchenSaved();
+    const box = el('div', {className: 'app-printer-kitchen'},
+      el('h3', {textContent: 'เครื่องพิมพ์ในครัว (LAN)'}),
+      el('p', {className: 'app-printer-hint', textContent: saved
+        ? `${saved.host} · ใบครัวจะออกที่เครื่องนี้ทุกครั้งที่ส่งออเดอร์จากมือถือนี้`
+        : 'ไม่บังคับ · ตั้งไว้แล้วกดส่งเข้าครัว ใบครัวจะออกที่ครัวเอง'}));
+    if (lanForm === 'kitchen') { box.append(lanFields('kitchen')); return box; }
+    const row = el('div', {className: 'app-printer-lan-row'});
+    if (saved) {
+      row.append(button('พิมพ์ใบครัวทดสอบ', 'app-printer-secondary', async (event) => {
+        const node = event.currentTarget;
+        node.disabled = true;
+        try { await printKitchen(KITCHEN_TEST); render({text: 'ส่งใบครัวทดสอบแล้ว ดูที่เครื่องพิมพ์ในครัว'}); }
+        catch (error) { render({text: error.message}); }
+      }));
+    }
+    if (manage) {
+      row.append(button(saved ? 'เปลี่ยน IP' : 'ตั้งเครื่องพิมพ์ในครัว', 'app-printer-secondary', () => { lanForm = 'kitchen'; render(); }));
+      if (saved) row.append(button('เลิกใช้', 'app-printer-quiet', () => { rememberKitchen(null); render(); }));
+    }
+    if (row.children.length) box.append(row);
+    return box;
   };
 
   function render(message) {
@@ -311,10 +420,13 @@
       actions.append(button('พิมพ์ใบล่าสุดซ้ำ', 'app-printer-primary', (event) => reprint(event.currentTarget)));
     }
     if (manage) {
-      const find = button(scan.active ? 'กำลังค้นหา…' : (remembered() ? 'ค้นหาเครื่องอื่น' : 'ค้นหาเครื่องพิมพ์'),
+      const find = button(scan.active ? 'กำลังค้นหา…' : (remembered() ? 'ค้นหาเครื่อง Bluetooth อื่น' : 'ค้นหาเครื่องพิมพ์ Bluetooth'),
         `${lastFailed ? 'app-printer-secondary' : 'app-printer-primary'} app-printer-find`, startScan);
       find.disabled = scan.active || busy;
       actions.append(find);
+      if (lanForm === 'receipt') actions.append(lanFields('receipt'));
+      else actions.append(button(isLan(remembered()) ? 'เปลี่ยน IP เครื่องพิมพ์ LAN' : 'ใช้เครื่องพิมพ์ LAN / Wi-Fi (ใส่ IP)', 'app-printer-secondary',
+        () => { endScan(); lanForm = 'receipt'; render(); }));
     }
     if (remembered()) {
       if (manage) {
@@ -330,6 +442,17 @@
           paper.append(choice);
         }
         actions.append(paper);
+        const drawer = el('div', {className: 'app-printer-paper', role: 'group'},
+          el('span', {textContent: 'ลิ้นชักเงิน (ต่อสาย RJ11 กับเครื่องพิมพ์)'}));
+        for (const [on, label] of [[false, 'ไม่ใช้'], [true, 'เปิดตอนรับเงินสด']]) {
+          const choice = button(label, Boolean(remembered()?.drawer) === on ? 'is-on' : '', () => {
+            remember({...remembered(), drawer: on});
+            render({text: on ? 'รับเงินสดครั้งต่อไป ลิ้นชักจะเด้งเปิดเองหลังพิมพ์ใบเสร็จ' : 'ปิดการเปิดลิ้นชักอัตโนมัติแล้ว'});
+          });
+          choice.setAttribute('aria-pressed', String(Boolean(remembered()?.drawer) === on));
+          drawer.append(choice);
+        }
+        actions.append(drawer);
       }
       actions.append(button('พิมพ์ใบทดสอบ', 'app-printer-secondary', (event) => testPrint(event.currentTarget)));
       if (manage) {
@@ -357,6 +480,7 @@
         : null,
       el('div', {className: 'app-printer-list'}, ...found),
       actions,
+      kitchenBlock(manage),
     ].filter(Boolean));
   }
 
@@ -429,6 +553,16 @@
     '', '      ขอบคุณที่ใช้บริการ',
   ].join('\n');
 
+  const KITCHEN_TEST = ['    ใบครัว · ทดสอบ', '    โต๊ะ 1',
+    '--------------------------------', 'กะเพราหมูสับ  x2', '  เผ็ดน้อย', '--------------------------------'].join('\n');
+
+  /** The kitchen ticket, to the kitchen's own printer. Large print for the stove. */
+  const printKitchen = (text) => inTurn(async () => {
+    const saved = kitchenSaved();
+    if (!saved) throw new Error('ยังไม่ได้ตั้งเครื่องพิมพ์ในครัว');
+    await sendLan(saved, await bytesFor(text, saved, {big: true}));
+  });
+
   const run = async (node, text, done, options) => {
     node.disabled = true;
     node.textContent = 'กำลังพิมพ์…';
@@ -466,5 +600,10 @@
     /* The till's printer belongs to the till: a waiter or the kitchen may print
        through it, but choosing or forgetting it is the cashier's or above. */
     mayManage: () => ['cashier', 'manager', 'owner'].includes(window.poswaiAuth?.current?.role),
+    /* The kitchen's printer, when the shop has one on its network. */
+    kitchen: {
+      get ready() { return Boolean(kitchenSaved()); },
+      print: (text) => printKitchen(text),
+    },
   };
 })();
