@@ -162,7 +162,19 @@
     else app.exitApp();
   });
 
+  /* The mascot greets whoever signs in: the same POS WAI character as the
+     web's landing page, on the card the app opens with. */
+  const greet = () => {
+    const card = document.querySelector('.poswai-auth-card');
+    if (!card || card.querySelector('.app-login-mascot')) return;
+    const mascot = Object.assign(document.createElement('img'), {
+      className: 'app-login-mascot', src: '/assets/mascot-pos.webp', alt: '', decoding: 'async',
+    });
+    card.prepend(mascot);
+  };
+
   const start = () => {
+    greet();
     const account = document.querySelector('.poswai-auth-button');
     if (account) watchAccount(account);
     else {

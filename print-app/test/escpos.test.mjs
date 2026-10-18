@@ -77,3 +77,28 @@ test('the bytes go out in pieces a Bluetooth link will accept', () => {
   assert.deepEqual(pieces.map(piece => piece.length), [180, 180, 140]);
   assert.deepEqual([...join(pieces)], [...bytes], 'the bytes changed on the way out');
 });
+
+/* ---- reading the layout the POS wrote for a fixed-width font ------------ */
+import {readLine} from '../www/escpos.js';
+
+test('a run of dashes is a rule across the paper, not text', () => {
+  assert.deepEqual(readLine('--------------------------------'), {kind: 'rule', style: 'dash'});
+  assert.deepEqual(readLine('================'), {kind: 'rule', style: 'solid'});
+});
+
+test('a dish line splits into name, quantity and price', () => {
+  assert.deepEqual(readLine('กะเพราหมูสับ ไข่ดาว     x1   ฿65.00'),
+    {kind: 'cells', cells: ['กะเพราหมูสับ ไข่ดาว', 'x1', '฿65.00']});
+});
+
+test('a single space stays inside a name; only wider gaps are columns', () => {
+  assert.deepEqual(readLine('ชาไทย เย็น'), {kind: 'text', text: 'ชาไทย เย็น'});
+});
+
+test('a title indented with spaces is centred', () => {
+  assert.deepEqual(readLine('      ขอบคุณที่ใช้บริการ'), {kind: 'center', text: 'ขอบคุณที่ใช้บริการ'});
+});
+
+test('an empty line stays an empty line', () => {
+  assert.deepEqual(readLine('   '), {kind: 'blank'});
+});

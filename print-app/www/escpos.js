@@ -107,24 +107,111 @@ export function chunks(bytes, size = 180) {
   return pieces;
 }
 
+/** What one line of the receipt is, read from how the POS laid it out.
+ *
+ * The POS builds receipts for a fixed-width font: columns lined up with runs
+ * of spaces, rules made of dashes, titles centred with leading spaces. A Thai
+ * font is not fixed-width — its spaces are narrow and its letters vary — so
+ * drawn as written, a 32-character line covered barely sixty per cent of the
+ * paper and sat against the left edge. Reading the layout back lets each part
+ * be drawn where it was meant to be: rules edge to edge, prices against the
+ * right edge, titles in the middle.
+ *
+ *   {kind: 'blank'} · {kind: 'rule', style: 'dash'|'solid'}
+ *   {kind: 'center', text} · {kind: 'cells', cells: [...]} · {kind: 'text', text}
+ */
+export function readLine(raw) {
+  const line = String(raw).replace(/\s+$/, '');
+  if (!line.trim()) return {kind: 'blank'};
+  if (/^\s*-{6,}\s*$/.test(line)) return {kind: 'rule', style: 'dash'};
+  if (/^\s*[=_]{6,}\s*$/.test(line)) return {kind: 'rule', style: 'solid'};
+  const cells = line.trim().split(/\s{2,}/);
+  if (cells.length >= 2) return {kind: 'cells', cells};
+  if (/^\s{2,}/.test(line)) return {kind: 'center', text: line.trim()};
+  return {kind: 'text', text: line};
+}
+
 /** Draw the receipt and hand back the dots. Browsers only: it needs a canvas. */
-export function drawReceipt(text, {fontSize = 22, lineHeight = 29, pad = 6} = {}) {
+export function drawReceipt(text, {fontSize = 24, lineHeight = 32, pad = 4} = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = PAPER_DOTS;
-  const context = canvas.getContext('2d', {willReadFrequently: true});
+  const measure = canvas.getContext('2d', {willReadFrequently: true});
   const font = `${fontSize}px "Noto Sans Thai", "Sarabun", "Tahoma", sans-serif`;
-  context.font = font;
-  const room = PAPER_DOTS - 2 * pad;
-  const lines = layout(text, piece => context.measureText(piece).width <= room);
+  measure.font = font;
+  const width = text => measure.measureText(text).width;
+  const left = pad;
+  const right = PAPER_DOTS - pad;
+  const room = right - left;
+  const gap = Math.round(fontSize * 0.6);
 
-  canvas.height = Math.max(lineHeight, lines.length * lineHeight + 2 * pad);
+  /* Lay every line out first, so the canvas can be made exactly tall enough.
+     Each entry is one printed row: what to draw, and where. */
+  const rows = [];
+  for (const raw of String(text).replace(/\r/g, '').split('\n')) {
+    const line = readLine(raw);
+    if (line.kind === 'blank') { rows.push([]); continue; }
+    if (line.kind === 'rule') { rows.push([{rule: line.style}]); continue; }
+    if (line.kind === 'center') {
+      for (const piece of wrapLine(line.text, t => width(t) <= room)) {
+        rows.push([{text: piece, x: left + (room - width(piece)) / 2}]);
+      }
+      continue;
+    }
+    if (line.kind === 'text') {
+      for (const piece of wrapLine(line.text, t => width(t) <= room)) rows.push([{text: piece, x: left}]);
+      continue;
+    }
+    /* Columns: the last against the right edge; with three or more, the one
+       before it (the quantity) right-aligned in a column of its own; whatever
+       is left is the name, wrapped in the room that remains. */
+    const cells = line.cells;
+    const last = cells[cells.length - 1];
+    const middle = cells.length >= 3 ? cells[cells.length - 2] : null;
+    const name = cells.slice(0, middle ? -2 : -1).join('  ');
+    const lastWidth = width(last);
+    const middleEnd = right - Math.max(lastWidth, width('฿0,000.00')) - gap;
+    const nameRoom = (middle ? middleEnd - width(middle) : right - lastWidth) - gap - left;
+    if (nameRoom < room * 0.3) {
+      // Too crowded to keep the columns: fall back to plain wrapped text.
+      for (const piece of wrapLine(raw.trim(), t => width(t) <= room)) rows.push([{text: piece, x: left}]);
+      continue;
+    }
+    const names = wrapLine(name, t => width(t) <= nameRoom);
+    names.forEach((piece, index) => {
+      const row = [{text: piece, x: left}];
+      if (index === 0) {
+        if (middle) row.push({text: middle, x: middleEnd - width(middle)});
+        row.push({text: last, x: right - lastWidth});
+      }
+      rows.push(row);
+    });
+  }
+
+  canvas.height = Math.max(lineHeight, rows.length * lineHeight + 2 * pad);
   const draw = canvas.getContext('2d', {willReadFrequently: true});
   draw.fillStyle = '#fff';
   draw.fillRect(0, 0, canvas.width, canvas.height);
   draw.fillStyle = '#000';
+  draw.strokeStyle = '#000';
   draw.textBaseline = 'top';
   draw.font = font;
-  lines.forEach((line, index) => draw.fillText(line, pad, pad + index * lineHeight));
+  rows.forEach((row, index) => {
+    const top = pad + index * lineHeight;
+    for (const part of row) {
+      if (part.rule) {
+        const y = Math.round(top + lineHeight / 2) + 0.5;
+        draw.lineWidth = 2;
+        draw.setLineDash(part.rule === 'dash' ? [8, 6] : []);
+        draw.beginPath();
+        draw.moveTo(left, y);
+        draw.lineTo(right, y);
+        draw.stroke();
+        draw.setLineDash([]);
+      } else {
+        draw.fillText(part.text, Math.round(part.x), top);
+      }
+    }
+  });
 
   const pixels = draw.getImageData(0, 0, canvas.width, canvas.height).data;
   const ink = (x, y) => pixels[(y * canvas.width + x) * 4] < 160;
