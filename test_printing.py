@@ -276,6 +276,20 @@ class PageAssetsTest(unittest.TestCase):
         self.addCleanup(lambda: self.client.__exit__(None, None, None))
         self.page = (Path(__file__).parent / "index.html").read_text(encoding="utf-8")
 
+    def test_the_print_app_is_served_whole(self):
+        """Chrome hands a page Bluetooth only over https, so the app lives here.
+
+        A file the app imports but the server will not serve leaves a blank
+        screen on the shop's phone and nothing in the log to explain it."""
+        home = self.client.get("/print/")
+        self.assertEqual(home.status_code, 200, home.text)
+        self.assertIn("ตัวพิมพ์", home.text)
+        for asset in ("app.css", "app.js", "escpos.js", "ble.js", "queue.js"):
+            with self.subTest(asset=asset):
+                response = self.client.get(f"/print/{asset}")
+                self.assertEqual(response.status_code, 200, f"/print/{asset} is missing")
+        self.assertEqual(self.client.get("/print/../line_pos_server.py").status_code, 404)
+
     def test_every_asset_the_page_asks_for_is_served(self):
         import re
         wanted = set(re.findall(r'(?:src|href)="(/[\w./-]+\.(?:js|css))(?:\?v=\d+)?"', self.page))

@@ -3183,6 +3183,33 @@ def serve_worker():
                         headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
 
 
+# The print app is served from here so a phone can open it over https, which
+# is the only way Chrome will hand a web page the Bluetooth it needs. It is
+# also what the packaged iOS and Android app wraps, so there is one copy.
+PRINT_APP = {"index.html": "text/html; charset=utf-8",
+             "app.css": "text/css",
+             "app.js": "text/javascript",
+             "escpos.js": "text/javascript",
+             "ble.js": "text/javascript",
+             "queue.js": "text/javascript"}
+
+
+@app.get("/print", response_class=HTMLResponse)
+@app.get("/print/", response_class=HTMLResponse)
+def print_app_home():
+    return FileResponse(Path(__file__).parent / "print-app" / "www" / "index.html",
+                        media_type="text/html")
+
+
+@app.get("/print/{asset_name}")
+def print_app_asset(asset_name: str):
+    media_type = PRINT_APP.get(asset_name)
+    if not media_type:
+        raise HTTPException(404, "File not found")
+    return FileResponse(Path(__file__).parent / "print-app" / "www" / asset_name,
+                        media_type=media_type)
+
+
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
     if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "legal"}:
