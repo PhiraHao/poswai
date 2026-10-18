@@ -245,7 +245,7 @@
     }
     renderInventoryView();
     renderBomEditor();
-    refresh().catch(error => inform(`โหลดสต็อกไม่สำเร็จ: ${error.message}`));
+    refresh().catch(error => { if (navigator.onLine) inform(`โหลดสต็อกไม่สำเร็จ: ${error.message}`); });
   };
   const startup = window.setInterval(() => {
     configureLive();
@@ -253,7 +253,7 @@
   }, 1000);
   window.addEventListener('poswai:auth-changed', () => {
     configureLive();
-    if (live()) refresh().catch(error => inform(`โหลดสต็อกไม่สำเร็จ: ${error.message}`));
+    if (live()) refresh().catch(error => { if (navigator.onLine) inform(`โหลดสต็อกไม่สำเร็จ: ${error.message}`); });
   });
   configureLive();
 })();

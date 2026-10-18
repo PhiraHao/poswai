@@ -78,7 +78,7 @@
     }));
     if (window.poswaiAuth?.current) {
       try { window.poswaiKdsTickets = (await request(`/api/kds?branch_id=${branch()}`)).tickets; }
-      catch (error) { showToast(`โหลดจอครัวไม่สำเร็จ: ${error.message}`); }
+      catch (error) { if (navigator.onLine) showToast(`โหลดจอครัวไม่สำเร็จ: ${error.message}`); }
     } else window.poswaiKdsTickets = [];
     state.orders.forEach(order => {
       const tickets = window.poswaiKdsTickets.filter(ticket => ticket.order_no === order.orderId);
@@ -88,7 +88,10 @@
       try {
         const inventory = await request(`/api/inventory?branch_id=${branch()}`);
         state.inventory = inventory.items.map(item => ({id:item.id, name:item.id, stock:item.stock, reorder:0, unit:'หน่วย'}));
-      } catch (error) { showToast(`โหลดสต็อกไม่สำเร็จ: ${error.message}`); }
+      } catch (error) {
+        // Offline the strip at the top already says so; a failed fetch is no news.
+        if (navigator.onLine) showToast(`โหลดสต็อกไม่สำเร็จ: ${error.message}`);
+      }
     }
     renderCatalogViews();
     const selector = document.getElementById('bomMenuSelect');

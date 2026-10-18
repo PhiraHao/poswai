@@ -177,6 +177,11 @@
         // A network that is up but goes nowhere (shop Wi-Fi with no line out).
         const copy = offlineCopy && remembered(path);
         if (copy) return copy;
+        /* No line out: say so in the shop's language. Pages print the message
+           as they got it, and "Failed to fetch" means nothing at a till. */
+        if (!navigator.onLine || /Failed to fetch|NetworkError|Load failed/i.test(String(error))) {
+          throw Object.assign(new Error('ไม่มีอินเทอร์เน็ต · ส่วนนี้จะโหลดเมื่อต่อเน็ตอีกครั้ง'), {cause: error, offline: true});
+        }
         throw error;
       })
       .then((reply) => {

@@ -253,7 +253,10 @@ html.aui-sub .aui-nav, html.aui-sub .aui-top, html.aui-sub .aui-main { display: 
 html.aui-sub .aui-subbar { display: flex; position: fixed; z-index: 60; top: 0; left: 0; right: 0; align-items: center; gap: 6px; padding: calc(var(--aui-safe-t) + 6px) 12px 6px 6px; background: #fff; border-bottom: 1px solid var(--aui-line); }
 html.aui-sub .aui-subbar strong { font-size: 17px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 html.aui-on.aui-sub body > main.container { display: block !important; padding-top: calc(var(--aui-safe-t) + 64px) !important; padding-bottom: calc(var(--aui-safe-b) + 24px) !important; }
-html.aui-on.aui-sub .app-netbar { top: calc(var(--aui-safe-t) + 52px); }
+/* Under a sub-page's back bar only the network strip of the header shows. */
+html.aui-on.aui-sub .aui-top:has(> .app-netbar:not([hidden])) { display: block !important; position: fixed; top: calc(var(--aui-safe-t) + 52px); left: 0; right: 0; z-index: 2100; padding: 0; border: 0; background: none; }
+html.aui-on.aui-sub .aui-top > :not(.app-netbar) { display: none !important; }
+html.aui-on.aui-sub .aui-top > .app-netbar { margin: 0 !important; }
 
 /* ---------------------------------------------------------- sheets */
 .aui-sheet-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(18, 32, 31, .42); backdrop-filter: blur(3px); }
@@ -286,7 +289,8 @@ html.aui-on #modifierModalBackdrop.active { align-items: flex-end !important; pa
 html.aui-on #modifierModalBackdrop.active > * { width: 100% !important; max-width: none !important; border-radius: 24px 24px 0 0 !important; margin: 0 !important; padding-bottom: calc(var(--aui-safe-b) + 16px) !important; }
 
 /* The network strip from app-shell sits under the app header. */
-html.aui-on:not(.aui-sub) .app-netbar { top: calc(var(--aui-safe-t) + 57px); }
+.aui-top { flex-wrap: wrap; }
+html.aui-on .aui-top > .app-netbar { position: static !important; flex: 1 0 100%; order: 9; margin: 8px -16px -10px !important; padding: 6px 16px !important; border-radius: 0 !important; box-shadow: none !important; transform: none !important; inset: auto !important; }
 
 /* Messages drop in under the header, clear of the cart bar and the sheets. */
 html.aui-on #toastContainer { position: fixed !important; top: calc(var(--aui-safe-t) + 66px) !important; bottom: auto !important; left: 12px !important; right: 12px !important; transform: none !important; z-index: 95 !important; display: flex; justify-content: center; pointer-events: none; }
@@ -385,3 +389,4 @@ html.aui-on.aui-sub main.container .commerce-btn:not(.secondary) {
   background: linear-gradient(180deg, #ffd65c, #ffc63a) !important; border-color: #f2bb2e !important;
   color: var(--aui-ink) !important; box-shadow: 0 2px 0 var(--aui-amber-deep) !important;
 }
+html.aui-on.aui-sub:has(.aui-top > .app-netbar:not([hidden])) body > main.container { padding-top: calc(var(--aui-safe-t) + 100px) !important; }

@@ -2331,7 +2331,8 @@
       } catch (error) {
         if (path.startsWith("/api/payments/") && !queueablePayment) throw error;
         // Only transport failures belong in the offline queue; server rejection needs correction.
-        if (navigator.onLine && !/Failed to fetch|NetworkError|Load failed/i.test(String(error))) throw error;
+        // error.offline: the app's own fetch says the line is down (in Thai, so the text alone cannot tell).
+        if (navigator.onLine && !error?.offline && !/Failed to fetch|NetworkError|Load failed/i.test(String(error))) throw error;
         return queue();
       }
     }
@@ -2461,6 +2462,12 @@
     }
 
     window.addEventListener("online", flushOfflineSyncQueue);
+    /* Shop Wi-Fi whose line out died and came back never says "online" again:
+       the phone thought it was connected all along. Whatever is still waiting
+       is tried again every half minute, so it does not wait for the next sale. */
+    setInterval(() => {
+      if (state.offlineSyncQueue.length && navigator.onLine && state.isOnline) flushOfflineSyncQueue();
+    }, 30000);
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => navigator.serviceWorker.register("/service-worker.js"));
     }
@@ -5146,11 +5153,11 @@
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=76"></script>
+  <script src="/live-data.js?v=77"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=91"></script>
-  <script src="/inventory-live.js?v=24"></script>
+  <script src="/inventory-live.js?v=25"></script>
   <link rel="stylesheet" href="/commerce-ui.css?v=29">
   <script src="/commerce-ui.js?v=30"></script>
   <script src="/cashier-void.js?v=72"></script>

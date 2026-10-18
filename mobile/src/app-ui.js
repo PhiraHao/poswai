@@ -955,6 +955,15 @@
     document.body.append(root);
     newLogo();
     new MutationObserver(newLogo).observe(document.body, {childList: true, subtree: true});
+    /* The network strip (app-shell) belongs under this header, inside it, so
+       it never covers the logo and stays in view while the page scrolls. */
+    const strip = () => {
+      const bar = document.querySelector('.app-netbar');
+      const top = root.querySelector('.aui-top');
+      if (bar && top && bar.parentElement !== top) top.append(bar);
+    };
+    strip();
+    new MutationObserver(strip).observe(document.body, {childList: true});
     // The page redraws after every change it makes; this screen follows it.
     if (typeof window.renderAll === 'function') {
       const original = window.renderAll;
