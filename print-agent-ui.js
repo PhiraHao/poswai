@@ -197,8 +197,10 @@
 
   /* ---- mounting --------------------------------------------------------- */
   const mount = () => {
+    /* Only the receipt itself. Closing a bill prints through it already, so
+       wrapping the close as well sent every paid bill to the printer twice —
+       and sent the last receipt again when a close was refused. */
     alsoPrint('printReceiptForTable');
-    alsoPrint('confirmPaymentAndPrint');
     const preview = $('thermalReceiptPreview');
     const header = preview?.closest('.card')?.querySelector('.card-header div:last-child');
     if (header && sendButton.parentElement !== header) header.prepend(sendButton);
