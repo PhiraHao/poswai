@@ -653,6 +653,8 @@
       user-select: none;
     }
 
+    .kds-options { display: block; font-size: .78rem; color: #b45309; font-weight: 600; }
+    .kds-note { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #fff7ed; color: #9a3412; font-size: .82rem; font-weight: 600; }
   </style>
   <link rel="stylesheet" href="/ui.css">
   <link rel="stylesheet" href="/assets/fonts.css">
@@ -3614,7 +3616,8 @@
       try {
         await apiMutation("/api/orders", {
           event_id: crypto.randomUUID(), order_no: orderId, branch_id: state.productionMode ? (window.poswaiAuth?.branchId || 1) : 1,
-          table_no: table, total_amount: subtotal - discount, items: apiItems
+          table_no: table, total_amount: subtotal - discount, items: apiItems,
+          note: note === "-" ? "" : note
         });
       } catch (error) { showToast(`⚠️ ส่งออเดอร์ไม่สำเร็จ: ${error.message}`); return; }
       if (state.productionMode) {
@@ -3771,7 +3774,8 @@
             return `<article class="kds-ticket ${ready ? "is-ready" : held ? "is-held" : "is-cooking"}">
               <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(ticket.table_no)}</strong><span class="badge ${ready ? "badge-occupied" : held ? "badge-purple" : "badge-verify"}">${ready ? "พร้อมเสิร์ฟ" : held ? "พักคอร์ส" : "กำลังทำ"}</span></div>
               <div class="kds-ticket-meta">#${escapeUi(ticket.order_no)} · ${escapeUi(time)}</div>
-              <div class="kds-ticket-items">${ticket.items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}</span>${held && item.course_mode === "HOLD" ? "<em>พักไว้</em>" : ""}</div>`).join("")}</div>
+              <div class="kds-ticket-items">${ticket.items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}${item.options ? `<small class="kds-options">${escapeUi(item.options)}</small>` : ""}</span>${held && item.course_mode === "HOLD" ? "<em>พักไว้</em>" : ""}</div>`).join("")}</div>
+              ${ticket.note ? `<div class="kds-note">📝 ${escapeUi(ticket.note)}</div>` : ""}
               ${!ready ? `<div class="kds-ticket-actions">${held ? `<button class="btn btn-sm btn-purple" data-kds-action="fire" data-kds-order="${escapeUi(ticket.order_no)}" data-kds-station="${escapeUi(station)}">เริ่มทำคอร์ส</button>` : ""}<button class="btn btn-sm btn-line" ${held ? "disabled" : ""} data-kds-action="ready" data-kds-order="${escapeUi(ticket.order_no)}" data-kds-station="${escapeUi(station)}">พร้อมเสิร์ฟ</button></div>` : ""}
             </article>`;
           }).join("") : `<div class="kds-empty">ยังไม่มีรายการในสเตชันนี้</div>`}</div>
@@ -5140,7 +5144,7 @@
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=74"></script>
+  <script src="/live-data.js?v=75"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=91"></script>

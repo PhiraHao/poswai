@@ -127,6 +127,24 @@ class OfflineSalesTest(unittest.TestCase):
         again = self.order(self.cashier, "OFF9", [("M2", "ชาไทย", 50, 1)], 50)
         self.assertEqual((first.status_code, again.json()["status"]), (200, "existing"))
 
+    # ------------------------------------------------------------ the kitchen
+    def test_the_kitchen_sees_the_choices_and_the_note(self):
+        """Spice level, toppings and the note reach the kitchen screen; without
+        them the dish comes out the way the guest asked it not to."""
+        self.assertEqual(self.manager.put("/api/menu/M3", json={
+            "branch_id": 1, "name": "กะเพรา", "price": 45,
+            "levels": ["ไม่เผ็ด", "เผ็ดน้อย"],
+            "addons": [{"name": "ไข่ดาว", "price": 10, "ingId": "NONE", "qty": 0}]}).status_code, 200)
+        body = {"event_id": "e-K1", "order_no": "K1", "branch_id": 1, "table_no": "5",
+                "total_amount": 55, "note": "  ไม่ใส่ผัก   ",
+                "items": [{"id": "M3", "name": "กะเพรา", "price": 55, "qty": 1,
+                           "level": "เผ็ดน้อย", "addons": ["ไข่ดาว"]}]}
+        self.assertEqual(self.cashier.post("/api/orders", json=body).status_code, 200)
+        ticket = next(t for t in self.manager.get("/api/kds").json()["tickets"] if t["order_no"] == "K1")
+        self.assertEqual((ticket["note"], ticket["items"][0]["options"]), ("ไม่ใส่ผัก", "เผ็ดน้อย, ไข่ดาว"))
+        order = next(o for o in self.manager.get("/api/orders").json()["orders"] if o["order_no"] == "K1")
+        self.assertEqual((order["note"], order["items"][0]["options"]), ("ไม่ใส่ผัก", "เผ็ดน้อย, ไข่ดาว"))
+
     # ------------------------------------------------------------ the close
     def close(self, client, order_no, amount, **extra):
         body = {"event_id": "close-" + order_no, "order_no": order_no, "amount": amount, "method": CASH}

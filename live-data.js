@@ -70,7 +70,7 @@
     orders = orders.filter(order => !closedHere.has(order.order_no));
     state.orders = orders.map(order => ({
       orderId: order.order_no, table: order.table_no, items: order.items,
-      discount: 0, note: '-', status: 'pending',
+      discount: 0, note: order.note || '-', status: 'pending',
       time: new Date(order.created_at + 'Z').toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}),
       source: 'POS WAI',
     }));

@@ -436,10 +436,16 @@ def init_db() -> None:
         cur.execute("ALTER TABLE order_items ADD COLUMN station TEXT NOT NULL DEFAULT 'ครัวร้อน'")
     if "course_mode" not in item_columns:
         cur.execute("ALTER TABLE order_items ADD COLUMN course_mode TEXT NOT NULL DEFAULT 'FIRE'")
+    # The level and toppings the guest chose ("เผ็ดน้อย, ไข่ดาว"): the kitchen cooks to them.
+    if "options" not in item_columns:
+        cur.execute("ALTER TABLE order_items ADD COLUMN options TEXT NOT NULL DEFAULT ''")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_events (
         event_id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, branch_id INTEGER NOT NULL,
         table_no TEXT NOT NULL, total_amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'open',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    # The note to the kitchen ("ไม่ใส่ผัก") that came with the order.
+    if "note" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
+        cur.execute("ALTER TABLE order_events ADD COLUMN note TEXT NOT NULL DEFAULT ''")
     cur.execute("""CREATE TABLE IF NOT EXISTS kds_station_tickets (
         order_no TEXT NOT NULL REFERENCES order_events(order_no),
         station TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('held','queued','ready')),
@@ -1330,6 +1336,8 @@ class OrderCreate(BaseModel):
     items: list[OrderItem]
     # Set by a till that took this order while offline, with when it did.
     offline_at: Optional[str] = None
+    # What the guest or the till asked of the kitchen, shown on its screen and ticket.
+    note: str = ""
 
 
 class ServiceCallCreate(BaseModel):
@@ -2203,12 +2211,14 @@ def create_order(req: OrderCreate, request: Request):
                 deduct_inventory(conn, req.branch_id, quote["deductions"])
         except CatalogError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
-        cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount) VALUES (?,?,?,?,?)",
-                    (req.event_id, req.order_no, req.branch_id, req.table_no, quote["total_amount"]))
+        note = " ".join(str(req.note or "").split())[:200]
+        cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount, note) VALUES (?,?,?,?,?,?)",
+                    (req.event_id, req.order_no, req.branch_id, req.table_no, quote["total_amount"], note))
         for item in quote["items"]:
-            cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode) VALUES (?,?,?,?,?,?,?,?)",
+            options = ", ".join(part for part in [item.get("level", ""), *item.get("addons", [])] if part)
+            cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options) VALUES (?,?,?,?,?,?,?,?,?)",
                         (req.order_no, item["id"], item["name"], item["qty"], item["price"],
-                         json.dumps(item["bom"]), item["station"], item["course_mode"]))
+                         json.dumps(item["bom"]), item["station"], item["course_mode"], options))
         for station in {item["station"] for item in quote["items"]}:
             status = "held" if any(item["station"] == station and item["course_mode"] == "HOLD" for item in quote["items"]) else "queued"
             cur.execute("INSERT INTO kds_station_tickets (order_no,station,status) VALUES (?,?,?)",
@@ -2227,7 +2237,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
         require_table_or_staff(request, branch_id, table_no)
     else:
         require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
-    query = "SELECT order_no,table_no,total_amount,status,created_at FROM order_events WHERE branch_id=? AND status='open'"
+    query = "SELECT order_no,table_no,total_amount,status,created_at,note FROM order_events WHERE branch_id=? AND status='open'"
     params: list = [branch_id]
     if table_no:
         query += " AND table_no=?"
@@ -2236,7 +2246,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
     with closing(connect_db()) as conn:
         orders = []
         for row in conn.execute(query, params).fetchall():
-            items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode FROM order_items WHERE order_no=?", (row[0],)).fetchall()
+            items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode,options FROM order_items WHERE order_no=?", (row[0],)).fetchall()
             # What the kitchen has done with it, so a guest at the table can see
             # whether the food is still waiting, cooking, or on its way.
             tickets = [t[0] for t in conn.execute(
@@ -2250,10 +2260,10 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
             else:
                 kitchen = "cooking"
             orders.append({"order_no": row[0], "table_no": row[1], "total_amount": row[2],
-                           "status": row[3], "created_at": row[4], "kitchen": kitchen,
+                           "status": row[3], "created_at": row[4], "kitchen": kitchen, "note": row[5],
                            "items": [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3],
                                       "bom": json.loads(item[4]), "station": item[5],
-                                      "courseMode": item[6]} for item in items]})
+                                      "courseMode": item[6], "options": item[7]} for item in items]})
     return {"branch_id": branch_id, "orders": orders}
 
 
@@ -2336,7 +2346,7 @@ def list_kds_tickets(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
     with closing(connect_db()) as conn:
         rows = conn.execute(
-            "SELECT k.order_no,k.station,k.status,k.created_at,k.fired_at,k.ready_at,oe.table_no "
+            "SELECT k.order_no,k.station,k.status,k.created_at,k.fired_at,k.ready_at,oe.table_no,oe.note "
             "FROM kds_station_tickets k JOIN order_events oe ON oe.order_no=k.order_no "
             "WHERE oe.branch_id=? AND (k.status!='ready' OR k.created_at>=datetime('now','-1 day')) "
             "ORDER BY k.created_at DESC LIMIT 300", (branch_id,),
@@ -2344,13 +2354,14 @@ def list_kds_tickets(request: Request, branch_id: int = 1):
         tickets = []
         for row in rows:
             items = conn.execute(
-                "SELECT name,quantity,course_mode FROM order_items WHERE order_no=? AND station=?",
+                "SELECT name,quantity,course_mode,options FROM order_items WHERE order_no=? AND station=?",
                 (row[0], row[1]),
             ).fetchall()
             tickets.append({"order_no": row[0], "station": row[1], "status": row[2],
                             "created_at": row[3], "fired_at": row[4], "ready_at": row[5],
-                            "table_no": row[6], "items": [{"name": item[0], "qty": item[1],
-                                                             "course_mode": item[2]} for item in items]})
+                            "table_no": row[6], "note": row[7],
+                            "items": [{"name": item[0], "qty": item[1], "course_mode": item[2],
+                                       "options": item[3]} for item in items]})
     return {"branch_id": branch_id, "tickets": tickets}
 
 

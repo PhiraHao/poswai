@@ -447,7 +447,12 @@
   const storeCard = ({order, ready, created, held}) => {
     const mins = minutesSince(created);
     const lines = new Map();
-    for (const item of order.items || []) lines.set(item.name, (lines.get(item.name) || 0) + Number(item.qty || item.quantity || 1));
+    for (const item of order.items || []) {
+      // The same dish asked for two ways is two lines: the kitchen cooks each its own way.
+      const options = item.options || [item.level, ...(item.addons || [])].filter(Boolean).join(', ');
+      const key = options ? `${item.name}\u0000${options}` : item.name;
+      lines.set(key, (lines.get(key) || 0) + Number(item.qty || item.quantity || 1));
+    }
     const action = ready
       ? (can('cashier') ? `<button type="button" class="aui-btn primary grow" data-act="pay" data-value="${esc(order.table)}">รับเงินโต๊ะนี้ ${icon('arrow', 'aui-i-xs')}</button>` : '')
       : held ? `<button type="button" class="aui-btn grow" data-act="fire" data-value="${esc(order.orderId)}">เริ่มทำคอร์สที่พักไว้</button>`
@@ -456,7 +461,11 @@
       <div class="aui-order-head">${icon('table')}<strong>โต๊ะ ${esc(order.table)}</strong><span class="aui-tag">${esc(order.mode || 'ทานที่ร้าน')}</span>
         ${mins === null ? '<span class="aui-time grey">รอส่ง</span>' : `<span class="aui-time ${mins >= 10 ? 'late' : ''}">${icon('clock')}${mins} นาที</span>`}
         <button type="button" class="aui-iconbtn bare" data-act="ordermenu" data-value="${esc(order.orderId)}" aria-label="ตัวเลือกออเดอร์">${icon('dots')}</button></div>
-      <ul class="aui-items">${[...lines].map(([name, qty]) => `<li><span>${esc(name)}</span><b>${qty}</b></li>`).join('')}</ul>
+      <ul class="aui-items">${[...lines].map(([key, qty]) => {
+        const [name, options] = key.split('\u0000');
+        return `<li><span>${esc(name)}${options ? `<small class="aui-opt">${esc(options)}</small>` : ''}</span><b>${qty}</b></li>`;
+      }).join('')}</ul>
+      ${order.note && order.note !== '-' ? `<p class="aui-onote">${icon('edit', 'aui-i-xs')} ${esc(order.note)}</p>` : ''}
       ${steps(ready ? 2 : 1)}
       ${action ? `<div class="aui-order-foot">${action}</div>` : ''}
     </article>`;
@@ -785,7 +794,7 @@
           history.back();
           go('sell');
           const kitchen = window.POSWAI_APP?.printer?.kitchen;
-          if (kitchen?.ready) kitchen.print(ticket).catch((error) => toast(`ส่งออเดอร์แล้ว แต่ใบครัวไม่ออก: ${error.message}`));
+          if (kitchen?.ready && !kitchen.auto) kitchen.print(ticket).catch((error) => toast(`ส่งออเดอร์แล้ว แต่ใบครัวไม่ออก: ${error.message}`));
         }
         else el.innerHTML = `ส่งเข้าครัว ${icon('arrow', 'aui-i-xs')}`;
         break;

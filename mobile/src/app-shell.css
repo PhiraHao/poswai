@@ -1025,3 +1025,8 @@ html.poswai-app .app-printer-lan input { width: 100%; min-width: 0; box-sizing: 
 html.poswai-app .app-printer-lan input[type="number"] { flex: 0 0 88px; }
 html.poswai-app .app-printer-actions .app-printer-paper button { flex: 0 1 auto; white-space: normal; line-height: 1.25; padding: 6px 12px; }
 html.poswai-app .app-printer-paper span { min-width: 0; }
+
+html.poswai-app .app-printer-kitchen .app-printer-paper { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+html.poswai-app .app-printer-kitchen .app-printer-paper span { grid-column: 1 / -1; font-size: var(--t-sm); font-weight: 600; }
+html.poswai-app .app-printer-kitchen .app-printer-paper button { white-space: normal; line-height: 1.25; padding: 6px 10px; background: #eef1f3; border-color: #eef1f3; }
+html.poswai-app .app-printer-kitchen .app-printer-paper button.is-on { background: #ffc928; border-color: #ffc928; }

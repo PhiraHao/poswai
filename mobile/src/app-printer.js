@@ -376,7 +376,8 @@
       if (!validHost(value)) { render({text: 'ใส่ IP ให้ครบ 4 ชุด เช่น 192.168.1.100'}); return; }
       const entry = {kind: 'lan', host: value, port: Number(port.value) || 9100,
         name: which === 'kitchen' ? `ครัว · ${value}` : `LAN · ${value}`,
-        paper: saved?.paper || 80, drawer: Boolean(saved?.drawer)};
+        paper: saved?.paper || 80, drawer: Boolean(saved?.drawer),
+        ...(which === 'kitchen' && saved?.auto ? {auto: true, since: saved.since} : {})};
       lanForm = null;
       if (which === 'kitchen') { rememberKitchen(entry); render({text: 'บันทึกเครื่องพิมพ์ในครัวแล้ว ลองพิมพ์ใบทดสอบได้เลย'}); return; }
       inTurn(async () => { endScan(); await forgetLink(); remember(entry); render({text: 'บันทึกแล้ว ลองพิมพ์ใบทดสอบได้เลย'}); });
@@ -390,7 +391,9 @@
     const box = el('div', {className: 'app-printer-kitchen'},
       el('h3', {textContent: 'เครื่องพิมพ์ในครัว (LAN)'}),
       el('p', {className: 'app-printer-hint', textContent: saved
-        ? `${saved.host} · ใบครัวจะออกที่เครื่องนี้ทุกครั้งที่ส่งออเดอร์จากมือถือนี้`
+        ? (saved.auto
+          ? `${saved.host} · ใบครัวออกทุกออเดอร์ใหม่ รวมที่ลูกค้าสั่งจาก QR โต๊ะ — เปิดแอปค้างไว้ที่เครื่องนี้`
+          : `${saved.host} · ใบครัวออกเมื่อส่งออเดอร์จากมือถือเครื่องนี้`)
         : 'ไม่บังคับ · ตั้งไว้แล้วกดส่งเข้าครัว ใบครัวจะออกที่ครัวเอง'}));
     if (lanForm === 'kitchen') { box.append(lanFields('kitchen')); return box; }
     const row = el('div', {className: 'app-printer-lan-row'});
@@ -402,9 +405,25 @@
         catch (error) { render({text: error.message}); }
       }));
     }
+    if (saved) {
+      const auto = el('div', {className: 'app-printer-paper', role: 'group'},
+        el('span', {textContent: 'พิมพ์ใบครัวจากเครื่องนี้'}));
+      for (const [on, label] of [[false, 'เฉพาะที่สั่งจากเครื่องนี้'], [true, 'ทุกออเดอร์ใหม่ รวม QR โต๊ะ']]) {
+        const choice = button(label, Boolean(saved.auto) === on ? 'is-on' : '', () => {
+          rememberKitchen({...kitchenSaved(), auto: on, since: on ? Date.now() : undefined});
+          startWatching();
+          render({text: on
+            ? 'มือถือเครื่องนี้จะพิมพ์ใบครัวทุกออเดอร์ใหม่ เปิดแอปค้างไว้ที่เครื่องนี้'
+            : 'พิมพ์ใบครัวเฉพาะออเดอร์ที่ส่งจากมือถือเครื่องนี้'});
+        });
+        choice.setAttribute('aria-pressed', String(Boolean(saved.auto) === on));
+        auto.append(choice);
+      }
+      box.append(auto);
+    }
     if (manage) {
       row.append(button(saved ? 'เปลี่ยน IP' : 'ตั้งเครื่องพิมพ์ในครัว', 'app-printer-secondary', () => { lanForm = 'kitchen'; render(); }));
-      if (saved) row.append(button('เลิกใช้', 'app-printer-quiet', () => { rememberKitchen(null); render(); }));
+      if (saved) row.append(button('เลิกใช้', 'app-printer-quiet', () => { rememberKitchen(null); startWatching(); render(); }));
     }
     if (row.children.length) box.append(row);
     return box;
@@ -556,6 +575,76 @@
   const KITCHEN_TEST = ['    ใบครัว · ทดสอบ', '    โต๊ะ 1',
     '--------------------------------', 'กะเพราหมูสับ  x2', '  เผ็ดน้อย', '--------------------------------'].join('\n');
 
+  /* ---- every new order, from any channel ------------------------------
+     The device that stands by the kitchen printer can watch the kitchen
+     screen's own list and print each order the moment it appears — the till's,
+     a guest's from the table QR, one rung up on another phone. Orders already
+     there when this was switched on are not printed; each is printed once,
+     remembered across restarts. */
+  const PRINTED_KEY = 'poswai.app.kitchen.printed';
+  const printedOrders = () => { try { return JSON.parse(localStorage.getItem(PRINTED_KEY) || '{}'); } catch { return {}; } };
+  const markPrinted = (orderNos) => {
+    const kept = printedOrders();
+    const now = Date.now();
+    for (const no of orderNos) kept[no] = now;
+    for (const [no, at] of Object.entries(kept)) if (now - at > 3 * 86400000) delete kept[no];
+    try { localStorage.setItem(PRINTED_KEY, JSON.stringify(kept)); } catch { /* */ }
+  };
+  const ticketFor = (order) => {
+    const at = order.created ? new Date(order.created.replace(' ', 'T') + 'Z') : new Date();
+    const lines = [`    ใบครัว · โต๊ะ ${order.table}`,
+      `    ${at.toLocaleTimeString('th-TH', {hour: '2-digit', minute: '2-digit'})} · #${String(order.no).replace(/[^0-9a-zA-Z]/g, '').slice(-5).toUpperCase()}`,
+      '--------------------------------'];
+    for (const item of order.items) {
+      lines.push(`${item.name}  x${Number(item.qty) || 1}`);
+      if (item.options) lines.push(`+ ${item.options}`);
+      if (item.course_mode === 'HOLD') lines.push('+ พักไว้ก่อน รอสั่งทำ');
+    }
+    if (order.note) lines.push('--------------------------------', `หมายเหตุ: ${order.note}`);
+    lines.push('--------------------------------');
+    return lines.join('\n');
+  };
+  let watching = 0;
+  const watchKitchen = async () => {
+    const saved = kitchenSaved();
+    if (!saved?.auto || !window.poswaiAuth?.current || !navigator.onLine) return;
+    let tickets;
+    try {
+      const branch = window.poswaiAuth?.branchId || 1;
+      const reply = await fetch(`/api/kds?branch_id=${branch}`, {cache: 'no-store'});
+      if (!reply.ok) return;
+      tickets = (await reply.json()).tickets || [];
+    } catch { return; }
+    const since = Number(saved.since) || Date.now();
+    const done = printedOrders();
+    const orders = new Map();
+    for (const t of tickets) {
+      const created = t.created_at ? new Date(String(t.created_at).replace(' ', 'T') + 'Z').getTime() : 0;
+      if (done[t.order_no] || created < since - 5000) continue;
+      const order = orders.get(t.order_no) || {no: t.order_no, table: t.table_no, note: t.note || '', created: t.created_at, items: []};
+      order.items.push(...(t.items || []));
+      orders.set(t.order_no, order);
+    }
+    for (const order of [...orders.values()].reverse()) {
+      try {
+        await printKitchen(ticketFor(order));
+        markPrinted([order.no]);
+      } catch (error) {
+        window.showToast?.(`ใบครัวโต๊ะ ${order.table} ไม่ออก: ${error.message} · จะลองใหม่เอง`);
+        return;   // the printer is down: try the same order again next round, in order
+      }
+    }
+  };
+  const startWatching = () => {
+    clearInterval(watching);
+    watching = 0;
+    if (kitchenSaved()?.auto) {
+      watching = setInterval(() => { if (document.visibilityState === 'visible') watchKitchen(); }, 8000);
+      watchKitchen();
+    }
+  };
+  setTimeout(startWatching, 3000);
+
   /** The kitchen ticket, to the kitchen's own printer. Large print for the stove. */
   const printKitchen = (text) => inTurn(async () => {
     const saved = kitchenSaved();
@@ -603,6 +692,7 @@
     /* The kitchen's printer, when the shop has one on its network. */
     kitchen: {
       get ready() { return Boolean(kitchenSaved()); },
+      get auto() { return Boolean(kitchenSaved()?.auto); },
       print: (text) => printKitchen(text),
     },
   };
