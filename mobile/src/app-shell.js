@@ -158,6 +158,7 @@
   app?.addListener('backButton', ({canGoBack}) => {
     if (sheet?.hasAttribute('data-open')) { close(); return; }
     if (window.POSWAI_APP?.printer?.isOpen()) { window.POSWAI_APP.printer.close(); return; }
+    if (window.POSWAI_UI?.back?.()) return;   // the app screens' own sheet, sub-page or tab
     if (canGoBack) window.history.back();
     else app.exitApp();
   });
