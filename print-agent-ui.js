@@ -138,10 +138,30 @@
       note.innerHTML = '<strong>กุญแจของเครื่องนี้ · จะแสดงครั้งเดียว</strong>';
       const key = document.createElement('code');
       key.textContent = agent.key;
+      /* Selecting 32 characters by hand on a phone loses the last few often
+         enough that it has already cost this shop an afternoon. One button. */
+      const copy = document.createElement('button');
+      copy.type = 'button';
+      copy.className = 'btn btn-sm btn-primary';
+      copy.textContent = '📋 ก๊อปกุญแจ';
+      copy.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(agent.key);
+          copy.textContent = '✅ ก๊อปแล้ว';
+        } catch (_) {
+          // No clipboard permission: select it so one tap-and-copy still works.
+          const range = document.createRange();
+          range.selectNodeContents(key);
+          const selection = getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+          copy.textContent = 'เลือกข้อความให้แล้ว กดก๊อปได้เลย';
+        }
+      });
       const how = document.createElement('span');
       how.textContent = 'ก๊อปไปใส่ในโปรแกรมตัวกลางบนเครื่องที่เสียบปริ้นเตอร์ '
         + 'ถ้าทำหาย ให้ลบเครื่องนี้แล้วเพิ่มใหม่';
-      note.append(key, how);
+      note.append(key, copy, how);
       box.append(note);
       loadAgents();
     } catch (error) { window.showToast?.(`⚠️ ${error.message}`); }
