@@ -39,7 +39,9 @@
 .lp-stage { position: absolute; left: 0; top: 0; width: 1672px; height: 941px; transform: scale(var(--lp-k, 1)); transform-origin: 0 0; }
 .lp-stage .lp-a, .lp-stage .lp-card { position: absolute; }
 .lp-stage .lp-t { position: absolute; line-height: 1; white-space: nowrap; transform-origin: 0 0; pointer-events: none; }
-.lp-stage .lp-logo { left: 62px; top: 4px; width: 168px; height: 104px; z-index: 5; }
+/* The logo is a square badge now, so the box is square: a 168px slot would
+   stretch it sideways across the top of every page. */
+.lp-stage .lp-logo { left: 62px; top: 4px; width: 104px; height: 104px; z-index: 5; }
 .lp-stage .lp-logo img { width: 100%; height: 100%; }
 .lp-stage .lp-nav-hit { position: absolute; top: 18px; height: 46px; padding: 0; border-radius: 8px; z-index: 6;
   color: transparent; font-size: 1px; }
