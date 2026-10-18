@@ -69,6 +69,15 @@
       badge.textContent = String(depleted);
       badge.style.display = depleted ? 'inline-block' : 'none';
     }
+    /* The three numbers above the list come from the same records as the list:
+       this live view replaces the one that used to refresh them, which left the
+       sample shop's 9 / 2 / 7 standing over a list that said there was no stock. */
+    const tiles = document.querySelectorAll('#opsInventoryStats .ops-stat strong');
+    if (tiles.length === 3) {
+      tiles[0].textContent = String(state.inventory.length);
+      tiles[1].textContent = String(depleted);
+      tiles[2].textContent = String(state.inventory.length - depleted);
+    }
     if (table) {
       table.replaceChildren();
       if (!state.inventory.length) {

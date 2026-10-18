@@ -339,3 +339,49 @@ html.aui-on #toastContainer .toast { max-width: 100%; border-radius: 14px; font-
 /* choices and note on the order cards */
 .aui-opt { display: block; font-size: 12px; color: #b07400; font-weight: 600; margin: 1px 0 0 15px; }
 .aui-onote { display: flex; align-items: center; gap: 6px; margin: 6px 0 0 !important; padding: 8px 10px; border-radius: 10px; background: #fff6e5; color: #8a5300; font-size: 13px; font-weight: 600; }
+
+/* ---------------------------------------------------------- sub pages
+   The page's own back-office screens, opened from ร้าน under the app bar,
+   in the same dress as the five tabs. */
+html.aui-on.aui-sub body > main.container { overflow-x: hidden; background: var(--aui-page); }
+/* The app bar already names the page. */
+html.aui-on.aui-sub main.container .view-section > .module-intro h1 { display: none; }
+html.aui-on.aui-sub main.container .view-section > .module-intro { margin: 0 0 4px !important; padding: 0 !important; min-height: 0 !important; gap: 0 !important; }
+html.aui-on.aui-sub main.container .view-section > .module-intro > div:first-child:not(:has(:not(h1))) { display: none; }
+html.aui-on.aui-sub main.container .view-section { padding-top: 0 !important; margin-top: 0 !important; }
+/* Wide toolbars wrap instead of pushing the page sideways. */
+html.aui-on.aui-sub .commerce-shell { grid-template-columns: minmax(0, 1fr) !important; }
+html.aui-on.aui-sub .commerce-toolbar { flex-wrap: wrap; gap: 8px; }
+/* Every tab strip: the yellow segmented control of the five tabs. */
+html.aui-on.aui-sub :is(.people-tabs, .ops-tabs, .commerce-tabs, .live-tabs) {
+  display: flex !important; gap: 4px !important; padding: 4px !important; margin: 0 0 12px !important;
+  background: #eceff2 !important; border: 0 !important; border-radius: 14px !important;
+  overflow-x: auto; scrollbar-width: none; flex-wrap: nowrap !important;
+}
+html.aui-on.aui-sub :is(.people-tabs, .ops-tabs, .commerce-tabs, .live-tabs)::-webkit-scrollbar { display: none; }
+html.aui-on.aui-sub :is(.people-tabs, .ops-tabs, .commerce-tabs, .live-tabs) > button {
+  flex: 1 0 auto !important; min-height: 40px !important; padding: 0 14px !important; margin: 0 !important;
+  border: 0 !important; border-radius: 11px !important; background: transparent !important;
+  color: #4a5556 !important; font-size: 14px !important; font-weight: 600 !important; white-space: nowrap;
+  box-shadow: none !important;
+}
+html.aui-on.aui-sub :is(.people-tabs, .ops-tabs, .commerce-tabs) > button[aria-selected="true"],
+html.aui-on.aui-sub .live-tabs > button.on {
+  background: var(--aui-amber) !important; color: var(--aui-ink) !important; font-weight: 700 !important;
+  box-shadow: 0 2px 0 var(--aui-amber-deep) !important;
+}
+html.aui-on.aui-sub :is(.people-tabs, .ops-tabs, .commerce-tabs, .live-tabs) > button::after { display: none !important; }
+/* Cards, fields and buttons in the new proportions. */
+html.aui-on.aui-sub main.container .card,
+html.aui-on.aui-sub main.container .commerce-card,
+html.aui-on.aui-sub main.container .live-catalog-panel {
+  border-radius: 18px !important; border: 1px solid var(--aui-line) !important; box-shadow: var(--aui-shadow) !important;
+}
+html.aui-on.aui-sub main.container :is(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  border-radius: 12px !important; border-color: #dfe5e9 !important; min-height: 44px; font-size: 15px !important;
+}
+html.aui-on.aui-sub main.container .btn-primary,
+html.aui-on.aui-sub main.container .commerce-btn:not(.secondary) {
+  background: linear-gradient(180deg, #ffd65c, #ffc63a) !important; border-color: #f2bb2e !important;
+  color: var(--aui-ink) !important; box-shadow: 0 2px 0 var(--aui-amber-deep) !important;
+}
