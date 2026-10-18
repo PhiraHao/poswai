@@ -764,13 +764,27 @@ class LoginRequest(BaseModel):
     shop: Optional[str] = None
 
 
+STAFF_DEVICE_LIMIT = 8   # screens one person may be signed in on at once
+
+
 def _open_session(request: Request, response: Response, conn: sqlite3.Connection, staff_id: int,
                   samesite: str = "strict") -> tuple[str, int]:
     """Open a staff session. Returns the token with the expiry: the page uses the
     cookie and ignores the token, the app keeps the token and has no cookie."""
     token = secrets.token_hex(32)
-    expires = int(time.time()) + SESSION_LIFETIME
-    conn.execute("DELETE FROM auth_sessions WHERE staff_id=? OR expires_at<=?", (staff_id, int(time.time())))
+    now = int(time.time())
+    expires = now + SESSION_LIFETIME
+    # One person, several screens: the owner's computer, the app on their phone
+    # and the kitchen tablet stay signed in side by side. Signing in on one used
+    # to sign out the others, so two devices pushed each other out all day.
+    # Changing a PIN, a role or switching the staff off still ends every one of
+    # them (see the DELETE ... WHERE staff_id=? calls elsewhere); only the oldest
+    # beyond STAFF_DEVICE_LIMIT is let go here, so the table cannot grow forever.
+    conn.execute("DELETE FROM auth_sessions WHERE expires_at<=?", (now,))
+    conn.execute(
+        "DELETE FROM auth_sessions WHERE staff_id=? AND token_hash NOT IN ("
+        "SELECT token_hash FROM auth_sessions WHERE staff_id=? ORDER BY expires_at DESC LIMIT ?)",
+        (staff_id, staff_id, STAFF_DEVICE_LIMIT - 1))
     conn.execute("INSERT INTO auth_sessions (token_hash,staff_id,expires_at) VALUES (?,?,?)",
                  (hashlib.sha256(token.encode()).hexdigest(), staff_id, expires))
     response.set_cookie("poswai_session", token, max_age=SESSION_LIFETIME, httponly=True,

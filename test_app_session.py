@@ -125,6 +125,43 @@ class AppSessionTest(unittest.TestCase):
                            headers={mobile.STAFF_HEADER: token, "origin": mobile.APP_ORIGINS[0]})
         self.assertNotEqual(seen.status_code, 403, seen.text)
 
+    # -------------------------------------------------- several screens at once
+    def sign_in_as(self, staff_id, pin):
+        """A fresh device: its own client, no cookie, the token it was handed."""
+        token = self.client().post("/api/auth/login", json={"staff_id": staff_id, "pin": pin},
+                                   headers=APP_HEADERS).json()["session"]
+        return {mobile.STAFF_HEADER: token}
+
+    def still_in(self, headers):
+        return self.client().get("/api/auth/session", headers=headers).status_code == 200
+
+    def test_two_devices_stay_signed_in_together(self):
+        """The owner's computer and the app on their phone, side by side. Signing
+        in on one used to sign the other out."""
+        computer = self.sign_in_as(1, self.pin)
+        phone = self.sign_in_as(1, self.pin)
+        self.assertTrue(self.still_in(computer))
+        self.assertTrue(self.still_in(phone))
+
+    def test_only_the_oldest_device_beyond_the_limit_is_let_go(self):
+        devices = [self.sign_in_as(1, self.pin) for _ in range(server.STAFF_DEVICE_LIMIT + 1)]
+        self.assertFalse(self.still_in(devices[0]))
+        self.assertTrue(all(self.still_in(device) for device in devices[1:]))
+
+    def test_a_new_pin_still_signs_out_every_device(self):
+        """Several devices is a convenience; a changed PIN must still end them all."""
+        with sqlite3.connect(server.DB_PATH) as conn:
+            conn.execute("INSERT INTO staffs(id,branch_id,name,role,pin_code_hash) VALUES(2,1,'แคชเชียร์','cashier',?)",
+                         (server.hash_pin("cashier-old-pin"),))
+        till = self.sign_in_as(2, "cashier-old-pin")
+        tablet = self.sign_in_as(2, "cashier-old-pin")
+        owner = self.sign_in_as(1, self.pin)
+        changed = self.client().put("/api/staff/2/pin", json={"pin": "cashier-new-pin"}, headers=owner)
+        self.assertEqual(changed.status_code, 200, changed.text)
+        self.assertFalse(self.still_in(till))
+        self.assertFalse(self.still_in(tablet))
+        self.assertTrue(self.still_in(owner))
+
     # ----------------------------------------------------- the owner's sign-in
     def app_sign_in(self, client):
         started = client.get("/api/owner/auth/google/start", params={"app": "1"},
