@@ -52,7 +52,7 @@ html.aui-on.aui-sheet-open body { overflow: hidden; }
   background: #fff; border-bottom: 1px solid var(--aui-line);
 }
 .aui-brand { display: flex; align-items: center; gap: 10px; text-align: left; min-width: 0; }
-.aui-logo { height: 40px; width: auto; flex: none; display: block; filter: drop-shadow(0 1px 1px rgba(120, 80, 0, .18)); }
+.aui-logo { width: 44px; height: 44px; flex: none; display: block; object-fit: contain; filter: drop-shadow(0 2px 4px rgba(120, 80, 0, .18)); }
 .aui-shopname { min-width: 0; padding-left: 10px; border-left: 1px solid var(--aui-line); }
 .aui-shopname small { font-size: 13px !important; font-weight: 600; color: #4b5657 !important; }
 .aui-mark { width: 36px; height: 36px; border-radius: 11px; object-fit: cover; flex: none; box-shadow: 0 2px 6px rgba(227, 173, 37, .35); }

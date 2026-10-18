@@ -39,11 +39,14 @@
     })));
     state.cart = state.cart.filter(line => DEFAULT_MENU.some(item => item.id === line.id));
     let orders = [];
+    /* Who asked, read before the request: a page still restoring its session
+       asks as a guest, and the guest's refusal is no news once it is signed in. */
+    const asStaff = Boolean(window.poswaiAuth?.current);
     try {
-      const scope = window.poswaiAuth?.current ? '' : `&table_no=${encodeURIComponent(table())}`;
+      const scope = asStaff ? '' : `&table_no=${encodeURIComponent(table())}`;
       orders = (await request(`/api/orders?branch_id=${branch()}${scope}`)).orders;
     } catch (error) {
-      if (window.poswaiAuth?.current || token()) showToast(`โหลดออเดอร์ไม่สำเร็จ: ${error.message}`);
+      if (asStaff ? window.poswaiAuth?.current : token()) showToast(`โหลดออเดอร์ไม่สำเร็จ: ${error.message}`);
     }
     /* Bills taken while the shop's internet was down are still in this
        device's queue, not on the server yet. Shown anyway — otherwise the
