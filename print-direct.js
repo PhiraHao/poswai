@@ -12,6 +12,8 @@
   const inApp = () => Boolean(window.Capacitor?.Plugins?.BluetoothLe);
   const inChrome = () => Boolean(navigator.bluetooth);
   if (!inApp() && !inChrome()) return;          // a plain browser: the queue it is
+  // The POS WAI app has its own printer sheet (mobile/src/app-printer.js).
+  if (window.POSWAI_APP) return;
 
   const auth = () => window.poswaiAuth || {};
   const mayPrint = () => ['cashier', 'manager', 'owner'].includes(auth().current?.role);

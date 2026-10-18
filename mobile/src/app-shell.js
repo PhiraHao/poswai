@@ -56,7 +56,8 @@
   const arrangeBar = () => {
     const open = allowed();
     tabs().forEach((tab) => tab.toggleAttribute('data-in-bar', open.indexOf(tab) > -1 && open.indexOf(tab) < IN_BAR));
-    document.querySelector('.mobile-more')?.toggleAttribute('data-empty', open.length <= IN_BAR);
+    const printer = Boolean(window.Capacitor?.Plugins?.BluetoothLe);   // its row lives in the sheet
+    document.querySelector('.mobile-more')?.toggleAttribute('data-empty', open.length <= IN_BAR && !printer);
   };
 
   const overflowActive = () => overflow().some((tab) => tab.classList.contains('active'));
@@ -90,6 +91,26 @@
     return item;
   };
 
+  const printerRow = () => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'app-sheet-item';
+    item.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 9V3h10v6"/>'
+      + '<rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/></svg>';
+    const text = document.createElement('span');
+    text.textContent = 'เครื่องพิมพ์ใบเสร็จ';
+    const small = document.createElement('small');
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('poswai.app.printer') || 'null'); } catch { /* */ }
+    small.textContent = saved ? saved.name : 'ยังไม่ได้เลือกเครื่อง';
+    text.append(small);
+    item.append(text);
+    item.insertAdjacentHTML('beforeend',
+      '<svg class="app-sheet-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>');
+    item.addEventListener('click', () => { close(); window.POSWAI_APP.printer.open(); });
+    return item;
+  };
+
   const open = () => {
     if (!sheet) {
       sheet = document.createElement('div');
@@ -106,6 +127,8 @@
     const list = document.createElement('div');
     list.className = 'app-sheet-list';
     list.append(...overflow().map(row));
+    // Not a screen of the POS but a setting of this device: the receipt printer.
+    if (window.POSWAI_APP?.printer) list.append(printerRow());
     sheet.replaceChildren(
       Object.assign(document.createElement('div'), {className: 'app-sheet-grip'}),
       Object.assign(document.createElement('h2'), {textContent: 'เมนูเพิ่มเติม'}),
@@ -134,6 +157,7 @@
   const app = window.Capacitor?.Plugins?.App;
   app?.addListener('backButton', ({canGoBack}) => {
     if (sheet?.hasAttribute('data-open')) { close(); return; }
+    if (window.POSWAI_APP?.printer?.isOpen()) { window.POSWAI_APP.printer.close(); return; }
     if (canGoBack) window.history.back();
     else app.exitApp();
   });

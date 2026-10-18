@@ -58,7 +58,8 @@ async function page() {
      web's stylesheets, and its script last in <body> so the page it adjusts
      is already there. */
   html = html.replace('</head>', '  <link rel="stylesheet" href="/app-shell.css">\n</head>');
-  html = html.replace('</body>', '  <script src="/app-shell.js"></script>\n</body>');
+  html = html.replace('</body>',
+    '  <script src="/app-shell.js"></script>\n  <script src="/app-printer.js"></script>\n</body>');
   return html;
 }
 
@@ -69,7 +70,7 @@ await mkdir(out, {recursive: true});
 await mkdir(join(out, 'print'), {recursive: true});
 
 await writeFile(join(out, 'index.html'), html, 'utf8');
-for (const own of ['app-bridge.js', 'app-shell.css', 'app-shell.js']) {
+for (const own of ['app-bridge.js', 'app-shell.css', 'app-shell.js', 'app-printer.js']) {
   await cp(join(here, 'src', own), join(out, own));
 }
 await cp(join(web, 'assets'), join(out, 'assets'), {recursive: true});

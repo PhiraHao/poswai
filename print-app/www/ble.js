@@ -42,17 +42,24 @@ async function appScan(onFound) {
   await listener.remove();
 }
 
-async function appConnect(id) {
+async function appConnect(id, {timeout = 15000} = {}) {
   const ble = capacitor();
-  await ble.connect({deviceId: id, timeout: 15000});
+  await ble.connect({deviceId: id, timeout});
   const services = await ble.getServices({deviceId: id});
   for (const known of PRINTER_SERVICES) {
     const service = services.services?.find(item => item.uuid.toLowerCase() === known.service);
     if (!service) continue;
-    const writable = service.characteristics?.find(item =>
-      item.uuid.toLowerCase() === known.write
-      || item.properties?.write || item.properties?.writeWithoutResponse);
-    if (writable) return {id, service: known.service, write: writable.uuid.toLowerCase()};
+    /* The channel the maker documented first; only then anything writable.
+       Some services carry several, and the first writable one found is not
+       always the one that feeds the print head. */
+    const writable = service.characteristics?.find(item => item.uuid.toLowerCase() === known.write)
+      || service.characteristics?.find(item => item.properties?.writeWithoutResponse)
+      || service.characteristics?.find(item => item.properties?.write);
+    if (writable) {
+      return {id, service: known.service, write: writable.uuid.toLowerCase(),
+        // iOS drops a without-response write to a channel that does not take one.
+        withoutResponse: writable.properties?.writeWithoutResponse !== false};
+    }
   }
   await ble.disconnect({deviceId: id});
   throw new Error('เครื่องนี้ไม่มีช่องรับข้อมูลของเครื่องพิมพ์ที่รู้จัก');
@@ -63,7 +70,8 @@ async function appWrite(link, pieces, onProgress) {
   for (let index = 0; index < pieces.length; index++) {
     await ble.writeWithoutResponse({
       deviceId: link.id, service: link.service, characteristic: link.write,
-      value: toDataView(pieces[index]),
+      // Native takes a hex string only; a DataView arrives as nothing.
+      value: toHex(pieces[index]),
     });
     onProgress?.(index + 1, pieces.length);
   }
@@ -99,15 +107,15 @@ async function webWrite(link, pieces, onProgress) {
   }
 }
 
-function toDataView(bytes) {
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+function toHex(bytes) {
+  return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export const ble = {
   kind,
   scan: onFound => (capacitor() ? appScan(onFound) : Promise.reject(
     new Error('การค้นหาเครื่องพิมพ์ใช้ได้ในแอปเท่านั้น'))),
-  connect: id => appConnect(id),
+  connect: (id, options) => appConnect(id, options),
   pick: () => webPick(),
   write: (link, pieces, onProgress) =>
     (link.characteristic ? webWrite(link, pieces, onProgress) : appWrite(link, pieces, onProgress)),

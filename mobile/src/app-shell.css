@@ -800,3 +800,59 @@ html.poswai-app main #liveStockTable td:nth-child(3)::before { content: "หน�
 html.poswai-app main #liveStockTable td:nth-child(4)::before { content: "เตือนเมื่อต่ำกว่า"; }
 html.poswai-app main #liveStockTable td.live-empty-row::before { content: none; }
 html.poswai-app main #liveStockTable .acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 8px; }
+
+/* ============================================ the printer sheet ===
+ * Opened from More. Status first (one line says whether a receipt will come
+ * out), then the list a scan fills, then the actions. */
+html.poswai-app .app-printer-sheet { max-height: 85vh; overflow-y: auto; }
+html.poswai-app .app-printer-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius);
+}
+html.poswai-app .app-printer-status strong { display: block; font-size: var(--t-body); }
+html.poswai-app .app-printer-status small { display: block; color: var(--app-ink-2); font-size: var(--t-cap); }
+html.poswai-app .app-printer-dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: #c4cbd4; }
+html.poswai-app .app-printer-status.is-ok { border-color: #bfe5cf; background: #f1faf5; }
+html.poswai-app .app-printer-status.is-ok .app-printer-dot { background: var(--app-ok); box-shadow: 0 0 0 3px #d9f2e6; }
+html.poswai-app .app-printer-status.is-idle .app-printer-dot { background: var(--app-brand); }
+html.poswai-app .app-printer-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 16px;
+  border-radius: var(--app-radius);
+  background: var(--app-brand-soft);
+  font-size: var(--t-sm);
+}
+html.poswai-app .app-printer-message button {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--app-radius-sm);
+  background: var(--app-ink);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+}
+html.poswai-app .app-printer-list { display: grid; gap: 8px; margin: 0 0 12px; }
+html.poswai-app .app-printer-hint { margin: 4px 0; color: var(--app-ink-2); font-size: var(--t-sm); text-align: center; }
+html.poswai-app .app-printer-actions { display: grid; gap: 8px; }
+html.poswai-app .app-printer-actions button {
+  min-height: 48px;
+  border-radius: var(--app-radius-sm);
+  font: inherit;
+  font-size: var(--t-body);
+  font-weight: 700;
+}
+html.poswai-app .app-printer-primary { border: 0; background: var(--app-brand); color: var(--app-ink); }
+html.poswai-app .app-printer-secondary { border: 1px solid var(--app-line); background: var(--app-surface); color: var(--app-ink); }
+html.poswai-app .app-printer-quiet { border: 0; background: none; color: var(--app-danger); }
+html.poswai-app .app-printer-actions button:disabled { opacity: .6; }
