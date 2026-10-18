@@ -7,3 +7,6 @@ print-agent.ini
 print-app/node_modules/
 print-app/android/
 print-app/ios/
+app/node_modules/
+app/android/
+app/ios/

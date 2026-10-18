@@ -50,6 +50,13 @@
     const was = sendButton.textContent;
     sendButton.textContent = 'กำลังส่ง…';
     try {
+      /* A printer connected to this very device beats leaving the receipt in
+         a queue for some other machine to collect. */
+      if (window.poswaiLocalPrinter?.ready) {
+        await window.poswaiLocalPrinter.print(body);
+        window.showToast?.('✅ พิมพ์แล้ว');
+        return;
+      }
       const result = await post('/api/print/jobs', {
         branch_id: branch(), title: body.split('\n')[2]?.trim() || 'ใบเสร็จ', body,
       });

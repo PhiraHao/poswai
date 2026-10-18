@@ -1,0 +1,31 @@
+{
+  "appId": "com.zzaxstudio.poswai",
+  "appName": "POS WAI",
+  "webDir": "www",
+  "server": {
+    "url": "https://poswai.zzaxstudio.com",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "กำลังค้นหาเครื่องพิมพ์",
+        "cancel": "ยกเลิก",
+        "availableDevices": "เครื่องพิมพ์ที่เจอ",
+        "noDeviceFound": "ไม่เจอเครื่องพิมพ์"
+      }
+    },
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "backgroundColor": "#141b24"
+    }
+  },
+  "ios": {
+    "contentInset": "always",
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
