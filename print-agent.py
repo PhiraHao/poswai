@@ -202,6 +202,10 @@ def main() -> None:
     parser.add_argument("--once", action="store_true", help="พิมพ์ที่ค้างอยู่แล้วจบ")
     parser.add_argument("--test", action="store_true", help="พิมพ์ใบทดสอบแล้วจบ")
     arguments = parser.parse_args()
+    # Python holds back prints when this runs from a script or a service
+    # rather than a console, and a silent window looks like a dead program.
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
     section = load_settings()
 
     if arguments.test:
