@@ -173,8 +173,116 @@
     card.prepend(mascot);
   };
 
+  /* ---- the line to the server ------------------------------------------
+     One strip under the app bar says what a cashier needs to know about the
+     shop's internet, and nothing when there is nothing to say:
+       offline              ออฟไลน์ · ขายต่อได้ · ค้างส่ง N รายการ
+       back, still sending  กำลังส่งข้อมูลที่ค้าง N รายการ…
+       something refused    มี N รายการที่ส่งไม่ผ่าน · ดูรายการ
+     The queue itself is index.html's (offlineSyncQueue); this only reads it. */
+  const listOf = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch { return []; } };
+  let strip = null;
+
+  const describe = (event) => {
+    const p = event.payload || {};
+    if (event.path === '/api/payments/close') return `ปิดบิล ${p.order_no || ''} · ฿${Number(p.amount || 0).toFixed(2)}`;
+    if (event.path === '/api/orders') return `ออเดอร์โต๊ะ ${p.table_no || ''}`;
+    return event.path.replace('/api/', '');
+  };
+
+  const showRejected = () => {
+    const rejected = listOf('offlineSyncRejected');
+    const sheetEl = document.createElement('div');
+    sheetEl.className = 'app-sheet';
+    sheetEl.setAttribute('role', 'dialog');
+    sheetEl.setAttribute('aria-label', 'รายการที่ส่งไม่ผ่าน');
+    const scrimEl = Object.assign(document.createElement('div'), {className: 'app-sheet-scrim'});
+    const done = () => { sheetEl.remove(); scrimEl.remove(); };
+    scrimEl.addEventListener('click', done);
+    const listEl = Object.assign(document.createElement('div'), {className: 'app-sheet-list'});
+    /* Each one may be money already in the drawer with no record on the server,
+       so nothing here is thrown away in bulk: an item is sent again (after the
+       cause is fixed, e.g. the dish put back on the menu) or, one at a time,
+       marked as dealt with by hand. */
+    const save = (list) => localStorage.setItem('offlineSyncRejected', JSON.stringify(list));
+    const redraw = () => { done(); paint(); if (listOf('offlineSyncRejected').length) showRejected(); };
+    rejected.forEach((item, index) => {
+      const row = Object.assign(document.createElement('div'), {className: 'app-sheet-item app-rejected-item'});
+      const text = Object.assign(document.createElement('span'), {textContent: describe(item)});
+      text.append(Object.assign(document.createElement('small'), {
+        textContent: `${item.reason} · ${new Date(item.rejected_at).toLocaleString('th-TH')}`,
+      }));
+      const again = Object.assign(document.createElement('button'), {type: 'button', textContent: 'ส่งอีกครั้ง'});
+      again.addEventListener('click', () => {
+        const rest = listOf('offlineSyncRejected');
+        const [back] = rest.splice(index, 1);
+        delete back.reason;
+        delete back.rejected_at;
+        if (!window.requeueOfflineEvent) return;
+        save(rest);
+        window.requeueOfflineEvent(back);
+        redraw();
+      });
+      const handled = Object.assign(document.createElement('button'), {type: 'button', textContent: 'จัดการแล้ว'});
+      handled.addEventListener('click', () => {
+        if (!window.confirm('ยืนยันว่าบันทึกรายการนี้ด้วยมือแล้ว? รายการจะหายจากที่นี่')) return;
+        const rest = listOf('offlineSyncRejected');
+        rest.splice(index, 1);
+        save(rest);
+        redraw();
+      });
+      row.append(text, again, handled);
+      listEl.append(row);
+    });
+    const clear = Object.assign(document.createElement('button'), {
+      type: 'button', className: 'app-printer-quiet', textContent: 'ปิด',
+    });
+    clear.addEventListener('click', done);
+    sheetEl.append(
+      Object.assign(document.createElement('div'), {className: 'app-sheet-grip'}),
+      Object.assign(document.createElement('h2'), {textContent: 'รายการที่ส่งไม่ผ่าน'}),
+      Object.assign(document.createElement('p'), {className: 'app-printer-hint',
+        textContent: 'เซิร์ฟเวอร์ไม่รับรายการเหล่านี้ตอนเน็ตกลับมา เช่น บิลถูกแก้จากเครื่องอื่น ตรวจในหน้าแคชเชียร์แล้วทำใหม่'}),
+      listEl, clear);
+    document.body.append(sheetEl, scrimEl);
+    requestAnimationFrame(() => { sheetEl.setAttribute('data-open', ''); scrimEl.setAttribute('data-open', ''); });
+  };
+
+  const paint = () => {
+    if (!strip) return;
+    const online = navigator.onLine;
+    const waiting = listOf('offlineSyncQueue').length;
+    const refused = listOf('offlineSyncRejected').length;
+    let tone = '';
+    let text = '';
+    if (!online) { tone = 'offline'; text = `ออฟไลน์ · ขายต่อได้${waiting ? ` · ค้างส่ง ${waiting} รายการ` : ''}`; }
+    else if (refused) { tone = 'refused'; text = `มี ${refused} รายการที่ส่งไม่ผ่าน · ดูรายการ`; }
+    else if (waiting) { tone = 'sending'; text = `กำลังส่งข้อมูลที่ค้าง ${waiting} รายการ…`; }
+    strip.hidden = !tone;
+    strip.dataset.tone = tone;
+    strip.textContent = text;
+    document.getElementById('netToggleBtn')?.classList.toggle('offline', !online);
+  };
+
+  const watchLine = () => {
+    strip = Object.assign(document.createElement('button'), {type: 'button', className: 'app-netbar', hidden: true});
+    strip.addEventListener('click', () => { if (strip.dataset.tone === 'refused') showRejected(); });
+    document.querySelector('.sim-topbar')?.after(strip);
+    window.addEventListener('online', () => {
+      paint();
+      // index.html listens for this too; asking again is harmless and covers a
+      // queue that filled while its own listener was still waiting.
+      window.flushOfflineSyncQueue?.();
+    });
+    window.addEventListener('offline', paint);
+    // The queue changes inside index.html without an event; a light look suffices.
+    setInterval(paint, 2000);
+    paint();
+  };
+
   const start = () => {
     greet();
+    watchLine();
     const account = document.querySelector('.poswai-auth-button');
     if (account) watchAccount(account);
     else {

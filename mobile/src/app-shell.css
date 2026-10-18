@@ -960,3 +960,43 @@ html.poswai-app .app-login-mascot {
   margin: -8px auto 4px;
   pointer-events: none;
 }
+
+/* ============================================== the line to the server ===
+ * One strip under the app bar, only when there is something to say. The web's
+ * own "Offline Local Mode" banner was written for a demo switch; it goes. */
+html.poswai-app #offlineBanner { display: none !important; }
+html.poswai-app .app-netbar {
+  position: sticky;
+  top: calc(var(--app-bar) + var(--safe-top));
+  z-index: 59;
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px var(--gutter);
+  border: 0;
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  text-align: left;
+}
+html.poswai-app .app-netbar[hidden] { display: none; }
+html.poswai-app .app-netbar[data-tone="offline"] { background: #fff1d6; color: #7a4b00; }
+html.poswai-app .app-netbar[data-tone="sending"] { background: #e8f1ff; color: #1d4f9a; }
+html.poswai-app .app-netbar[data-tone="refused"] { background: #fde8e6; color: #9b2c22; }
+
+/* A refused item: what it was and why, then its two actions. */
+html.poswai-app .app-rejected-item { flex-wrap: wrap; padding: 12px 16px; }
+html.poswai-app .app-rejected-item > span { flex: 1 1 100%; }
+html.poswai-app .app-rejected-item > button {
+  flex: 1 1 0;
+  min-height: var(--touch-sm);
+  border: 1px solid var(--app-line);
+  border-radius: var(--app-radius-sm);
+  background: var(--app-surface);
+  color: var(--app-ink);
+  font: inherit;
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+html.poswai-app .app-rejected-item > button:first-of-type { border-color: var(--app-brand); background: var(--app-brand-soft); }

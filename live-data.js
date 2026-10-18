@@ -14,7 +14,12 @@
   };
   const refresh = async () => {
     if (!enabled) return;
-    const menu = await request(`/api/menu?branch_id=${branch()}`);
+    let menu;
+    try { menu = await request(`/api/menu?branch_id=${branch()}`); }
+    catch (error) {
+      // Offline with nothing remembered: keep the menu already on screen.
+      if (catalog) menu = {items: catalog}; else throw error;
+    }
     catalog = menu.items;
     DEFAULT_MENU.splice(0, DEFAULT_MENU.length, ...menu.items.map((item, index) => ({
       id: 100000 + index, serverId: item.id, name: item.name, nameEn: item.name,
@@ -40,6 +45,26 @@
     } catch (error) {
       if (window.poswaiAuth?.current || token()) showToast(`โหลดออเดอร์ไม่สำเร็จ: ${error.message}`);
     }
+    /* Bills taken while the shop's internet was down are still in this
+       device's queue, not on the server yet. Shown anyway — otherwise the
+       order a cashier just rang up vanished from the screen and could be
+       neither seen nor closed. A bill closed while offline leaves the list. */
+    const slug = window.POSWAI_APP?.shop || window.poswaiAuth?.shop?.slug || '';
+    const queued = (state.offlineSyncQueue || []).filter(event => !event.shop || event.shop === slug);
+    const closedHere = new Set(queued.filter(event => event.path === '/api/payments/close')
+      .map(event => event.payload.order_no));
+    try {
+      for (const item of JSON.parse(localStorage.getItem('offlineClosedHere') || '[]')) {
+        if (item.until > Date.now()) closedHere.add(item.order_no);
+      }
+    } catch (_) { /* nothing remembered */ }
+    const known = new Set(orders.map(order => order.order_no));
+    for (const event of queued) {
+      if (event.path !== '/api/orders' || known.has(event.payload.order_no)) continue;
+      orders.push({order_no: event.payload.order_no, table_no: event.payload.table_no,
+        items: event.payload.items, created_at: (event.at || new Date().toISOString()).replace(/Z$/, '')});
+    }
+    orders = orders.filter(order => !closedHere.has(order.order_no));
     state.orders = orders.map(order => ({
       orderId: order.order_no, table: order.table_no, items: order.items,
       discount: 0, note: '-', status: 'pending',

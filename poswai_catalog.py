@@ -332,17 +332,24 @@ def list_menu_categories(conn: sqlite3.Connection, branch_id: int) -> list[str]:
         " ORDER BY category", (branch_id,))]
 
 
-def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any]) -> dict:
+def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any], *,
+                offline: bool = False) -> dict:
     """Return trusted order lines, exact total and aggregated BOM quantities.
 
     Each submitted line needs only ``id`` and positive integer ``qty``. Extra
     fields such as client price/name/BOM are ignored. A missing/inactive menu
     item is rejected. Call inside the transaction that inserts the order.
+
+    ``offline`` is for a sale a till already made while the shop's internet
+    was down: the food is served and the money taken, so the server records
+    what happened rather than refusing it. A dish switched off or sold out
+    since then is quoted anyway and named in ``waived`` for the owner to see.
+    An id that was never on this shop's menu is still refused.
     """
     branch_id = _branch(branch_id)
     if not isinstance(items, list) or not 1 <= len(items) <= 100:
         raise CatalogError("Order must contain 1 to 100 lines")
-    lines, deductions, total_cents = [], defaultdict(Decimal), 0
+    lines, deductions, total_cents, waived = [], defaultdict(Decimal), 0, []
     for raw in items:
         getter = raw.get if isinstance(raw, dict) else lambda key, default=None: getattr(raw, key, default)
         item_id = _item_id(getter("id"))
@@ -353,13 +360,17 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any]) -> d
         if qty_decimal != qty_decimal.to_integral_value() or qty_decimal > 1000:
             raise CatalogError("Quantity must be a whole number from 1 to 1000")
         qty = int(qty_decimal)
-        row = conn.execute("""SELECT name,price_cents,bom_json,station,sold_out,addons_json
-            FROM menu_catalog WHERE branch_id=? AND item_id=? AND active=1""",
+        row = conn.execute("""SELECT name,price_cents,bom_json,station,sold_out,addons_json,active
+            FROM menu_catalog WHERE branch_id=? AND item_id=?""",
             (branch_id, item_id)).fetchone()
-        if row is None:
+        if row is None or (not row[6] and not offline):
             raise CatalogError(f"Item {item_id} is unavailable", 409)
-        name, price_cents, bom_json, station, sold_out, addons_json = row
-        if sold_out:
+        name, price_cents, bom_json, station, sold_out, addons_json, active = row
+        if offline and not active:
+            waived.append(f"{name} ถูกปิดขายไปแล้ว")
+        elif offline and sold_out:
+            waived.append(f"{name} ถูกตั้งว่าหมดไปแล้ว")
+        elif sold_out:
             raise CatalogError(f"{name} ขายหมดชั่วคราว", 409)
         bom = json.loads(bom_json)
         # Stored BOM is admin controlled but validate it again against legacy
@@ -395,7 +406,7 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any]) -> d
                       "course_mode": course_mode, "level": level,
                       "addons": [addon["name"] for addon in chosen]})
     return {"items": lines, "total_amount": total_cents / 100,
-            "total_cents": total_cents,
+            "total_cents": total_cents, "waived": waived,
             "deductions": {key: float(value) for key, value in sorted(deductions.items())}}
 
 
@@ -416,7 +427,7 @@ def deduct_inventory(
             raise CatalogError("Invalid stock deduction")
         if allow_negative:
             conn.execute("""INSERT INTO inventory(branch_id,ingredient_id,stock) VALUES (?,?,?)
-                ON CONFLICT(branch_id,ingredient_id) DO UPDATE SET stock=stock-excluded.stock""",
+                ON CONFLICT(branch_id,ingredient_id) DO UPDATE SET stock=stock+excluded.stock""",  # excluded.stock is already negative
                 (branch_id, ingredient_id, -float(amount)))
         else:
             cursor = conn.execute("""UPDATE inventory SET stock=stock-?

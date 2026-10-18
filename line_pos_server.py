@@ -461,6 +461,14 @@ def init_db() -> None:
     cur.execute("""CREATE TABLE IF NOT EXISTS attendance_events (
         event_id TEXT PRIMARY KEY, staff_id INTEGER NOT NULL, action TEXT NOT NULL,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    # A sale a till made while the shop's internet was down, recorded as it
+    # happened and flagged for the owner: what differed from the menu at the
+    # time it reached the server, and who took the money.
+    cur.execute("""CREATE TABLE IF NOT EXISTS offline_sales (
+        order_no TEXT PRIMARY KEY, branch_id INTEGER NOT NULL,
+        ordered_offline_at TEXT, closed_offline_at TEXT,
+        taken_by INTEGER, notes_json TEXT NOT NULL DEFAULT '[]',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS leave_event_ids (
         event_id TEXT PRIMARY KEY, leave_id INTEGER NOT NULL)""")
     init_notifications(conn)
@@ -1315,6 +1323,8 @@ class OrderCreate(BaseModel):
     table_no: str
     total_amount: float
     items: list[OrderItem]
+    # Set by a till that took this order while offline, with when it did.
+    offline_at: Optional[str] = None
 
 
 class ServiceCallCreate(BaseModel):
@@ -2108,11 +2118,42 @@ def send_campaign(campaign_id: int, request: Request):
             "attempted": len(recipients), "note": "LINE HTTP acceptance does not prove message delivery"}
 
 
+OFFLINE_ORDER_ROLES = ("owner", "manager", "cashier", "service")
+
+
+def _note_offline(conn: sqlite3.Connection, order_no: str, branch_id: int, *, ordered_at=None,
+                  closed_at=None, taken_by=None, notes=()) -> None:
+    """Add to the offline record of one bill without losing what is already there."""
+    row = conn.execute("SELECT notes_json FROM offline_sales WHERE order_no=?", (order_no,)).fetchone()
+    merged = (json.loads(row[0]) if row else []) + [note for note in notes if note]
+    conn.execute(
+        "INSERT INTO offline_sales(order_no,branch_id,ordered_offline_at,closed_offline_at,taken_by,notes_json) "
+        "VALUES (?,?,?,?,?,?) ON CONFLICT(order_no) DO UPDATE SET "
+        "ordered_offline_at=COALESCE(excluded.ordered_offline_at,ordered_offline_at),"
+        "closed_offline_at=COALESCE(excluded.closed_offline_at,closed_offline_at),"
+        "taken_by=COALESCE(excluded.taken_by,taken_by),notes_json=excluded.notes_json",
+        (order_no, branch_id, ordered_at, closed_at, taken_by, json.dumps(merged, ensure_ascii=False)))
+
+
+def _offline_stamp(value: Optional[str]) -> Optional[str]:
+    """The till's own clock, kept as text for the owner to read; never trusted for logic."""
+    if value is None:
+        return None
+    text = str(value).strip()[:40]
+    return text or None
+
+
 @app.post("/api/orders")
 def create_order(req: OrderCreate, request: Request):
     if not math.isfinite(req.total_amount) or req.total_amount < 0 or not req.items or any(not math.isfinite(item.price) for item in req.items):
         raise HTTPException(400, "Invalid order")
-    require_table_or_staff(request, req.branch_id, req.table_no)
+    offline_at = _offline_stamp(req.offline_at)
+    if offline_at:
+        # Only staff at the till may claim a sale was made offline; a guest's
+        # own order from a table QR is checked against the menu as always.
+        staff = require_staff(request, roles=OFFLINE_ORDER_ROLES, branch_id=req.branch_id)
+    else:
+        require_table_or_staff(request, req.branch_id, req.table_no)
     require_paid_subscription()
     with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
@@ -2121,13 +2162,40 @@ def create_order(req: OrderCreate, request: Request):
             if existing != (req.event_id, req.order_no):
                 raise HTTPException(409, "Order event ID or number already belongs to another order")
             return {"status": "existing", "order_no": existing[1]}
+        notes: list[str] = []
         try:
-            quote = quote_order(conn, req.branch_id, req.items)
-            if round(req.total_amount * 100) != quote["total_cents"]:
-                raise CatalogError("Order total differs from current menu prices", 409)
-            if any(round(item.price * 100) != round(canonical["price"] * 100) for item, canonical in zip(req.items, quote["items"])):
-                raise CatalogError("Order item price differs from current menu", 409)
-            deduct_inventory(conn, req.branch_id, quote["deductions"])
+            quote = quote_order(conn, req.branch_id, req.items, offline=bool(offline_at))
+            if offline_at:
+                # The till charged its own prices from the menu it had. They
+                # are what the customer paid, so they are what is recorded;
+                # every difference from today's menu is written down instead.
+                notes += quote["waived"]
+                till_cents = 0
+                for item, canonical in zip(req.items, quote["items"]):
+                    charged = round(item.price * 100)
+                    till_cents += charged * canonical["qty"]
+                    if charged != round(canonical["price"] * 100):
+                        notes.append(f"{canonical['name']} ขาย {charged / 100:,.2f} บาท "
+                                     f"(เมนูตอนนี้ {canonical['price']:,.2f})")
+                    canonical["price"] = charged / 100
+                total_cents = round(req.total_amount * 100)
+                if not 0 <= total_cents <= till_cents:
+                    raise CatalogError("Offline order total does not match its items", 409)
+                if total_cents < till_cents:
+                    notes.append(f"ส่วนลด {(till_cents - total_cents) / 100:,.2f} บาท")
+                for ingredient, amount in quote["deductions"].items():
+                    have = conn.execute("SELECT stock FROM inventory WHERE branch_id=? AND ingredient_id=?",
+                                        (req.branch_id, ingredient)).fetchone()
+                    if not have or have[0] < amount:
+                        notes.append(f"สต็อก {ingredient} ไม่พอ (ตัดจนติดลบ)")
+                deduct_inventory(conn, req.branch_id, quote["deductions"], allow_negative=True)
+                quote["total_amount"] = total_cents / 100
+            else:
+                if round(req.total_amount * 100) != quote["total_cents"]:
+                    raise CatalogError("Order total differs from current menu prices", 409)
+                if any(round(item.price * 100) != round(canonical["price"] * 100) for item, canonical in zip(req.items, quote["items"])):
+                    raise CatalogError("Order item price differs from current menu", 409)
+                deduct_inventory(conn, req.branch_id, quote["deductions"])
         except CatalogError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
         cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount) VALUES (?,?,?,?,?)",
@@ -2140,7 +2208,10 @@ def create_order(req: OrderCreate, request: Request):
             status = "held" if any(item["station"] == station and item["course_mode"] == "HOLD" for item in quote["items"]) else "queued"
             cur.execute("INSERT INTO kds_station_tickets (order_no,station,status) VALUES (?,?,?)",
                         (req.order_no, station, status))
-    return {"status": "open", "order_no": req.order_no}
+        if offline_at:
+            _note_offline(conn, req.order_no, req.branch_id, ordered_at=offline_at,
+                          taken_by=staff["id"], notes=notes)
+    return {"status": "open", "order_no": req.order_no, "notes": notes}
 
 
 @app.get("/api/orders")
@@ -2202,8 +2273,13 @@ def list_settled_orders(request: Request, branch_id: int = 1, limit: int = 20):
         reasons = {row[0]: row[1] for row in conn.execute(
             "SELECT order_no,reason FROM order_cancellations WHERE branch_id=? AND kind='refund'",
             (branch_id,))}
+        offline = {row[0]: json.loads(row[1]) for row in conn.execute(
+            "SELECT order_no,notes_json FROM offline_sales WHERE branch_id=?", (branch_id,))}
     return {"branch_id": branch_id,
-            "orders": [{**dict(row), "refund_reason": reasons.get(row["order_no"], "")} for row in rows]}
+            "orders": [{**dict(row), "refund_reason": reasons.get(row["order_no"], ""),
+                        # Sold while the shop was offline: the owner checks these.
+                        "offline": row["order_no"] in offline,
+                        "offline_notes": offline.get(row["order_no"], [])} for row in rows]}
 
 
 @app.get("/api/kds")
@@ -2273,6 +2349,10 @@ class PaymentCreate(BaseModel):
     amount: float
     method: str
     slip_reference: Optional[str] = None
+    # A close made while offline: when, and the staff member who took the money.
+    # The queue is sent later by whoever is signed in by then.
+    offline_at: Optional[str] = None
+    taken_by: Optional[int] = None
 
 
 class VerifiedTablePaymentCreate(BaseModel):
@@ -2380,12 +2460,23 @@ def close_payment(req: PaymentCreate, request: Request):
             raise HTTPException(409, "Order already closed")
         if abs(req.amount - order[2]) > 0.01:
             raise HTTPException(409, "Payment does not match order total")
+        closed_by = cashier["id"]
+        offline_at = _offline_stamp(req.offline_at)
+        if offline_at and req.taken_by and req.taken_by != cashier["id"]:
+            # Sent later by whoever is signed in now; credited to the one who
+            # took the money, if they are on this branch and may close bills.
+            taker = cur.execute("SELECT id FROM staffs WHERE id=? AND branch_id=? AND role IN "
+                                "('manager','owner','cashier')", (req.taken_by, order[0])).fetchone()
+            if taker:
+                closed_by = taker[0]
         cur.execute("INSERT INTO payment_events (event_id, order_no, amount, method, slip_reference) VALUES (?,?,?,?,?)",
                     (req.event_id, req.order_no, req.amount, req.method, req.slip_reference))
         cur.execute("UPDATE order_events SET status='paid' WHERE order_no=?", (req.order_no,))
         cur.execute("INSERT INTO pos_orders (branch_id, order_no, closed_by_staff_id, total_amount, net_amount, payment_method) VALUES (?,?,?,?,?,?)",
-                    (order[0], req.order_no, cashier["id"], req.amount, req.amount, req.method))
+                    (order[0], req.order_no, closed_by, req.amount, req.amount, req.method))
         commission = allocate_commissions(conn, cur.lastrowid)
+        if offline_at:
+            _note_offline(conn, req.order_no, order[0], closed_at=offline_at, taken_by=closed_by)
     return {"status": "paid", "order_no": req.order_no, "commission": commission}
 
 

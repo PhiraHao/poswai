@@ -2224,8 +2224,26 @@
       renderAll();
     }
 
+    function saveLocal(key, value) {
+      try { localStorage.setItem(key, value); return true; }
+      catch (_) {
+        // Full: drop the app's cached answers, which can be fetched again, and retry.
+        window.POSWAI_APP?.forgetCache?.();
+        try { localStorage.setItem(key, value); return true; }
+        catch (__) { showToast("⚠️ พื้นที่ในเครื่องเต็ม รายการที่ค้างส่งอาจหายถ้าปิดแอป ต่อเน็ตเพื่อส่งให้เร็วที่สุด"); return false; }
+      }
+    }
+
+    /* The shop a queued event belongs to. A device can be switched to another
+       shop before its queue is sent; an event must never land in the wrong one. */
+    function currentShopSlug() {
+      return window.POSWAI_APP?.shop || window.poswaiAuth?.shop?.slug
+        || new URLSearchParams(location.search).get("shop") || "";
+    }
+    const isThisShop = event => !event.shop || event.shop === currentShopSlug();
+
     function persistSyncQueue() {
-      localStorage.setItem("offlineSyncQueue", JSON.stringify(state.offlineSyncQueue));
+      saveLocal("offlineSyncQueue", JSON.stringify(state.offlineSyncQueue));
       const count = document.getElementById("syncCount");
       if (count) count.textContent = state.offlineSyncQueue.length;
     }
@@ -2270,16 +2288,35 @@
     async function apiMutation(path, payload) {
       if (state.previewOnly && !(state.staffLive && ["/api/attendance", "/api/line-liff/leave-requests", "/api/line-webhook/approve-leave"].includes(path)))
         throw new Error("โหมดตัวอย่างยังไม่เปิดให้บันทึกข้อมูล");
-      if (path.startsWith("/api/payments/") && (!navigator.onLine || !state.isOnline)) {
-        throw new Error("การปิดบิลต้องเชื่อมต่อเซิร์ฟเวอร์ กรุณาลองเมื่อออนไลน์");
+      /* A bill closed in cash, or by a transfer a member of staff has seen land,
+         needs nothing from the server but a record of it — so when the shop's
+         internet drops it is kept here and sent later, like an order. The
+         server keys it by event id, so sending it twice closes it once.
+         Everything else under /api/payments/ (machine-checked slips, refunds)
+         has to ask the server at the moment it happens. */
+      const queueablePayment = path === "/api/payments/close";
+      if (path.startsWith("/api/payments/") && !queueablePayment && (!navigator.onLine || !state.isOnline)) {
+        throw new Error("รายการนี้ต้องเชื่อมต่อเซิร์ฟเวอร์ กรุณาลองเมื่อออนไลน์");
       }
       // A LINE identity token expires and must never be persisted in localStorage.
       const queuedPayload = path === "/api/line-liff/leave-requests" ? { ...payload, line_id_token: undefined } : payload;
-      const event = { path, payload: queuedPayload, id: payload.event_id || crypto.randomUUID() };
-      if (!navigator.onLine || !state.isOnline) {
-        state.offlineSyncQueue.push(event);
-        persistSyncQueue();
-        return { queued: true };
+      const at = new Date().toISOString();
+      /* Queued sales tell the server they were made offline, when, and — for a
+         close — who took the money: by the time the queue is sent someone else
+         may be signed in, and the menu or the stock may have moved on. */
+      const offlinePayload = path === "/api/orders" ? { ...queuedPayload, offline_at: at }
+        : queueablePayment ? { ...queuedPayload, offline_at: at, taken_by: window.poswaiAuth?.current?.staff_id }
+        : queuedPayload;
+      // When it happened, so a bill rung up offline shows its real time until it syncs.
+      const event = { path, payload: offlinePayload, id: payload.event_id || crypto.randomUUID(), at, shop: currentShopSlug() };
+      const queue = () => { state.offlineSyncQueue.push(event); persistSyncQueue(); return { queued: true }; };
+      if (!navigator.onLine || !state.isOnline) return queue();
+      /* Something of this shop is still waiting to be sent: this goes behind
+         it, so a close can never reach the server before its own order. */
+      if (state.offlineSyncQueue.some(isThisShop)) {
+        const queued = queue();
+        flushOfflineSyncQueue();
+        return queued;
       }
       try {
         const response = await fetch(path, {
@@ -2289,12 +2326,10 @@
         if (!response.ok) throw new Error((await response.json()).detail || `HTTP ${response.status}`);
         return await response.json();
       } catch (error) {
-        if (path.startsWith("/api/payments/")) throw error;
+        if (path.startsWith("/api/payments/") && !queueablePayment) throw error;
         // Only transport failures belong in the offline queue; server rejection needs correction.
         if (navigator.onLine && !/Failed to fetch|NetworkError|Load failed/i.test(String(error))) throw error;
-        state.offlineSyncQueue.push(event);
-        persistSyncQueue();
-        return { queued: true };
+        return queue();
       }
     }
 
@@ -2307,10 +2342,31 @@
       return headers;
     }
 
+    /* What the server turned down after the fact — an order changed on another
+       device, a bill that was already closed — is set aside here with its reason
+       for someone to look at, instead of blocking every sale queued behind it. */
+    function setAsideRejected(event, reason) {
+      let rejected = [];
+      try { rejected = JSON.parse(localStorage.getItem("offlineSyncRejected") || "[]"); } catch (_) {}
+      // Never trimmed: each one may be money in the drawer with no record yet.
+      rejected.push({ ...event, reason, rejected_at: new Date().toISOString() });
+      return saveLocal("offlineSyncRejected", JSON.stringify(rejected));
+    }
+
+    let flushing = false;
     async function flushOfflineSyncQueue() {
-      if (state.previewOnly || !navigator.onLine || !state.isOnline) return;
-      while (state.offlineSyncQueue.length) {
-        const event = state.offlineSyncQueue[0];
+      if (state.previewOnly || !navigator.onLine || !state.isOnline || flushing) return;
+      flushing = true;
+      try { await flushQueued(); } finally { flushing = false; }
+    }
+
+    async function flushQueued() {
+      const closed = [];
+      for (;;) {
+        // Only this shop's events; another shop's wait until that shop is open again.
+        const index = state.offlineSyncQueue.findIndex(isThisShop);
+        if (index < 0) break;
+        const event = state.offlineSyncQueue[index];
         try {
           const payload = event.path === "/api/line-liff/leave-requests"
             ? { ...event.payload, line_id_token: await getLineIdToken() } : event.payload;
@@ -2318,19 +2374,72 @@
             method: "POST", headers: mutationHeaders(event.path),
             body: JSON.stringify(payload)
           });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          if (!response.ok) {
+            const detail = await response.json().then(body => body.detail).catch(() => "");
+            /* 4xx other than "who are you" is the server saying no to this one
+               event; nothing about it will change by sending it again. */
+            /* 401 who-are-you, 402 the service fee is due, 403 the person signed
+               in now may not send it: all of these change once someone fixes
+               them, so the queue waits. 408/429: try later. */
+            if (response.status >= 400 && response.status < 500 && ![401, 402, 403, 408, 429].includes(response.status)) {
+              const reason = detail || `HTTP ${response.status}`;
+              if (!setAsideRejected(event, reason)) break;
+              state.offlineSyncQueue.splice(index, 1);
+              // A refused order takes its own queued closes with it, rather than
+              // sending them on to a certain "order not found".
+              if (event.path === "/api/orders") {
+                const own = state.offlineSyncQueue.filter(other => other.payload?.order_no === event.payload.order_no);
+                for (const other of own) setAsideRejected(other, `ออเดอร์ของบิลนี้ถูกปฏิเสธ: ${reason}`);
+                state.offlineSyncQueue = state.offlineSyncQueue.filter(other => !own.includes(other));
+              }
+              persistSyncQueue();
+              showToast(`⚠️ รายการที่ส่งตอนเน็ตหลุดถูกปฏิเสธ: ${reason} (ดูได้ที่แถบสถานะ)`);
+              continue;
+            }
+            throw new Error(detail || `HTTP ${response.status}`);
+          }
           if (event.path === "/api/line-liff/leave-requests") {
             const result = await response.json();
             const leave = state.leaveRequests.find(item => item.id === event.payload.client_leave_id);
             if (leave) leave.serverLeaveId = result.leave_id;
           }
-          state.offlineSyncQueue.shift();
+          state.offlineSyncQueue.splice(index, 1);
           persistSyncQueue();
+          if (event.path === "/api/payments/close") closed.push(event.payload.order_no);
         } catch (error) {
           showToast(`⚠️ ซิงก์รายการค้างส่งไม่สำเร็จ: ${error.message}`);
           break;
         }
       }
+      if (closed.length) {
+        /* Those bills are paid on the server now. The app's remembered list of
+           open bills still has them, and a refresh that started before this one
+           landed may too: say so, then look again. */
+        window.POSWAI_APP?.dropClosedOrders?.(closed);
+        rememberClosedHere(closed);
+        if (window.poswaiLiveData) window.poswaiLiveData.refresh().catch(() => {});
+      }
+    }
+
+    /* The one way back into the queue from outside this script (the app's
+       "send again" on a refused item): the live queue is held here in memory
+       and written over storage, so anything that edited storage directly
+       would be lost on the next write. */
+    window.requeueOfflineEvent = event => {
+      state.offlineSyncQueue.push(event);
+      persistSyncQueue();
+      flushOfflineSyncQueue();
+    };
+
+    /* Bills this device closed recently, kept for a while after they are sent
+       so a stale answer cannot show one as open again. */
+    function rememberClosedHere(orderNos) {
+      let recent = [];
+      try { recent = JSON.parse(localStorage.getItem("offlineClosedHere") || "[]"); } catch (_) {}
+      const until = Date.now() + 15 * 60 * 1000;
+      recent = recent.filter(item => item.until > Date.now() && !orderNos.includes(item.order_no))
+        .concat(orderNos.map(order_no => ({ order_no, until })));
+      saveLocal("offlineClosedHere", JSON.stringify(recent));
     }
 
     function toggleNetworkMode() {
@@ -4044,7 +4153,7 @@
         for (const order of orders) {
           const orderAmount = Math.max(0, order.items.reduce((sum, item) => sum + item.price * item.qty, 0) - (order.discount || 0));
           await apiMutation("/api/payments/close", {
-            event_id: `cash-${order.orderId}`, order_no: order.orderId,
+            event_id: `close-${order.orderId}-${crypto.randomUUID()}`, order_no: order.orderId,
             amount: Number(orderAmount.toFixed(2)), method
           });
         }
@@ -5025,12 +5134,12 @@
   <script src="/reports-restore.js?v=19"></script>
   <script src="/reports-live.js?v=31"></script>
   <script src="/service-call.js?v=77"></script>
-  <script src="/auth-ui.js?v=92"></script>
+  <script src="/auth-ui.js?v=93"></script>
   <script src="/landing.js?v=43"></script>
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=49"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=72"></script>
+  <script src="/live-data.js?v=73"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=90"></script>
   <script src="/print-direct.js?v=90"></script>

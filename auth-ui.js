@@ -404,7 +404,7 @@
   });
   $('#poswaiOpenManager').addEventListener('click', () => open(true));
   $('#poswaiAccountLogout').addEventListener('click', async () => {
-    await api('/api/auth/logout', {}); current = null; update(); open();
+    await api('/api/auth/logout', {}).catch(() => {}); window.POSWAI_APP?.forget(); current = null; update(); open();
   });
   const staffChannelHref = (channel, mode) => {
     const query = new URLSearchParams({ shop: shop.slug });
@@ -832,13 +832,13 @@
   $('#poswaiCloseLogin').addEventListener('click', close);
   $('#poswaiCloseManager').addEventListener('click', close);
   $('#poswaiLogoutManager').addEventListener('click', async () => {
-    await api('/api/auth/logout', {}); current = null; close(); update(); if (!tableToken) open();
+    await api('/api/auth/logout', {}).catch(() => {}); window.POSWAI_APP?.forget(); current = null; close(); update(); if (!tableToken) open();
   });
   overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && !overlay.hidden) close(); });
   const logout = async () => {
     sessionStorage.removeItem('poswaiPreviewPeek');
-    await api('/api/auth/logout', {}); current = null; update(); if (!tableToken) open();
+    await api('/api/auth/logout', {}).catch(() => {}); window.POSWAI_APP?.forget(); current = null; update(); if (!tableToken) open();
   };
   window.poswaiAuth.logout = logout;
   window.poswaiAuth.openLogin = () => open('login');

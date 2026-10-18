@@ -50,13 +50,21 @@
   // ------------------------------------------------------------------ the keys
   app.signedIn = () => Boolean(read(STORE.staff));
 
-  app.keepStaff = (token) => write(STORE.staff, token || '');
+  app.keepStaff = (token) => {
+    write(STORE.staff, token || '');
+    // A new person at the till: the remembered "who is signed in" was someone else.
+    app.forgetCache?.('/api/auth/session');
+    app.forgetCache?.('/api/staff/me');
+    app.forgetCache?.('/api/permissions');
+  };
   app.keepOwner = (token) => write(STORE.owner, token || '');
   app.keepShop = (slug) => write(STORE.shop, slug || '');
 
   app.forget = () => {
     write(STORE.staff, '');
     write(STORE.owner, '');
+    // A signed-out till must not answer "who is signed in" from memory.
+    app.forgetCache?.();
   };
 
   /* Which shop this phone is working in. Every request says so, because the app
@@ -100,6 +108,55 @@
     return new Response(fixed, {status: reply.status, statusText: reply.statusText, headers: reply.headers});
   };
 
+  /* ---- the last answer, for when the shop's internet drops ----------------
+     A till must open and keep selling with no connection. What it needs to
+     show — the menu, the tables, the bills still open, who is signed in — is
+     kept from the last time the server answered, and handed back when it
+     cannot. Writes are not cached here: index.html queues those itself and
+     sends them when the line comes back. */
+  const CACHED = ['/api/config', '/api/auth/session', '/api/owner/session', '/api/menu', '/api/tables',
+    '/api/orders', '/api/shop/settings', '/api/permissions', '/api/staff/me', '/api/kds'];
+  const CACHE_PREFIX = 'poswai.app.cache:';
+  const CACHE_LIMIT = 400 * 1024;     // a menu with photos is a few kB of text; reports are not cached
+  const cacheKey = (path) => `${CACHE_PREFIX}${app.shop}:${path}`;
+  const cacheable = (path, init) => (!init?.method || init.method.toUpperCase() === 'GET')
+    && CACHED.some((prefix) => path === prefix || path.startsWith(`${prefix}?`) || path.startsWith(`${prefix}/`));
+
+  const remembered = (path) => {
+    const text = read(cacheKey(path));
+    if (!text) return null;
+    return new Response(text, {status: 200, headers: {'content-type': 'application/json', 'x-poswai-offline': '1'}});
+  };
+  const keep = async (path, reply) => {
+    if (!reply.ok) return reply;
+    const text = await reply.clone().text();
+    if (text.length <= CACHE_LIMIT) write(cacheKey(path), text);
+    return reply;
+  };
+
+  /** Drop remembered answers: all of them, or those for one path. */
+  app.forgetCache = (path) => {
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.startsWith(CACHE_PREFIX)) continue;
+        if (!path || key.split(':').slice(2).join(':').startsWith(path)) localStorage.removeItem(key);
+      }
+    } catch { /* */ }
+  };
+
+  /** Bills just paid on the server leave the remembered list of open bills. */
+  app.dropClosedOrders = (orderNos) => {
+    try {
+      for (const key of Object.keys(localStorage)) {
+        if (!key.startsWith(`${CACHE_PREFIX}${app.shop}:/api/orders?`)) continue;
+        const body = JSON.parse(localStorage.getItem(key));
+        if (!Array.isArray(body?.orders)) continue;
+        body.orders = body.orders.filter((order) => !orderNos.includes(order.order_no));
+        localStorage.setItem(key, JSON.stringify(body));
+      }
+    } catch { /* the next fresh answer replaces it anyway */ }
+  };
+
   window.fetch = (input, init) => {
     const path = typeof input === 'string' ? input : input?.url;
     if (typeof path !== 'string' || !path.startsWith('/')) return plainFetch(input, init);
@@ -108,7 +165,21 @@
     const sent = {...(init || {}), headers: headers(init?.headers)};
     // No cookie to send and none to receive: the token in the header is the session.
     sent.credentials = 'omit';
-    return plainFetch(target, sent).then(pointAtServer).then((reply) => {
+    const offlineCopy = cacheable(path, init);
+    // No connection at all: answer at once from what was kept, rather than wait to fail.
+    if (offlineCopy && !navigator.onLine) {
+      const copy = remembered(path);
+      if (copy) return Promise.resolve(copy);
+    }
+    return plainFetch(target, sent).then(pointAtServer)
+      .then((reply) => (offlineCopy ? keep(path, reply) : reply))
+      .catch((error) => {
+        // A network that is up but goes nowhere (shop Wi-Fi with no line out).
+        const copy = offlineCopy && remembered(path);
+        if (copy) return copy;
+        throw error;
+      })
+      .then((reply) => {
       /* A session the server has closed is gone here too, or the app would keep
          showing a shop it can no longer read. Only the session endpoint speaks
          for the session, though: plenty of others answer 401 for reasons of
@@ -118,6 +189,8 @@
       if (reply.status === 401 && path.startsWith(SESSION_PATH) && app.staffToken) {
         app.onSignedOut?.();
       }
+      // Signing out drops the token and the remembered answers with it.
+      if (reply.ok && path.startsWith('/api/auth/logout')) app.forget();
       return reply;
     });
   };
