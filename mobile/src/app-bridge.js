@@ -14,6 +14,8 @@
   const DEFAULT_SERVER = 'https://poswai.zzaxstudio.com';
   // Paths that mean the shop's server rather than a file this app ships.
   const REMOTE = ['/api/', '/menu-photos/', '/t/'];
+  // The one endpoint whose answer is about the session itself.
+  const SESSION_PATH = '/api/auth/session';
   const STORE = {
     server: 'poswai.app.server',
     staff: 'poswai.app.session',
@@ -90,9 +92,15 @@
     // No cookie to send and none to receive: the token in the header is the session.
     sent.credentials = 'omit';
     return plainFetch(target, sent).then((reply) => {
-      // A session the server has closed is gone here too, or the app would keep
-      // showing a shop it can no longer read.
-      if (reply.status === 401 && app.staffToken) app.onSignedOut?.();
+      /* A session the server has closed is gone here too, or the app would keep
+         showing a shop it can no longer read. Only the session endpoint speaks
+         for the session, though: plenty of others answer 401 for reasons of
+         their own — a customer's table order, a till reading something its role
+         may not — and a shop must never be signed out because one of those
+         said no. */
+      if (reply.status === 401 && path.startsWith(SESSION_PATH) && app.staffToken) {
+        app.onSignedOut?.();
+      }
       return reply;
     });
   };
