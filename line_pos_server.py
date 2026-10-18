@@ -3416,6 +3416,53 @@ def serve_privacy():
     return (Path(__file__).parent / "privacy.html").read_text(encoding="utf-8")
 
 
+@app.get("/delete-account", response_class=HTMLResponse)
+@app.get("/delete-account.html", response_class=HTMLResponse)
+def serve_delete_account():
+    """Where anyone with a POS WAI account asks for it to be deleted (Google Play asks for this link)."""
+    return (Path(__file__).parent / "delete-account.html").read_text(encoding="utf-8")
+
+
+class DeletionRequest(BaseModel):
+    kind: str
+    contact: str
+    shop: str = ""
+    note: str = ""
+
+
+DELETION_REQUESTS_PER_HOUR = 5   # from one address
+
+
+@app.post("/api/account-deletion-requests")
+def request_account_deletion(req: DeletionRequest, request: Request):
+    """Someone asks for their account and its data to be deleted.
+
+    Kept in the service's own registry, not in any shop: the person may have
+    lost access to the shop, or the shop may be the thing to delete. ZZAX Studio
+    confirms who is asking before anything is removed.
+    """
+    kind = req.kind.strip()
+    contact = " ".join(req.contact.split())
+    if kind not in ("owner", "staff", "member") or not 3 <= len(contact) <= 120:
+        raise HTTPException(400, "กรอกประเภทบัญชีและช่องทางติดต่อกลับให้ครบ")
+    shop = " ".join(req.shop.split())[:80]
+    note = req.note.strip()[:500]
+    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown")
+    with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn, conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS account_deletion_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, shop TEXT NOT NULL DEFAULT '',
+            contact TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', client TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'new', created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+        recent = conn.execute("SELECT COUNT(*) FROM account_deletion_requests WHERE client=? "
+                              "AND created_at>=datetime('now','-1 hour')", (client,)).fetchone()[0]
+        if recent >= DELETION_REQUESTS_PER_HOUR:
+            raise HTTPException(429, "ส่งคำขอหลายครั้งเกินไป กรุณารอสักครู่ หรือติดต่อ LINE @151jbyje")
+        cursor = conn.execute("INSERT INTO account_deletion_requests (kind,shop,contact,note,client) VALUES (?,?,?,?,?)",
+                              (kind, shop, contact, note, client))
+    return {"status": "received", "request_id": cursor.lastrowid}
+
+
 @app.get("/terms", response_class=HTMLResponse)
 @app.get("/terms.html", response_class=HTMLResponse)
 def serve_terms():

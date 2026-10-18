@@ -154,3 +154,13 @@ localStorage.setItem('poswai.app.server', 'http://192.168.1.50:8000')
   ติดมากับ bundle แล้ว รอหน้าจับคู่เครื่องพิมพ์กับการต่อเข้าปุ่มจบบิล
 - **ขั้น 3** เน็ตหลุดยังขายได้ — เก็บเมนูลงเครื่อง ออเดอร์เข้าคิว ส่งเองเมื่อเน็ตกลับ
 - พนักงานล็อกอินด้วยบัญชี LINE ในแอป (ตอนนี้ในแอปใช้ PIN · เจ้าของร้านใช้บัญชีได้แล้ว)
+
+## Play Store
+
+- ข้อมูลหน้าร้าน แบบฟอร์ม และลำดับการปล่อย: `store/PLAY-STORE.md`
+- กุญแจอัปโหลด `keystore/poswai-upload.jks` + `keystore/key.properties` (ไม่อยู่ใน git — สำรองเอง)
+- โฟลเดอร์ android ไม่อยู่ใน git ถ้าสร้างใหม่ต้องใส่กลับใน `android/app/build.gradle`:
+  อ่าน `../keystore/key.properties` เป็น `signingConfigs.upload` และใช้กับ `buildTypes.release`
+  และใน `AndroidManifest.xml` ตั้ง `android:allowBackup="false"` (โทเคนเข้าระบบอยู่ในเครื่อง ห้ามสำรองขึ้น Google Drive)
+- สร้างไฟล์สำหรับอัปโหลด: ใน `android/` รัน `./gradlew bundleRelease` → `app/build/outputs/bundle/release/app-release.aab`
+  ทุกครั้งที่อัปโหลดใหม่ต้องเพิ่ม `versionCode` ใน `android/app/build.gradle`

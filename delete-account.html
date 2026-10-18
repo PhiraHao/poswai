@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ขอลบบัญชีและข้อมูล · POS WAI</title>
+<meta name="description" content="ขอลบบัญชี POS WAI ของเจ้าของร้าน พนักงาน หรือสมาชิกร้าน และข้อมูลที่เกี่ยวข้อง">
+<link rel="icon" href="/icon-192.png" type="image/png">
+<link rel="stylesheet" href="/assets/fonts.css">
+<link rel="stylesheet" href="/legal.css?v=1">
+<style>
+  .del-form { display: grid; gap: 12px; margin: 18px 0 8px; }
+  .del-form label { display: grid; gap: 6px; font-weight: 600; }
+  .del-form select, .del-form input, .del-form textarea { font: inherit; padding: 11px 12px; border: 1px solid #d8dde3; border-radius: 12px; }
+  .del-form textarea { min-height: 90px; resize: vertical; }
+  .del-form button { min-height: 48px; border: 0; border-radius: 12px; background: #ffc928; font: inherit; font-weight: 700; cursor: pointer; }
+  .del-form button:disabled { opacity: .6; }
+  .del-result { padding: 12px 14px; border-radius: 12px; background: #e8f6ed; color: #1d6b43; font-weight: 600; }
+  .del-result.error { background: #fde9e7; color: #b8322a; }
+</style>
+</head>
+<body>
+<div class="legal-top"><a href="/"><img src="/icon-192.png" alt="">POS WAI</a></div>
+<main>
+<div class="sheet">
+
+<h1>ขอลบบัญชีและข้อมูล</h1>
+<p class="updated">บริการ POS WAI โดย ZZAX Studio · แอป POS WAI บน Google Play และเว็บ poswai.zzaxstudio.com</p>
+
+<p class="lead">กรอกแบบฟอร์มด้านล่างเพื่อขอลบบัญชีของคุณ เราจะติดต่อกลับเพื่อยืนยันว่าเป็นเจ้าของบัญชีจริง
+แล้วลบให้ภายใน 30 วัน</p>
+
+<h2>อะไรจะถูกลบ</h2>
+<ul>
+  <li><strong>เจ้าของร้าน:</strong> บัญชีเข้าสู่ระบบ (อีเมล LINE Google Facebook) ร้าน เมนู พนักงาน สมาชิก ออเดอร์ และรูปทั้งหมดของร้าน</li>
+  <li><strong>พนักงาน:</strong> ชื่อ รหัส PIN การเชื่อม LINE/Google และข้อมูลส่วนตัวในแฟ้มพนักงาน</li>
+  <li><strong>สมาชิกร้าน (ลูกค้า):</strong> ชื่อ เบอร์โทร แต้มสะสม และประวัติการสั่งที่ผูกกับสมาชิก</li>
+</ul>
+
+<h2>อะไรที่ต้องเก็บไว้ต่อ</h2>
+<ul>
+  <li>บิลขายและใบเสร็จที่ออกไปแล้ว และประวัติการชำระค่าบริการ เก็บไว้ตามที่กฎหมายภาษีและบัญชีกำหนด
+      (โดยทั่วไป 5 ปี) โดยตัดชื่อ เบอร์โทร และข้อมูลที่ระบุตัวคุณออก</li>
+  <li>ไฟล์สำรองอัตโนมัติอาจยังมีข้อมูลอยู่ไม่เกิน 30 วัน ก่อนถูกเขียนทับ</li>
+</ul>
+
+<h2>แบบฟอร์มขอลบ</h2>
+<form class="del-form" id="delForm">
+  <label>คุณเป็น
+    <select name="kind" required>
+      <option value="owner">เจ้าของร้าน</option>
+      <option value="staff">พนักงานของร้าน</option>
+      <option value="member">สมาชิก / ลูกค้าของร้าน</option>
+    </select>
+  </label>
+  <label>ชื่อร้าน หรือลิงก์ร้าน (ถ้ารู้)
+    <input name="shop" maxlength="80" placeholder="เช่น ร้านป้าแดง หรือ poswai.zzaxstudio.com/?shop=paadaeng">
+  </label>
+  <label>ช่องทางติดต่อกลับ (อีเมล เบอร์โทร หรือ LINE ID)
+    <input name="contact" required minlength="3" maxlength="120" autocomplete="email">
+  </label>
+  <label>รายละเอียดเพิ่มเติม (ไม่บังคับ)
+    <textarea name="note" maxlength="500" placeholder="เช่น ชื่อที่ใช้ในร้าน หรือบัญชีที่ใช้เข้าสู่ระบบ"></textarea>
+  </label>
+  <button type="submit">ส่งคำขอลบบัญชี</button>
+</form>
+<p class="del-result" id="delResult" role="status" hidden></p>
+
+<p>ติดต่อเราโดยตรงก็ได้ที่ LINE <a href="https://line.me/R/ti/p/@151jbyje" target="_blank" rel="noopener">@151jbyje</a>
+· อ่าน<a href="/privacy.html">นโยบายความเป็นส่วนตัว</a>ฉบับเต็ม</p>
+
+</div>
+</main>
+<script>
+  document.getElementById('delForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const result = document.getElementById('delResult');
+    const button = form.querySelector('button');
+    button.disabled = true;
+    try {
+      const data = Object.fromEntries(new FormData(form));
+      const reply = await fetch('/api/account-deletion-requests', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+      const body = await reply.json().catch(() => ({}));
+      if (!reply.ok) throw new Error(body.detail || 'ส่งไม่สำเร็จ ลองอีกครั้ง');
+      result.className = 'del-result';
+      result.textContent = `ได้รับคำขอแล้ว (เลขที่ ${body.request_id}) เราจะติดต่อกลับเพื่อยืนยันภายใน 7 วัน`;
+      form.hidden = true;
+    } catch (error) {
+      result.className = 'del-result error';
+      result.textContent = error.message;
+      button.disabled = false;
+    }
+    result.hidden = false;
+  });
+</script>
+</body>
+</html>

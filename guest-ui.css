@@ -142,3 +142,5 @@ html.gui-on #toastContainer { position: fixed !important; top: calc(var(--g-safe
 
 /* The older guest bar, bill button and bill sheet from tables-ui give way to this screen. */
 html.gui-on .tbl-bar, html.gui-on .tbl-bill-open, html.gui-on .tbl-sheet:not([hidden]) { display: none !important; }
+
+.gui-row { color: inherit; text-decoration: none; }

@@ -627,6 +627,8 @@
       <div class="aui-menu">${rows.map((r) => `<button type="button" class="aui-mrow" ${r.act ? `data-act="${r.act}"` : `data-act="web" data-value="${r.tab}"`} ${r.find ? `data-find="${esc(r.find)}"` : ''}>
         ${icon(r.icon, 'aui-mic')}<span class="aui-grow"><strong>${r.title}</strong><small>${r.sub}</small></span>${icon('right', 'aui-i-xs')}</button>`).join('')}
         <button type="button" class="aui-mrow" data-act="account">${icon('user', 'aui-mic')}<span class="aui-grow"><strong>บัญชีของฉัน</strong><small>เชื่อม LINE/Google · ออกจากระบบ</small></span>${icon('right', 'aui-i-xs')}</button>
+        <button type="button" class="aui-mrow" data-act="link" data-value="/delete-account">${icon('trash', 'aui-mic')}<span class="aui-grow"><strong>ขอลบบัญชีและข้อมูล</strong><small>ส่งคำขอให้ ZZAX Studio ลบบัญชีของคุณ</small></span>${icon('right', 'aui-i-xs')}</button>
+        <button type="button" class="aui-mrow" data-act="link" data-value="/privacy.html">${icon('badge', 'aui-mic')}<span class="aui-grow"><strong>นโยบายความเป็นส่วนตัว</strong><small>เราเก็บข้อมูลอะไร และใช้ทำอะไร</small></span>${icon('right', 'aui-i-xs')}</button>
       </div>`;
   };
   const ROLE_NAMES = {owner: 'เจ้าของร้าน', manager: 'ผู้จัดการ', cashier: 'แคชเชียร์', kitchen: 'ครัว', service: 'พนักงานเสิร์ฟ', staff: 'พนักงาน'};
@@ -882,6 +884,14 @@
       }
       case 'web': openWeb(value, el.dataset.find || ''); break;
       case 'printer': window.POSWAI_APP?.printer?.open?.(); break;
+      case 'link': {
+        // A page of the website, in a real browser tab over the app.
+        const url = `${window.POSWAI_APP?.server || ''}${value}`;
+        const browser = window.Capacitor?.Plugins?.Browser;
+        if (browser) browser.open({url}).catch(() => window.open(url, '_blank'));
+        else window.open(url, '_blank');
+        break;
+      }
       case 'reload': await loadReport(true); toast('อัปเดตยอดขายแล้ว'); break;
       default: break;
     }

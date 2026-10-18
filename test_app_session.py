@@ -137,6 +137,33 @@ class AppSessionTest(unittest.TestCase):
             "total_amount": 45, "items": [{"id": "M1", "name": "กะเพรา", "price": 45, "qty": 1}]})
         self.assertEqual(sent.status_code, 200, sent.text)
 
+    # ------------------------------------------------- deleting an account
+    def test_anyone_can_ask_for_their_account_to_be_deleted(self):
+        client = self.client()
+        page = client.get("/delete-account")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("ขอลบบัญชี", page.text)
+        sent = client.post("/api/account-deletion-requests",
+                           json={"kind": "member", "contact": "0812345678", "shop": "ร้านทดสอบ"})
+        self.assertEqual(sent.status_code, 200, sent.text)
+        with sqlite3.connect(server.DB_PATH) as conn:
+            row = conn.execute("SELECT kind,contact,shop,status FROM account_deletion_requests WHERE id=?",
+                               (sent.json()["request_id"],)).fetchone()
+        self.assertEqual(row, ("member", "0812345678", "ร้านทดสอบ", "new"))
+
+    def test_a_deletion_request_needs_a_kind_and_a_way_back(self):
+        client = self.client()
+        self.assertEqual(client.post("/api/account-deletion-requests",
+                                     json={"kind": "admin", "contact": "x@y.z"}).status_code, 400)
+        self.assertEqual(client.post("/api/account-deletion-requests",
+                                     json={"kind": "owner", "contact": " "}).status_code, 400)
+
+    def test_deletion_requests_from_one_address_are_limited(self):
+        client = self.client()
+        codes = [client.post("/api/account-deletion-requests",
+                             json={"kind": "owner", "contact": f"owner{n}@mail.com"}).status_code for n in range(6)]
+        self.assertEqual(codes, [200] * 5 + [429])
+
     # -------------------------------------------------- several screens at once
     def sign_in_as(self, staff_id, pin):
         """A fresh device: its own client, no cookie, the token it was handed."""

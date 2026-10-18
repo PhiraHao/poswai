@@ -4,3 +4,4 @@ www/
 /ios/
 *.apk
 plugins/*/android/build/
+keystore/

@@ -133,6 +133,7 @@
       </section>
       <div class="gui-menu">
         <button type="button" class="gui-row" data-act="member">${icon('star')}<span class="gui-grow"><strong>${member ? 'บัตรสมาชิกของฉัน' : 'สมัครสมาชิก / เข้าสู่ระบบ'}</strong><small>LINE · Google · เบอร์โทร</small></span>${icon('right', 'gui-i-xs')}</button>
+        <a class="gui-row" href="/delete-account">${icon('trash')}<span class="gui-grow"><strong>ขอลบบัญชีและข้อมูล</strong><small>ส่งคำขอให้ลบบัญชีสมาชิกของคุณ</small></span>${icon('right', 'gui-i-xs')}</a>
         <button type="button" class="gui-row" data-act="tab" data-value="orders">${icon('receipt')}<span class="gui-grow"><strong>บิลของโต๊ะ ${esc(table())}</strong><small>ดูรายการที่สั่งและยอดรวม</small></span>${icon('right', 'gui-i-xs')}</button>
       </div>
       <p class="gui-foot">ร้านนี้ใช้ระบบ POS WAI · ข้อมูลของคุณใช้เพื่อสะสมแต้มเท่านั้น</p>`;
