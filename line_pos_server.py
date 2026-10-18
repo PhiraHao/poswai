@@ -52,6 +52,8 @@ from poswai_catalog import (CatalogError, deduct_inventory, delete_menu_item, in
                             list_menu_categories, list_menu_items, quote_order,
                             set_menu_photo, set_menu_status, upsert_menu_item,
                             STATIONS, TAX_MODES)
+from poswai_printing import (PrintError, agent_for_key, delete_agent, finish_job, init_printing,
+                            issue_agent, list_agents, queue_job, take_job, waiting_count)
 from poswai_tables import (TableError, add_table, delete_table, init_tables, list_tables,
                            reissue_code, resolve_code, set_active)
 from poswai_dossier import (DossierError, add_asset, add_timeline_entry, branch_summary,
@@ -471,6 +473,7 @@ def init_db() -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS auth_sessions_expiry ON auth_sessions(expires_at)")
     init_catalog(conn)
     init_tables(conn)
+    init_printing(conn)
     init_dossier(conn)
     init_inventory_movements(conn)
     init_commerce(conn)
@@ -1104,6 +1107,90 @@ def post_table_reissue(table_no: str, request: Request, branch_id: int = 1):
             return _with_links(reissue_code(conn, branch_id, table_no))
     except TableError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+class PrintJob(BaseModel):
+    branch_id: int = 1
+    title: str = ""
+    body: str
+    copies: int = 1
+
+
+class PrintAgentName(BaseModel):
+    branch_id: int = 1
+    name: str = ""
+
+
+def _printing_agent(request: Request) -> dict:
+    """Whoever is holding a key at the machine the printer is plugged into."""
+    key = request.headers.get("x-print-key", "")
+    if not key or len(key) > 200:
+        raise HTTPException(401, "กุญแจเครื่องพิมพ์ไม่ถูกต้อง")
+    with closing(connect_db()) as conn, conn:
+        try:
+            return agent_for_key(conn, key)
+        except PrintError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/print/jobs")
+def add_print_job(req: PrintJob, request: Request):
+    """A till that cannot reach the printer leaves the receipt here instead."""
+    require_staff(request, roles=("cashier", "manager", "owner"), branch_id=req.branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return queue_job(conn, req.branch_id, req.title, req.body, req.copies)
+    except PrintError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/print/next")
+def next_print_job(request: Request):
+    """What the agent beside the printer asks for, over and over."""
+    agent = _printing_agent(request)
+    with closing(connect_db()) as conn, conn:
+        return {"job": take_job(conn, agent)}
+
+
+@app.post("/api/print/done")
+def print_job_done(req: dict, request: Request):
+    agent = _printing_agent(request)
+    try:
+        with closing(connect_db()) as conn, conn:
+            finish_job(conn, agent, int(req.get("job_id") or 0))
+    except (PrintError, ValueError, TypeError) as exc:
+        status = getattr(exc, "status_code", 400)
+        raise HTTPException(status, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.get("/api/print/agents")
+def get_print_agents(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(connect_db()) as conn, conn:
+        return {"agents": list_agents(conn, branch_id), "waiting": waiting_count(conn, branch_id)}
+
+
+@app.post("/api/print/agents")
+def create_print_agent(req: PrintAgentName, request: Request):
+    """The key is in this reply and nowhere else, ever again."""
+    require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return issue_agent(conn, req.branch_id, req.name)
+    except PrintError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.delete("/api/print/agents/{agent_id}")
+def remove_print_agent(agent_id: int, request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            delete_agent(conn, branch_id, agent_id)
+    except PrintError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    return {"ok": True}
 
 
 @app.delete("/api/tables/{table_no}")

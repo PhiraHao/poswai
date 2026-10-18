@@ -1,0 +1,250 @@
+"""POS WAI print agent — run this on the machine the receipt printer is plugged into.
+
+The till in a small shop is a phone, and a phone cannot drive a 58mm USB or
+Bluetooth printer: iOS has no Web Bluetooth and these printers have no
+AirPrint. So the phone does not print. It leaves the receipt with POS WAI, and
+this program — running on the computer or tablet the printer IS plugged into —
+collects it and prints it. Every device in the shop then prints to one printer.
+
+Thai is drawn as a picture rather than sent as text. The cheap 58mm printers
+carry a Chinese character set and a Thai code page that may or may not be the
+one the shop needs; a bitmap of real Thai letters always comes out right.
+
+    python print-agent.py            first run asks what it needs and saves it
+    python print-agent.py --once     collect and print anything waiting, then stop
+    python print-agent.py --test     print a test slip and stop
+
+Needs: Pillow (pip install pillow), and on Windows pywin32 (pip install pywin32).
+"""
+
+from __future__ import annotations
+
+import argparse
+import configparser
+import json
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+CONFIG_PATH = Path(__file__).with_name("print-agent.ini")
+PAPER_DOTS = 384          # 58mm paper, 203 dpi
+POLL_SECONDS = 3
+ERROR_BACKOFF_SECONDS = 15
+THAI_FONTS = (
+    r"C:\Windows\Fonts\tahoma.ttf",
+    r"C:\Windows\Fonts\leelawui.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansThai-Regular.ttf",
+    "/Library/Fonts/Thonburi.ttc",
+    "/System/Library/Fonts/Supplemental/Ayuthaya.ttf",
+)
+
+
+# --------------------------------------------------------------- what to print
+def render(text: str, font_path: str, size: int = 22) -> bytes:
+    """The receipt as ESC/POS raster, so Thai looks like Thai."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    font = ImageFont.truetype(font_path, size)
+    pad, line_height = 6, size + 7
+    lines: list[str] = []
+    measure = ImageDraw.Draw(Image.new("L", (1, 1)))
+    for raw in text.replace("\r", "").split("\n"):
+        if measure.textlength(raw, font=font) <= PAPER_DOTS - 2 * pad or not raw.strip():
+            lines.append(raw)
+            continue
+        # Too wide for the paper: break it rather than let the printer clip it.
+        current = ""
+        for char in raw:
+            if measure.textlength(current + char, font=font) > PAPER_DOTS - 2 * pad:
+                lines.append(current)
+                current = char
+            else:
+                current += char
+        lines.append(current)
+
+    height = max(line_height, line_height * len(lines) + 2 * pad)
+    image = Image.new("L", (PAPER_DOTS, height), 255)
+    draw = ImageDraw.Draw(image)
+    for index, line in enumerate(lines):
+        draw.text((pad, pad + index * line_height), line, font=font, fill=0)
+    mono = image.point(lambda value: 0 if value < 160 else 255, mode="1")
+
+    width_bytes = PAPER_DOTS // 8
+    raster = bytearray()
+    pixels = mono.load()
+    for y in range(height):
+        for byte_index in range(width_bytes):
+            byte = 0
+            for bit in range(8):
+                # In ESC/POS a set bit burns a dot, which is the opposite of
+                # the image, where 0 is black.
+                if not pixels[byte_index * 8 + bit, y]:
+                    byte |= 0x80 >> bit
+            raster.append(byte)
+    header = bytes([0x1D, 0x76, 0x30, 0x00,
+                    width_bytes & 0xFF, width_bytes >> 8,
+                    height & 0xFF, height >> 8])
+    return b"\x1b@" + header + bytes(raster) + b"\n\n\n\n\x1dV\x00"
+
+
+# ------------------------------------------------------------- where it goes
+def send(data: bytes, target: str) -> None:
+    """`windows:<printer name>` for an installed driver, `file:<path>` otherwise."""
+    kind, _, where = target.partition(":")
+    if kind == "file":
+        with open(where, "wb") as device:
+            device.write(data)
+        return
+    if kind != "windows":
+        raise SystemExit(f"ไม่รู้จักปลายทาง {target!r} (ใช้ windows:ชื่อเครื่องพิมพ์ หรือ file:พาธ)")
+    import win32print
+
+    handle = win32print.OpenPrinter(where)
+    try:
+        job = win32print.StartDocPrinter(handle, 1, ("POS WAI receipt", None, "RAW"))
+        try:
+            win32print.StartPagePrinter(handle)
+            win32print.WritePrinter(handle, data)
+            win32print.EndPagePrinter(handle)
+        finally:
+            win32print.EndDocPrinter(handle)
+    finally:
+        win32print.ClosePrinter(handle)
+
+
+def windows_printers() -> list[str]:
+    try:
+        import win32print
+    except ImportError:
+        return []
+    return [row[2] for row in win32print.EnumPrinters(
+        win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)]
+
+
+# ------------------------------------------------------------------ the shop
+class Shop:
+    def __init__(self, base_url: str, shop: str, key: str):
+        self.base = base_url.rstrip("/")
+        self.shop = shop
+        self.key = key
+
+    def _call(self, path: str, body: dict | None = None) -> dict:
+        url = f"{self.base}{path}"
+        url += ("&" if "?" in url else "?") + "shop=" + urllib.parse.quote(self.shop)
+        request = urllib.request.Request(url, headers={"X-Print-Key": self.key})
+        if body is not None:
+            request.data = json.dumps(body).encode()
+            request.add_header("Content-Type", "application/json")
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode() or "{}")
+
+    def next_job(self) -> dict | None:
+        return self._call("/api/print/next").get("job")
+
+    def done(self, job_id: int) -> None:
+        self._call("/api/print/done", {"job_id": job_id})
+
+
+# --------------------------------------------------------------- setting up
+def ask_settings() -> configparser.ConfigParser:
+    print("ตั้งค่าตัวกลางพิมพ์ POS WAI (กด Enter เพื่อใช้ค่าในวงเล็บ)\n")
+    base = input("ที่อยู่เว็บ [https://poswai.zzaxstudio.com]: ").strip() or "https://poswai.zzaxstudio.com"
+    shop = input("ชื่อร้านในลิงก์ เช่น guohao: ").strip()
+    key = input("กุญแจเครื่องพิมพ์ (จากหน้าแคชเชียร์ > เครื่องที่เสียบปริ้นเตอร์ไว้): ").strip()
+
+    printers = windows_printers()
+    if printers:
+        print("\nเครื่องพิมพ์ที่เจอในเครื่องนี้:")
+        for index, name in enumerate(printers, 1):
+            print(f"  {index}. {name}")
+        chosen = input("เลือกหมายเลข (หรือพิมพ์ชื่อเอง): ").strip()
+        name = printers[int(chosen) - 1] if chosen.isdigit() and 1 <= int(chosen) <= len(printers) else chosen
+        target = f"windows:{name}"
+    else:
+        target = input("ปลายทาง เช่น file:/dev/usb/lp0: ").strip()
+
+    font = next((path for path in THAI_FONTS if Path(path).exists()), "")
+    if not font:
+        font = input("ยังไม่เจอฟอนต์ไทย ใส่พาธไฟล์ .ttf: ").strip()
+
+    settings = configparser.ConfigParser()
+    settings["agent"] = {"base_url": base, "shop": shop, "key": key,
+                         "target": target, "font": font, "font_size": "22"}
+    with CONFIG_PATH.open("w", encoding="utf-8") as handle:
+        settings.write(handle)
+    print(f"\nบันทึกไว้ที่ {CONFIG_PATH} แล้ว · แก้ไฟล์นี้ได้ถ้าต้องเปลี่ยนทีหลัง\n")
+    return settings
+
+
+def load_settings() -> configparser.SectionProxy:
+    settings = configparser.ConfigParser()
+    if CONFIG_PATH.exists():
+        settings.read(CONFIG_PATH, encoding="utf-8")
+    else:
+        settings = ask_settings()
+    section = settings["agent"]
+    missing = [name for name in ("base_url", "shop", "key", "target", "font") if not section.get(name)]
+    if missing:
+        raise SystemExit(f"ไฟล์ {CONFIG_PATH} ยังขาด: {', '.join(missing)}")
+    return section
+
+
+# ------------------------------------------------------------------- running
+def print_text(text: str, section: configparser.SectionProxy) -> None:
+    send(render(text, section["font"], int(section.get("font_size", "22"))), section["target"])
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="ตัวกลางพิมพ์ใบเสร็จของ POS WAI")
+    parser.add_argument("--once", action="store_true", help="พิมพ์ที่ค้างอยู่แล้วจบ")
+    parser.add_argument("--test", action="store_true", help="พิมพ์ใบทดสอบแล้วจบ")
+    arguments = parser.parse_args()
+    section = load_settings()
+
+    if arguments.test:
+        print_text("   ทดสอบเครื่องพิมพ์\n   POS WAI\n"
+                   "--------------------------------\n"
+                   "กะเพราหมูสับ      x1   ฿50.00\n"
+                   "ชาเย็น            x2   ฿50.00\n"
+                   "--------------------------------\n"
+                   "รวม                    ฿100.00\n"
+                   "   ขอบคุณที่ใช้บริการครับ", section)
+        print("ส่งใบทดสอบไปที่เครื่องพิมพ์แล้ว")
+        return
+
+    shop = Shop(section["base_url"], section["shop"], section["key"])
+    print(f"กำลังรอใบเสร็จจาก {section['base_url']} ร้าน {section['shop']}")
+    print("ปิดโปรแกรมด้วย Ctrl+C\n")
+    while True:
+        try:
+            job = shop.next_job()
+            if not job:
+                if arguments.once:
+                    print("ไม่มีใบรอพิมพ์")
+                    return
+                time.sleep(POLL_SECONDS)
+                continue
+            for _ in range(max(1, int(job.get("copies", 1)))):
+                print_text(job["body"], section)
+            shop.done(job["job_id"])
+            print(f"พิมพ์แล้ว: {job.get('title') or job['job_id']}")
+        except KeyboardInterrupt:
+            print("\nหยุดแล้ว")
+            return
+        except urllib.error.HTTPError as error:
+            if error.code == 401:
+                raise SystemExit("กุญแจเครื่องพิมพ์ไม่ถูกต้อง หรือถูกลบไปแล้ว "
+                                 f"แก้ที่ {CONFIG_PATH} แล้วเปิดใหม่")
+            print(f"เซิร์ฟเวอร์ตอบ {error.code} · รอแล้วลองใหม่", file=sys.stderr)
+            time.sleep(ERROR_BACKOFF_SECONDS)
+        except Exception as error:                       # noqa: BLE001 - keep printing
+            # A jam, a pulled cable or a dropped Wi-Fi must not end the shift.
+            print(f"ผิดพลาด: {error} · รอแล้วลองใหม่", file=sys.stderr)
+            time.sleep(ERROR_BACKOFF_SECONDS)
+
+
+if __name__ == "__main__":
+    main()
