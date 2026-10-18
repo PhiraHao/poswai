@@ -178,25 +178,29 @@ class ReceiptRasterTest(unittest.TestCase):
             self.skipTest("no Thai font on this machine")
 
     def _decode(self, data):
-        """Stitch the bands back into the picture the printer will burn."""
+        """Stitch the 24-dot strips back into the page the printer will burn."""
         from PIL import Image
-        marker = bytes([0x1d, 0x76, 0x30, 0x00])
-        bands, at = [], data.find(marker)
-        self.assertNotEqual(at, -1, "no image command at all")
+        marker = bytes([0x1b, 0x2a, 33])
+        strips, at = [], data.find(marker)
+        self.assertNotEqual(at, -1, "no picture command at all")
         while at != -1:
-            head = at + 4
-            width_bytes = data[head] | (data[head + 1] << 8)
-            rows = data[head + 2] | (data[head + 3] << 8)
-            body = data[head + 4:head + 4 + width_bytes * rows]
-            self.assertEqual(len(body), width_bytes * rows, "a band is the wrong length")
-            bands.append(Image.frombytes("1", (width_bytes * 8, rows),
-                                         bytes(byte ^ 0xFF for byte in body)))
-            at = data.find(marker, head + 4 + width_bytes * rows)
-        whole = Image.new("1", (bands[0].width, sum(band.height for band in bands)), 1)
-        top = 0
-        for band in bands:
-            whole.paste(band, (0, top))
-            top += band.height
+            head = at + 3
+            width = data[head] | (data[head + 1] << 8)
+            body = data[head + 2:head + 2 + width * 3]
+            self.assertEqual(len(body), width * 3, "a strip is the wrong length")
+            picture = Image.new("1", (width, 24), 1)
+            dots = picture.load()
+            for x in range(width):
+                for byte_index in range(3):
+                    value = body[x * 3 + byte_index]
+                    for bit in range(8):
+                        if value & (0x80 >> bit):
+                            dots[x, byte_index * 8 + bit] = 0
+            strips.append(picture)
+            at = data.find(marker, head + 2 + width * 3)
+        whole = Image.new("1", (strips[0].width, 24 * len(strips)), 1)
+        for index, picture in enumerate(strips):
+            whole.paste(picture, (0, index * 24))
         return whole
 
     def test_thai_comes_out_as_thai_shaped_ink(self):
@@ -231,33 +235,16 @@ class ReceiptRasterTest(unittest.TestCase):
         wrapped = self._decode(self.agent.render("ก" * 80, self.font))
         self.assertGreater(wrapped.height, one_line.height * 2)
 
-    def test_the_picture_goes_out_in_short_bands(self):
-        """One tall image overruns these printers somewhere in the middle.
+    def test_the_picture_goes_out_in_short_strips(self):
+        """One tall image came out with a band of noise through the middle.
 
-        A band of rows comes out as noise, and which band it is moves with the
-        length of the receipt — so it looks like a text problem until the same
-        line prints correctly twice below the mangled one."""
+        Which band it was moved with every copy, so it looked like a text
+        problem right up until the identical line below it printed clean."""
         data = self.agent.render(chr(10).join(["บรรทัด"] * 12), self.font)
-        commands = data.count(bytes([0x1d, 0x76, 0x30, 0x00]))
-        self.assertGreater(commands, 4, "still one big image")
-        for piece in data.split(bytes([0x1d, 0x76, 0x30, 0x00]))[1:]:
-            rows = piece[2] | (piece[3] << 8)
-            self.assertLessEqual(rows, self.agent.BAND_ROWS)
-
-    def test_the_bytes_go_out_one_command_at_a_time(self):
-        """Sending is paced, so the chunks must line up with the commands.
-
-        A chunk that starts in the middle of an image command would be paced
-        just as happily and print just as badly."""
-        data = self.agent.render(chr(10).join(["บรรทัด"] * 10), self.font)
-        pieces = self.agent.in_chunks(data)
-        marker = bytes([0x1d, 0x76, 0x30, 0x00])
-        self.assertGreater(len(pieces), 3, "everything still goes out in one write")
-        self.assertEqual(b"".join(pieces), data, "the bytes changed on the way out")
-        for piece in pieces[1:]:
-            with self.subTest(head=piece[:4].hex()):
-                self.assertTrue(piece.startswith(marker), "a chunk starts mid-command")
-                self.assertEqual(piece.count(marker), 1, "two commands in one chunk")
+        strips = data.count(bytes([0x1b, 0x2a, 33]))
+        self.assertGreater(strips, 4, "still one big image")
+        self.assertIn(bytes([0x1b, 0x33, 24]), data, "the strips would stack with a seam")
+        self.assertIn(bytes([0x1b, 0x32]), data, "line spacing is left changed afterwards")
 
     def test_the_slip_ends_with_enough_paper_to_tear(self):
         data = self.agent.render("บิล", self.font)

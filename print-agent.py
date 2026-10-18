@@ -32,10 +32,6 @@ from pathlib import Path
 
 CONFIG_PATH = Path(__file__).with_name("print-agent.ini")
 PAPER_DOTS = 384          # 58mm paper, 203 dpi
-# How many dot rows go in one image command. Small enough that the printer
-# keeps up with the data, large enough that a receipt is not thousands of
-# commands. 24 rows is the size these printers are happiest with.
-BAND_ROWS = 24
 # Breathing room between image commands. The printer has no flow control:
 # fed flat out it drops bytes and prints a band of noise. Raise it in the
 # ini (band_pause) if a receipt still comes out with a ruined line.
@@ -115,31 +111,32 @@ def render(text: str, font_path: str, size: int = 22) -> bytes:
         draw.text((pad, pad + index * line_height), line, font=font, fill=0)
     mono = image.point(lambda value: 0 if value < 160 else 255, mode="1")
 
-    width_bytes = PAPER_DOTS // 8
     pixels = mono.load()
 
-    def band(top: int, rows: int) -> bytes:
-        out = bytearray([0x1D, 0x76, 0x30, 0x00,
-                         width_bytes & 0xFF, width_bytes >> 8,
-                         rows & 0xFF, rows >> 8])
-        for y in range(top, top + rows):
-            for byte_index in range(width_bytes):
-                byte = 0
-                for bit in range(8):
-                    # In ESC/POS a set bit burns a dot, which is the opposite
-                    # of the image, where 0 is black.
-                    if not pixels[byte_index * 8 + bit, y]:
-                        byte |= 0x80 >> bit
-                out.append(byte)
-        return bytes(out)
+    def strip(top: int) -> bytes:
+        """One 24-dot strip, drawn with the oldest picture command there is.
 
-    # One tall image in a single command overruns these printers: somewhere in
-    # the middle a band of rows comes out as noise, and which band moves with
-    # the length of the receipt. Printing it as a stack of short images gives
-    # the head time to keep up, and each one stands on its own.
-    picture = b"".join(band(top, min(BAND_ROWS, height - top))
-                       for top in range(0, height, BAND_ROWS))
-    return b"\x1b@" + picture + b"\n\n\n\n\x1dV\x00"
+        The newer raster command put a band of noise in the middle of this
+        shop's receipts, in a place that moved with every copy, while this one
+        prints the same page clean.
+        """
+        out = bytearray([0x1B, 0x2A, 33, PAPER_DOTS & 0xFF, PAPER_DOTS >> 8])
+        for x in range(PAPER_DOTS):
+            for byte_index in range(3):
+                value = 0
+                for bit in range(8):
+                    y = top + byte_index * 8 + bit
+                    # A set bit burns a dot, the opposite of the image, where
+                    # 0 is black.
+                    if y < height and not pixels[x, y]:
+                        value |= 0x80 >> bit
+                out.append(value)
+        return bytes(out) + b"\n"
+
+    # ESC 3 24 makes one line feed exactly one strip tall, so the strips stack
+    # with no seam; ESC 2 puts the usual spacing back for whatever comes next.
+    picture = b"".join(strip(top) for top in range(0, height, 24))
+    return b"\x1b@\x1b\x33\x18" + picture + b"\x1b\x32\n\n\n\n\x1dV\x00"
 
 
 # ------------------------------------------------------------- where it goes
@@ -151,22 +148,37 @@ def in_chunks(data: bytes) -> list[bytes]:
     out as noise until the next one resynchronises. That is why the ruined
     line keeps moving and why the identical line below it prints perfectly.
     """
-    marker = bytes([0x1D, 0x76, 0x30, 0x00])
+    marker = bytes([0x1B, 0x2A, 33])
     pieces, at = [], data.find(marker)
     if at == -1:
         return [data]
     if at:
         pieces.append(data[:at])
     while at != -1:
-        following = data.find(marker, at + 4)
+        following = data.find(marker, at + 3)
         pieces.append(data[at:following] if following != -1 else data[at:])
         at = following
     return pieces
 
 
 def send(data: bytes, target: str, pause: float = BAND_PAUSE_SECONDS) -> None:
-    """`windows:<printer name>` for an installed driver, `file:<path>` otherwise."""
+    """Where the bytes go.
+
+    `serial:COM26` for a printer paired over Bluetooth, `windows:<printer
+    name>` for one installed as a Windows printer, `file:<path>` for anything
+    else. Bluetooth is worth the pairing: the link checks and repeats what it
+    carries, so nothing arrives half-missing, and it needs no pacing at all.
+    """
     kind, _, where = target.partition(":")
+    if kind == "serial":
+        import serial                                   # pip install pyserial
+
+        port, _, baud = where.partition("@")
+        with serial.Serial(port, int(baud or 115200), timeout=10, write_timeout=180) as link:
+            for piece in in_chunks(data):
+                link.write(piece)
+            link.flush()
+        return
     if kind == "file":
         with open(where, "wb") as device:
             for piece in in_chunks(data):
@@ -175,7 +187,8 @@ def send(data: bytes, target: str, pause: float = BAND_PAUSE_SECONDS) -> None:
                 time.sleep(pause)
         return
     if kind != "windows":
-        raise SystemExit(f"ไม่รู้จักปลายทาง {target!r} (ใช้ windows:ชื่อเครื่องพิมพ์ หรือ file:พาธ)")
+        raise SystemExit(f"ไม่รู้จักปลายทาง {target!r} "
+                         "(ใช้ serial:COM26, windows:ชื่อเครื่องพิมพ์ หรือ file:พาธ)")
     import win32print
 
     handle = win32print.OpenPrinter(where)
