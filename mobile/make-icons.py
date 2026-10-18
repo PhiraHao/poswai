@@ -7,7 +7,7 @@ whenever the logo or the mascot changes:
 
 Both come from the web app's own assets, so there is one logo, not a copy per
 platform:
-  - icon: assets/brand-logo.webp — the W POS WAI mark the owner designed
+  - icon: assets/brand-icon-art.webp — the lettering of the owner's POS WAI icon
   - opening screen: assets/mascot-pos.webp above the same logo
 
 Needs Pillow (`pip install pillow`).
@@ -21,10 +21,10 @@ HERE = Path(__file__).resolve().parent
 ASSETS = HERE.parent / "assets"
 RES = HERE / "android" / "app" / "src" / "main" / "res"
 
-LOGO = ASSETS / "brand-logo.webp"
+LOGO = ASSETS / "brand-icon-art.webp"   # the lettering of the owner's POS WAI icon
 MASCOT = ASSETS / "mascot-pos.webp"
-BACKGROUND = (255, 251, 240, 255)       # warm white: the yellow logo reads well on it
-BACKGROUND_HEX = "#FFFBF0"
+BACKGROUND = (250, 246, 238, 255)       # warm white: the yellow logo reads well on it
+BACKGROUND_HEX = "#FAF6EE"
 
 # Android density buckets: the multiplier from dp to pixels.
 DENSITIES = {"mdpi": 1, "hdpi": 1.5, "xhdpi": 2, "xxhdpi": 3, "xxxhdpi": 4}

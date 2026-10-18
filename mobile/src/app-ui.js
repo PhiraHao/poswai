@@ -435,7 +435,7 @@
     return `<h1 class="aui-h1">ร้าน</h1>
       <section class="aui-hero">
         <img src="${asset('mascot-pos.webp')}" alt="น้องไหว มาสคอต POS WAI" class="aui-hero-art">
-        <div class="aui-hero-text"><img src="${asset('brand-logo.webp')}" alt="POS WAI" class="aui-hero-logo">
+        <div class="aui-hero-text"><img src="${asset('brand-icon.webp')}" alt="POS WAI" class="aui-hero-logo">
           <strong>${esc(shop.name || 'ร้านของฉัน')}</strong>
           <small>${esc(person ? `${person.name} · ${ROLE_NAMES[person.role] || person.role}` : 'ยังไม่เข้าสู่ระบบ')}</small>
           <small>${navigator.onLine ? 'ออนไลน์ · ข้อมูลอัปเดตอัตโนมัติ' : 'ออฟไลน์ · ขายต่อได้ ส่งทีหลัง'}</small>
@@ -711,8 +711,17 @@
     paint();
   };
 
+  /* The owner's newer icon replaces the older lettering wherever the page
+     shows it — the sign-in landing first of all. */
+  const newLogo = () => document.querySelectorAll('img[src$="brand-logo.webp"]').forEach((img) => {
+    img.src = asset('brand-icon.webp');
+    img.style.objectFit = 'contain';
+  });
+
   const start = () => {
     document.body.append(root);
+    newLogo();
+    new MutationObserver(newLogo).observe(document.body, {childList: true, subtree: true});
     // The page redraws after every change it makes; this screen follows it.
     if (typeof window.renderAll === 'function') {
       const original = window.renderAll;
