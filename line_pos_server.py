@@ -469,6 +469,10 @@ def init_db() -> None:
         ordered_offline_at TEXT, closed_offline_at TEXT,
         taken_by INTEGER, notes_json TEXT NOT NULL DEFAULT '[]',
         created_at TEXT DEFAULT CURRENT_TIMESTAMP)""")
+    offline_columns = {row[1] for row in cur.execute("PRAGMA table_info(offline_sales)")}
+    for column, kind in (("reviewed_at", "TEXT"), ("reviewed_by", "INTEGER")):
+        if column not in offline_columns:
+            cur.execute(f"ALTER TABLE offline_sales ADD COLUMN {column} {kind}")
     cur.execute("""CREATE TABLE IF NOT EXISTS leave_event_ids (
         event_id TEXT PRIMARY KEY, leave_id INTEGER NOT NULL)""")
     init_notifications(conn)
@@ -2282,6 +2286,50 @@ def list_settled_orders(request: Request, branch_id: int = 1, limit: int = 20):
                         "offline_notes": offline.get(row["order_no"], [])} for row in rows]}
 
 
+@app.get("/api/reports/offline-sales")
+def list_offline_sales(request: Request, branch_id: int = 1, show: str = "unreviewed"):
+    """Bills sold while the shop's internet was down, for the owner to check.
+
+    Each one was recorded as it happened — at the price the till charged, with
+    stock allowed to go negative — and carries what differed from the menu when
+    it reached the server. "unreviewed" is the to-do list; "all" the history.
+    """
+    if branch_id < 1 or show not in ("unreviewed", "all"):
+        raise HTTPException(400, "คำขอไม่ถูกต้อง")
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT o.order_no,o.ordered_offline_at,o.closed_offline_at,o.notes_json,o.reviewed_at,"
+            "e.table_no,e.total_amount,e.status,p.payment_method,p.net_amount,"
+            "t.name AS taken_by_name,r.name AS reviewed_by_name "
+            "FROM offline_sales o JOIN order_events e ON e.order_no=o.order_no "
+            "LEFT JOIN pos_orders p ON p.order_no=o.order_no "
+            "LEFT JOIN staffs t ON t.id=o.taken_by LEFT JOIN staffs r ON r.id=o.reviewed_by "
+            "WHERE o.branch_id=? " + ("AND o.reviewed_at IS NULL " if show == "unreviewed" else "") +
+            "ORDER BY o.created_at DESC LIMIT 200", (branch_id,)).fetchall()
+        waiting = conn.execute("SELECT COUNT(*) FROM offline_sales WHERE branch_id=? AND reviewed_at IS NULL",
+                               (branch_id,)).fetchone()[0]
+    return {"branch_id": branch_id, "unreviewed": waiting,
+            "sales": [{**{key: row[key] for key in row.keys() if key != "notes_json"},
+                       "notes": json.loads(row["notes_json"])} for row in rows]}
+
+
+@app.post("/api/reports/offline-sales/{order_no}/review")
+def review_offline_sale(order_no: str, request: Request):
+    """The owner has looked at this one. Kept, never deleted: the record stays."""
+    with closing(connect_db()) as conn, conn:
+        row = conn.execute("SELECT branch_id,reviewed_at FROM offline_sales WHERE order_no=?",
+                           (order_no,)).fetchone()
+        if not row:
+            raise HTTPException(404, "ไม่พบบิลนี้")
+        staff = require_staff(request, roles=("owner", "manager"), branch_id=row[0])
+        if not row[1]:
+            conn.execute("UPDATE offline_sales SET reviewed_at=CURRENT_TIMESTAMP,reviewed_by=? WHERE order_no=?",
+                         (staff["id"], order_no))
+    return {"status": "reviewed", "order_no": order_no}
+
+
 @app.get("/api/kds")
 def list_kds_tickets(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
@@ -3331,7 +3379,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

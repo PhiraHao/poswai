@@ -174,6 +174,26 @@ class OfflineSalesTest(unittest.TestCase):
         self.assertTrue(any("เมนูตอนนี้ 60.00" in note for note in settled["OFF13"]["offline_notes"]))
         self.assertFalse(settled["ON3"]["offline"])
 
+    # ------------------------------------------------------------ the review
+    def test_the_owner_sees_the_offline_bills_and_can_tick_them_off(self):
+        self.manager.put("/api/menu/M2", json={"branch_id": 1, "name": "ชาไทย", "price": 60})
+        self.order(self.cashier, "OFF20", [("M2", "ชาไทย", 50, 1)], 50)
+        self.close(self.cashier, "OFF20", 50, offline_at="2026-10-18T19:20:00Z", taken_by=2)
+        listed = self.manager.get("/api/reports/offline-sales").json()
+        self.assertEqual(listed["unreviewed"], 1)
+        sale = listed["sales"][0]
+        self.assertEqual((sale["order_no"], sale["status"], sale["taken_by_name"]), ("OFF20", "paid", "cashier2"))
+        self.assertTrue(any("เมนูตอนนี้ 60.00" in note for note in sale["notes"]))
+        self.assertEqual(self.manager.post("/api/reports/offline-sales/OFF20/review").status_code, 200)
+        self.assertEqual(self.manager.get("/api/reports/offline-sales").json()["unreviewed"], 0)
+        history = self.manager.get("/api/reports/offline-sales", params={"show": "all"}).json()["sales"]
+        self.assertEqual(history[0]["reviewed_by_name"], "manager1")
+
+    def test_a_cashier_cannot_see_or_tick_the_review_list(self):
+        self.order(self.cashier, "OFF21", [("M2", "ชาไทย", 50, 1)], 50)
+        self.assertEqual(self.cashier.get("/api/reports/offline-sales").status_code, 403)
+        self.assertEqual(self.cashier.post("/api/reports/offline-sales/OFF21/review").status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()
