@@ -319,3 +319,19 @@ html.aui-on #toastContainer .toast { max-width: 100%; border-radius: 14px; font-
 .aui-scan p { position: relative; color: #fff; font-size: 15px; margin: 18px 0 0; text-align: center; padding: 0 24px; }
 .aui-scan-close { position: absolute; top: calc(var(--aui-safe-t) + 14px); right: 14px; width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .9); display: grid; place-items: center; color: #172322; }
 .aui-scan-type { position: absolute; bottom: calc(var(--aui-safe-b) + 32px); left: 50%; transform: translateX(-50%); min-height: 46px; padding: 0 22px; border: 0; border-radius: 23px; background: var(--aui-amber); color: #172322; font: 700 15px 'Noto Sans Thai', sans-serif; }
+
+/* payment sheet */
+.aui-payitems { margin: 4px 0 0; padding: 0; }
+.aui-payitems li span::before { display: none; }
+.aui-paytotal { border-top: 1px dashed #dfe4e8; margin-top: 6px; }
+.aui-paytotal strong { font-size: 28px; }
+.aui-quick { margin: 10px 0 4px; }
+.aui-change { display: flex; justify-content: space-between; align-items: baseline; background: #f6f7f9; border-radius: 12px; padding: 10px 14px; margin: 8px 0 12px; font-weight: 600; }
+.aui-change strong { font-size: 22px; }
+.aui-change .red { color: var(--aui-red); }
+.aui-qrbox { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 12px; margin-bottom: 12px; background: #fff; border: 1px solid var(--aui-line); border-radius: 16px; text-align: center; }
+.aui-qrbox canvas { width: 236px; height: 236px; image-rendering: pixelated; }
+.aui-qrbox small { font-size: 12px; color: var(--aui-muted); }
+.aui-paymore { margin-top: 10px; }
+.aui-paymore .aui-btn { font-size: 13px; font-weight: 600; }
+.aui-paysheet .aui-btn.wide { margin-top: 0; min-height: 50px; font-size: 15px; }

@@ -318,6 +318,69 @@
       : empty('ตะกร้าว่าง', 'แตะเมนูเพื่อเพิ่มรายการ')}`);
   };
 
+  // ------------------------------------------------------------ payment
+  /** Take a table's money: cash with change, or PromptPay with its QR. The
+   *  closing itself is the page's own confirmPaymentAndPrint — the same queue,
+   *  the same receipt — so nothing about money is decided here. */
+  const pay = {table: '', method: 'cash', received: ''};
+  const paySheet = (table) => {
+    pay.table = String(table);
+    if (typeof selectCashierTable === 'function') selectCashierTable(pay.table);
+    const calc = typeof getTableGrandTotalWithTax === 'function' ? getTableGrandTotalWithTax(pay.table) : {grand: 0, sub: 0, sc: 0, vat: 0};
+    if (!(calc.grand > 0)) { toast('โต๊ะนี้ไม่มียอดค้างชำระ'); closeSheet(); return; }
+    const lines = new Map();
+    for (const order of pos().orders.filter((o) => String(o.table) === pay.table)) {
+      for (const item of order.items || []) {
+        const key = `${item.name}|${item.price}`;
+        const line = lines.get(key) || {name: item.name, price: Number(item.price) || 0, qty: 0};
+        line.qty += Number(item.qty) || 1;
+        lines.set(key, line);
+      }
+    }
+    const total = calc.grand;
+    const got = Number(pay.received) || 0;
+    const quick = [...new Set([total, Math.ceil(total / 100) * 100, Math.ceil(total / 500) * 500, 1000].filter((v) => v >= total))].slice(0, 4);
+    const promptPay = pos().promptPayId;
+    openSheet(`
+      <div class="aui-sheet-head"><h2>รับเงิน · โต๊ะ ${esc(pay.table)}</h2><button type="button" class="aui-iconbtn" data-act="close" aria-label="ปิด">${icon('close')}</button></div>
+      <ul class="aui-items aui-payitems">${[...lines.values()].map((l) => `<li><span>${esc(l.name)} × ${l.qty}</span><b>${baht(l.price * l.qty)}</b></li>`).join('')}</ul>
+      ${calc.sc > 0 || calc.vat > 0 ? `<p class="aui-note">บิลนี้บวกค่าบริการหรือ VAT อยู่ ปิดในแอปยังไม่ได้ ใช้หน้าแคชเชียร์เต็ม</p>` : ''}
+      <div class="aui-sum aui-paytotal"><span>ยอดที่ต้องชำระ</span><strong>${baht(total)}</strong></div>
+      <div class="aui-seg amber">
+        <button type="button" data-act="paymethod" data-value="cash" class="${pay.method === 'cash' ? 'on' : ''}">${icon('coins', 'aui-i-xs')} เงินสด</button>
+        <button type="button" data-act="paymethod" data-value="promptpay" class="${pay.method === 'promptpay' ? 'on' : ''}">${icon('scan', 'aui-i-xs')} พร้อมเพย์</button></div>
+      ${pay.method === 'cash' ? `
+        <label class="aui-field">รับเงินมา<input type="number" inputmode="decimal" min="0" step="1" data-act="received" placeholder="${total.toFixed(2)}" value="${esc(pay.received)}"></label>
+        <div class="aui-chips aui-quick">${quick.map((v) => `<button type="button" data-act="quick" data-value="${v}" class="${got === v ? 'on' : ''}">${v === total ? 'พอดี ' : ''}${baht(v)}</button>`).join('')}</div>
+        <div class="aui-change" data-slot-change>${changeText(total)}</div>
+        <button type="button" class="aui-btn primary wide" data-act="paycash" ${got && got < total ? 'disabled' : ''}>${icon('printer', 'aui-i-xs')} รับเงินสด และพิมพ์ใบเสร็จ</button>`
+      : promptPay ? `
+        <div class="aui-qrbox"><canvas id="auiPayQr" width="236" height="236" aria-label="QR พร้อมเพย์ ${baht(total)}"></canvas>
+          <small>ให้ลูกค้าสแกนจ่าย ${baht(total)} แล้วเปิดแอปธนาคารของร้านดูว่าเงินเข้าจริง</small></div>
+        <button type="button" class="aui-btn primary wide" data-act="paypp">${icon('check', 'aui-i-xs')} เห็นเงินเข้าบัญชีแล้ว · ปิดบิล</button>`
+      : `<p class="aui-note">ยังไม่ได้ตั้งเบอร์/เลขพร้อมเพย์ของร้าน ตั้งได้ที่ ร้าน → ตั้งค่าร้าน</p>`}
+      <div class="aui-sheet-actions aui-paymore">
+        <button type="button" class="aui-btn grow" data-act="paybill">${icon('receipt', 'aui-i-xs')} พิมพ์ใบแจ้งยอด</button>
+        <button type="button" class="aui-btn grow" data-act="payfull">แยกบิล · ภาษี · ย้ายโต๊ะ</button></div>`, 'aui-paysheet');
+    if (pay.method === 'promptpay' && promptPay) {
+      try { drawQrCodeOnCanvas('auiPayQr', generatePromptPayPayload(promptPay, total)); }
+      catch (error) { toast(error.message); }
+    }
+  };
+  const changeText = (total) => {
+    const got = Number(pay.received) || 0;
+    if (!got) return `<span>เงินทอน</span><strong>฿0</strong>`;
+    if (got < total) return `<span class="red">ยังขาดอีก</span><strong class="red">${baht(total - got)}</strong>`;
+    return `<span>เงินทอน</span><strong>${baht(got - total)}</strong>`;
+  };
+  /** After a close: the table has left the open bills, so the sheet goes too. */
+  const afterPay = () => {
+    if (pos().orders.some((o) => String(o.table) === pay.table)) return;
+    pay.received = '';
+    if (!slot('sheet').hidden) history.back();
+    paint();
+  };
+
   // ======================================================== ออเดอร์
   /** Open bills, each with what the kitchen says about it. */
   const tickets = () => {
@@ -649,8 +712,7 @@
       case 'tablepick': {
         const open = pos().orders.some((o) => String(o.table) === String(value));
         if (open) {
-          openWeb('cashier', '', `รับเงิน · โต๊ะ ${value}`);
-          if (typeof selectCashierTable === 'function') selectCashierTable(value);
+          pressed({dataset: {act: 'pay', value}});
         } else if (pos().cart.length && String(pos().customerTable) !== String(value)) {
           toast('ส่งหรือล้างตะกร้าก่อนเปลี่ยนโต๊ะ');
         } else {
@@ -725,9 +787,33 @@
         break;
       }
       case 'pay':
-        openWeb('cashier', '', `รับเงิน · โต๊ะ ${value}`);
-        if (typeof selectCashierTable === 'function') selectCashierTable(value);
+        pay.method = 'cash'; pay.received = '';
+        history.pushState({aui: 'sheet'}, '');
+        paySheet(value);
         break;
+      case 'paymethod': pay.method = value; paySheet(pay.table); break;
+      case 'quick': pay.received = String(value); paySheet(pay.table); break;
+      case 'paycash':
+        el.disabled = true;
+        await confirmPaymentAndPrint('เงินสด (Cash)');
+        el.disabled = false;
+        afterPay();
+        break;
+      case 'paypp':
+        confirmBankTransferSeen();   // asks, then closes; the redraw after it shuts this sheet
+        break;
+      case 'paybill':
+        if (typeof printReceiptForTable === 'function') printReceiptForTable(pay.table, 'ใบแจ้งยอด (ยังไม่ชำระ)', false);
+        break;
+      case 'payfull': {
+        const table = pay.table;
+        history.back();
+        setTimeout(() => {
+          openWeb('cashier', 'ชำระเงิน', `รับเงิน · โต๊ะ ${table}`);
+          if (typeof selectCashierTable === 'function') selectCashierTable(table);
+        }, 30);
+        break;
+      }
       case 'online':
         el.disabled = true;
         try {
@@ -809,6 +895,15 @@
     const el = event.target;
     if (el.dataset.act === 'query') { ui.query = el.value; paint(); }
     if (el.dataset.act === 'gquery') { ui.goodsQuery = el.value; paint(); }
+    if (el.dataset.act === 'received') {
+      pay.received = el.value;
+      const total = getTableGrandTotalWithTax(pay.table).grand;
+      const box = slot('sheet').querySelector('[data-slot-change]');
+      if (box) box.innerHTML = changeText(total);
+      const go = slot('sheet').querySelector('[data-act="paycash"]');
+      if (go) go.disabled = Boolean(Number(el.value)) && Number(el.value) < total;
+      slot('sheet').querySelectorAll('[data-act="quick"]').forEach((b) => b.classList.toggle('on', Number(b.dataset.value) === Number(el.value)));
+    }
   });
 
   // ------------------------------------------------------------ wiring
@@ -836,7 +931,10 @@
       const original = window.renderAll;
       window.renderAll = function wrapped(...args) {
         const result = original.apply(this, args);
-        if (document.documentElement.classList.contains('aui-on') && !document.documentElement.classList.contains('aui-sub')) paint();
+        if (document.documentElement.classList.contains('aui-on') && !document.documentElement.classList.contains('aui-sub')) {
+          if (!slot('sheet').hidden && slot('sheet').classList.contains('aui-paysheet')) afterPay();
+          else paint();
+        }
         return result;
       };
     }
