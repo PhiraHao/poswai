@@ -39,11 +39,11 @@
   sendButton.type = 'button';
   sendButton.className = 'btn btn-sm btn-primary';
   sendButton.textContent = '🖨️ ส่งไปเครื่องพิมพ์';
-  sendButton.addEventListener('click', async () => {
+  const sendPreview = async ({quiet = false} = {}) => {
     const preview = $('thermalReceiptPreview');
     const body = (preview?.textContent || '').trim();
     if (!body || body.startsWith('พร้อมพิมพ์')) {
-      window.showToast?.('⚠️ กดพิมพ์ใบแจ้งหนี้หรือปิดบิลก่อน แล้วค่อยส่งไปเครื่องพิมพ์');
+      if (!quiet) window.showToast?.('⚠️ กดพิมพ์ใบแจ้งหนี้หรือปิดบิลก่อน แล้วค่อยส่งไปเครื่องพิมพ์');
       return;
     }
     sendButton.disabled = true;
@@ -58,9 +58,30 @@
         : '✅ ส่งไปเครื่องพิมพ์แล้ว');
       if (!panel.hidden) loadAgents();
     } catch (error) {
-      window.showToast?.(`⚠️ ${error.message}`);
+      /* A shop with no printer agent gets this on every preview, which is
+         noise rather than news. It only matters when someone asked for it. */
+      if (!quiet || !error.message.includes('ยังไม่ได้ตั้งค่าเครื่องพิมพ์')) {
+        window.showToast?.(`⚠️ ${error.message}`);
+      }
     } finally { sendButton.disabled = false; sendButton.textContent = was; }
-  });
+  };
+  sendButton.addEventListener('click', () => sendPreview());
+
+  /* A button that says "พิมพ์" has to print. It used to draw the receipt on
+     screen and stop there, leaving a second button elsewhere as the step that
+     actually prints — which reads as a broken printer, not as a two-step job.
+     The preview still appears; it just also comes out of the printer. */
+  const alsoPrint = name => {
+    const original = window[name];
+    if (typeof original !== 'function' || original.poswaiPrints) return;
+    const wrapped = function (...args) {
+      const result = original.apply(this, args);
+      Promise.resolve(result).then(() => sendPreview({quiet: true})).catch(() => {});
+      return result;
+    };
+    wrapped.poswaiPrints = true;
+    window[name] = wrapped;
+  };
 
   /* ---- the owner's setup box -------------------------------------------- */
   const panel = document.createElement('div');
@@ -169,6 +190,8 @@
 
   /* ---- mounting --------------------------------------------------------- */
   const mount = () => {
+    alsoPrint('printReceiptForTable');
+    alsoPrint('confirmPaymentAndPrint');
     const preview = $('thermalReceiptPreview');
     const header = preview?.closest('.card')?.querySelector('.card-header div:last-child');
     if (header && sendButton.parentElement !== header) header.prepend(sendButton);
