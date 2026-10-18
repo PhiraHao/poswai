@@ -5,7 +5,14 @@
   "server": {
     "url": "https://poswai.zzaxstudio.com",
     "cleartext": false,
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "allowNavigation": [
+      "poswai.zzaxstudio.com",
+      "accounts.google.com",
+      "*.google.com",
+      "access.line.me",
+      "*.line.me"
+    ]
   },
   "plugins": {
     "BluetoothLe": {
@@ -22,8 +29,7 @@
     }
   },
   "ios": {
-    "contentInset": "always",
-    "limitsNavigationsToAppBoundDomains": true
+    "contentInset": "always"
   },
   "android": {
     "allowMixedContent": false
