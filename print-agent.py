@@ -216,6 +216,7 @@ def main() -> None:
         return
 
     shop = Shop(section["base_url"], section["shop"], section["key"])
+    refused = 0
     print(f"กำลังรอใบเสร็จจาก {section['base_url']} ร้าน {section['shop']}")
     print("ปิดโปรแกรมด้วย Ctrl+C\n")
     while True:
@@ -230,14 +231,25 @@ def main() -> None:
             for _ in range(max(1, int(job.get("copies", 1)))):
                 print_text(job["body"], section)
             shop.done(job["job_id"])
+            refused = 0
             print(f"พิมพ์แล้ว: {job.get('title') or job['job_id']}")
         except KeyboardInterrupt:
             print("\nหยุดแล้ว")
             return
         except urllib.error.HTTPError as error:
             if error.code == 401:
-                raise SystemExit("กุญแจเครื่องพิมพ์ไม่ถูกต้อง หรือถูกลบไปแล้ว "
-                                 f"แก้ที่ {CONFIG_PATH} แล้วเปิดใหม่")
+                # A shop that reissues its key mid-service, or a server
+                # restarting, must not leave the counter with no printer for
+                # the rest of the day. Say so loudly and keep asking: the fix
+                # is to paste the new key in, and this picks it up by itself.
+                refused += 1
+                print(f"กุญแจเครื่องพิมพ์ใช้ไม่ได้ (ครั้งที่ {refused}) · "
+                      f"แก้ key ในไฟล์ {CONFIG_PATH.name} แล้วรอสักครู่ เดี๋ยวลองใหม่ให้เอง",
+                      file=sys.stderr)
+                section = load_settings()
+                shop = Shop(section["base_url"], section["shop"], section["key"])
+                time.sleep(ERROR_BACKOFF_SECONDS)
+                continue
             print(f"เซิร์ฟเวอร์ตอบ {error.code} · รอแล้วลองใหม่", file=sys.stderr)
             time.sleep(ERROR_BACKOFF_SECONDS)
         except Exception as error:                       # noqa: BLE001 - keep printing
