@@ -1,0 +1,25 @@
+{
+  "name": "poswai-print",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ตัวพิมพ์ใบเสร็จของ POS WAI — รับงานจากคิวของร้านแล้วพิมพ์ออกเครื่องพิมพ์ Bluetooth",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/escpos.test.mjs",
+    "serve": "node --watch-path=www -e \"import('node:http').then(({default:http})=>import('node:fs').then(({default:fs})=>http.createServer((q,s)=>{const p='www'+(q.url==='/'?'/index.html':q.url.split('?')[0]);fs.readFile(p,(e,d)=>{if(e){s.writeHead(404);s.end('no');return}s.writeHead(200,{'Content-Type':p.endsWith('.css')?'text/css':p.endsWith('.js')?'text/javascript':'text/html'});s.end(d)})}).listen(5190,()=>console.log('http://localhost:5190'))))\"",
+    "sync": "cap sync",
+    "android": "cap open android",
+    "ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor-community/bluetooth-le": "7.1.1",
+    "@capacitor/android": "7.4.3",
+    "@capacitor/core": "7.4.3",
+    "@capacitor/ios": "7.4.3",
+    "@capacitor/keep-awake": "7.0.2",
+    "@capacitor/preferences": "7.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.4.3"
+  }
+}

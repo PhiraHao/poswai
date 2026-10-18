@@ -3,3 +3,7 @@ __pycache__/
 *.db
 .claude/
 localtest/
+print-agent.ini
+print-app/node_modules/
+print-app/android/
+print-app/ios/
