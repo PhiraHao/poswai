@@ -206,5 +206,39 @@ class ReceiptRasterTest(unittest.TestCase):
                                 "no room left to tear the slip off")
 
 
+class PageAssetsTest(unittest.TestCase):
+    """Every script and stylesheet the page asks for has to come back.
+
+    The server serves these from a list of names it knows, so adding a file
+    to the page without adding it to that list ships a page that quietly
+    loses a feature: the browser fetches, gets a 404, and carries on without
+    the panel or the button that file was carrying.
+    """
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(self.folder.cleanup)
+        for item in (patch.object(server, "DB_PATH", Path(self.folder.name) / "assets.db"),
+                     patch.object(server, "PREVIEW_ONLY", False),
+                     patch.object(server, "_prepared_databases", set())):
+            item.start()
+            self.addCleanup(item.stop)
+        server.init_db()
+        self.client = TestClient(server.app)
+        self.client.__enter__()
+        self.addCleanup(lambda: self.client.__exit__(None, None, None))
+        self.page = (Path(__file__).parent / "index.html").read_text(encoding="utf-8")
+
+    def test_every_asset_the_page_asks_for_is_served(self):
+        import re
+        wanted = set(re.findall(r'(?:src|href)="(/[\w./-]+\.(?:js|css))(?:\?v=\d+)?"', self.page))
+        self.assertGreater(len(wanted), 10, "the page suddenly asks for almost nothing")
+        for path in sorted(wanted):
+            with self.subTest(asset=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200,
+                                 f"{path} is on the page but the server will not serve it")
+
+
 if __name__ == "__main__":
     unittest.main()
