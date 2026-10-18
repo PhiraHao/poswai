@@ -291,3 +291,31 @@ html.aui-on:not(.aui-sub) .app-netbar { top: calc(var(--aui-safe-t) + 57px); }
 /* Messages drop in under the header, clear of the cart bar and the sheets. */
 html.aui-on #toastContainer { position: fixed !important; top: calc(var(--aui-safe-t) + 66px) !important; bottom: auto !important; left: 12px !important; right: 12px !important; transform: none !important; z-index: 95 !important; display: flex; justify-content: center; pointer-events: none; }
 html.aui-on #toastContainer .toast { max-width: 100%; border-radius: 14px; font-size: 14px; }
+
+/* ขาย → โต๊ะ / รับเงิน */
+.aui-seg .aui-i-xs { width: 17px; height: 17px; }
+.aui-tablesum { display: grid; grid-template-columns: 1fr 1fr; background: #fff; border: 1px solid var(--aui-line); border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; box-shadow: var(--aui-shadow); }
+.aui-tablesum span + span { border-left: 1px solid var(--aui-line); padding-left: 14px; }
+.aui-tablesum small { display: block; font-size: 12px; color: var(--aui-muted); }
+.aui-tablesum strong { font-size: 20px; font-weight: 700; }
+.aui-tablesum em { font-style: normal; font-size: 13px; color: var(--aui-muted); font-weight: 600; }
+.aui-tables { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 600px) { .aui-tables { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.aui-table { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; padding: 12px 14px; min-height: 118px; background: #fff !important; border: 1px solid var(--aui-line) !important; border-radius: 16px; box-shadow: var(--aui-shadow); }
+.aui-table.busy { background: #fff8e2 !important; border-color: #f1cf62 !important; }
+.aui-table-top { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-bottom: 4px; color: #3a4647; }
+.aui-tstate { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; background: #eef1f3; color: #66717a; }
+.aui-tstate.eat { background: #ffe9a8; color: #7a5600; }
+.aui-tstate.ready { background: #fde9e7; color: #c23a2f; }
+.aui-table strong { font-size: 16px; font-weight: 700; }
+.aui-table small { font-size: 12px; color: var(--aui-muted); }
+.aui-table b { margin-top: auto; font-size: 15px; font-weight: 700; }
+.aui-table:not(.busy) b { font-size: 12px; font-weight: 500; color: #8a949a; }
+
+/* camera scanner */
+.aui-scan { position: fixed; inset: 0; z-index: 120; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.aui-scan video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.aui-scan-frame { position: relative; width: 70vw; max-width: 320px; aspect-ratio: 1.4; border: 3px solid var(--aui-amber); border-radius: 18px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .45); }
+.aui-scan p { position: relative; color: #fff; font-size: 15px; margin: 18px 0 0; text-align: center; padding: 0 24px; }
+.aui-scan-close { position: absolute; top: calc(var(--aui-safe-t) + 14px); right: 14px; width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(255, 255, 255, .9); display: grid; place-items: center; color: #172322; }
+.aui-scan-type { position: absolute; bottom: calc(var(--aui-safe-b) + 32px); left: 50%; transform: translateX(-50%); min-height: 46px; padding: 0 22px; border: 0; border-radius: 23px; background: var(--aui-amber); color: #172322; font: 700 15px 'Noto Sans Thai', sans-serif; }

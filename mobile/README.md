@@ -123,6 +123,12 @@ localStorage.setItem('poswai.app.server', 'http://192.168.1.50:8000')
 - `android/local.properties` ต้อง escape โคลอน: `sdk.dir=C\:/Users/phira/AppData/Local/Android/Sdk`
   ไม่งั้น gradle ขึ้น Invalid file path
 - Capacitor รุ่นปัจจุบันคือ 8
+- ปุ่มสแกนในแท็บขายใช้กล้อง (`BarcodeDetector` ของ WebView) — โฟลเดอร์ android ไม่อยู่ใน git
+  ถ้าสร้างใหม่ต้องใส่ใน `AndroidManifest.xml` ใต้ INTERNET เอง:
+  `<uses-permission android:name="android.permission.CAMERA" />` และ
+  `<uses-feature android:name="android.hardware.camera" android:required="false" />`
+- อัปเดตแอปด้วย `adb install -r` เท่านั้น ห้าม `adb uninstall` — ถอนแล้วร้านหลุดออกจากระบบ
+  และลืมเครื่องพิมพ์ที่เลือกไว้
 
 ## ไอโฟน
 

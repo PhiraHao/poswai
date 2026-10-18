@@ -79,13 +79,13 @@
     {id: 'shop', label: 'ร้าน', icon: 'shop', allowed: () => true},
   ];
   const ui = {
-    tab: 'sell', category: 'ทั้งหมด', query: '', mode: 'ทานที่ร้าน',
+    tab: 'sell', salePane: 'menu', category: 'ทั้งหมด', query: '', mode: 'ทานที่ร้าน',
     orderStatus: 'cooking', channel: 'store', goodsPane: 'menu', goodsQuery: '',
     online: [], settled: [], report: null, reportError: '', reportAt: 0,
   };
   try { Object.assign(ui, JSON.parse(sessionStorage.getItem('aui') || '{}')); } catch (_) { /* fresh */ }
   const remember = () => {
-    try { sessionStorage.setItem('aui', JSON.stringify({tab: ui.tab, goodsPane: ui.goodsPane, orderStatus: ui.orderStatus, channel: ui.channel})); } catch (_) { /* fine */ }
+    try { sessionStorage.setItem('aui', JSON.stringify({tab: ui.tab, salePane: ui.salePane, goodsPane: ui.goodsPane, orderStatus: ui.orderStatus, channel: ui.channel})); } catch (_) { /* fine */ }
   };
 
   // ---------------------------------------------------------------- frame
@@ -168,8 +168,9 @@
       .filter((m) => ui.category === 'ทั้งหมด' || m.category === ui.category)
       .filter((m) => !q || m.name.toLowerCase().includes(q) || String(m.barcode || '').toLowerCase().includes(q));
     const inCart = (m) => pos().cart.filter((i) => i.id === m.id).reduce((n, i) => n + i.qty, 0);
+    if (ui.salePane === 'tables' && can('cashier')) return `<h1 class="aui-h1">ขาย</h1>${saleTabs()}${tablesPane()}`;
     return `
-      <h1 class="aui-h1">ขาย</h1>
+      <h1 class="aui-h1">ขาย</h1>${saleTabs()}
       <div class="aui-context">
         <label class="aui-select">${icon('table')}
           <select data-act="table" aria-label="เลือกโต๊ะ">${tables.map((t) => `<option value="${esc(t.no)}" ${String(t.no) === current ? 'selected' : ''}>โต๊ะ ${esc(t.no)}</option>`).join('') || `<option>โต๊ะ ${esc(current)}</option>`}</select>${icon('down', 'aui-i-xs')}</label>
@@ -189,6 +190,101 @@
           <span class="aui-pbody"><strong>${esc(m.name)}</strong><span class="aui-prow"><b>${baht(m.price)}</b><span class="aui-plus">${icon('plus')}</span></span></span>
         </button>`;
       }).join('')}</div>` : empty(menu().length ? 'ไม่พบเมนู' : 'ยังไม่มีเมนู', menu().length ? 'ลองค้นด้วยคำอื่น' : 'เพิ่มเมนูได้ที่แท็บสินค้า')}`;
+  };
+
+  /** Menu, or the room: which tables are eating and what each owes. */
+  const saleTabs = () => (can('cashier') ? `<div class="aui-seg amber">
+    <button type="button" data-act="spane" data-value="menu" class="${ui.salePane !== 'tables' ? 'on' : ''}">${icon('bag', 'aui-i-xs')} เมนู</button>
+    <button type="button" data-act="spane" data-value="tables" class="${ui.salePane === 'tables' ? 'on' : ''}">${icon('coins', 'aui-i-xs')} โต๊ะ / รับเงิน</button></div>` : '');
+
+  const tablesPane = () => {
+    const tables = pos().tablesList || [];
+    const owed = (no) => (typeof getTableSubtotal === 'function' ? getTableSubtotal(no) : 0);
+    const bills = (no) => pos().orders.filter((o) => String(o.table) === String(no));
+    const busy = tables.filter((t) => bills(t.no).length);
+    const total = busy.reduce((sum, t) => sum + owed(t.no), 0);
+    return `<div class="aui-tablesum"><span><small>โต๊ะที่ทานอยู่</small><strong>${busy.length} <em>/ ${tables.length} โต๊ะ</em></strong></span>
+        <span><small>ยอดรอเก็บเงิน</small><strong>${baht(total)}</strong></span></div>
+      ${tables.length ? `<div class="aui-tables">${tables.map((t) => {
+        const open = bills(t.no);
+        const ready = open.length && open.every((o) => o.status === 'ready');
+        return `<button type="button" class="aui-table ${open.length ? 'busy' : ''}" data-act="tablepick" data-value="${esc(t.no)}">
+          <span class="aui-table-top">${icon('table')}<span class="aui-tstate ${open.length ? (ready ? 'ready' : 'eat') : ''}">${open.length ? (ready ? 'รอชำระ' : 'ทานอยู่') : 'ว่าง'}</span></span>
+          <strong>โต๊ะ ${esc(t.no)}</strong><small>${esc(t.zone || '')}</small>
+          <b>${open.length ? baht(owed(t.no)) : 'แตะเพื่อสั่งอาหาร'}</b></button>`;
+      }).join('')}</div>` : empty('ยังไม่มีโต๊ะ', 'เพิ่มโต๊ะได้ที่ ร้าน → โต๊ะและพื้นที่')}
+      <button type="button" class="aui-btn wide" data-act="web" data-value="cashier">${icon('coins', 'aui-i-xs')} เปิดหน้าแคชเชียร์เต็ม (กะ ลิ้นชัก คืนเงิน)</button>`;
+  };
+
+  // ------------------------------------------------------------ scanner
+  /** The camera reads a barcode or QR; the code finds its dish and adds it. */
+  const scanner = {stream: null, timer: 0, el: null};
+  const stopScan = () => {
+    clearInterval(scanner.timer);
+    scanner.stream?.getTracks().forEach((track) => track.stop());
+    scanner.stream = null;
+    scanner.el?.remove();
+    scanner.el = null;
+  };
+  const found = (code) => {
+    const text = String(code).trim();
+    const low = text.toLowerCase();
+    const dish = menu().find((m) => [m.barcode, m.serverId, m.id].some((k) => k != null && String(k).toLowerCase() === low))
+      || menu().find((m) => m.name.toLowerCase() === low);
+    if (dish) {
+      if (dish.soldOut) { toast(`"${dish.name}" หมดชั่วคราว`); return; }
+      ui.salePane = 'menu';
+      pressed({dataset: {act: 'add', value: String(dish.id)}});
+      toast(`เพิ่ม "${dish.name}" แล้ว`);
+    } else {
+      ui.query = text;
+      paint();
+      toast(`ไม่พบเมนูรหัส ${text}`);
+    }
+  };
+  const scan = async () => {
+    const typeIt = () => {
+      const input = root.querySelector('[data-act="query"]');
+      if (input) { input.placeholder = 'ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า'; input.focus(); }
+    };
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
+      toast('เครื่องนี้สแกนด้วยกล้องไม่ได้ ใช้เครื่องยิงบาร์โค้ดหรือพิมพ์รหัสแทน');
+      typeIt();
+      return;
+    }
+    stopScan();
+    const el = document.createElement('div');
+    el.className = 'aui-scan';
+    el.innerHTML = `<video playsinline muted></video><div class="aui-scan-frame"></div>
+      <p>เล็งบาร์โค้ดหรือ QR ของเมนูให้อยู่ในกรอบ</p>
+      <button type="button" class="aui-scan-close" aria-label="ปิดกล้อง">${icon('close')}</button>
+      <button type="button" class="aui-scan-type">พิมพ์รหัสเอง</button>`;
+    document.body.append(el);
+    scanner.el = el;
+    el.querySelector('.aui-scan-close').addEventListener('click', stopScan);
+    el.querySelector('.aui-scan-type').addEventListener('click', () => { stopScan(); typeIt(); });
+    try {
+      scanner.stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'environment'}, audio: false});
+      if (!scanner.el) { stopScan(); return; }
+      const video = el.querySelector('video');
+      video.srcObject = scanner.stream;
+      await video.play();
+      const detector = new BarcodeDetector();
+      let busy = false;
+      scanner.timer = setInterval(async () => {
+        if (busy || video.readyState < 2) return;
+        busy = true;
+        try {
+          const codes = await detector.detect(video);
+          if (codes.length) { navigator.vibrate?.(60); stopScan(); found(codes[0].rawValue); }
+        } catch (_) { /* the next frame */ }
+        busy = false;
+      }, 180);
+    } catch (error) {
+      stopScan();
+      toast(/denied|permission|NotAllowed/i.test(String(error)) ? 'ไม่ได้รับอนุญาตใช้กล้อง เปิดสิทธิ์กล้องให้แอป POS WAI ในตั้งค่ามือถือ' : 'เปิดกล้องไม่ได้');
+      typeIt();
+    }
   };
 
   const paintCartbar = () => {
@@ -548,10 +644,23 @@
       case 'back': history.back(); break;
       case 'close': if (!slot('sheet').hidden) history.back(); break;
       case 'category': ui.category = value; paint(); break;
-      case 'scan': {
-        const input = root.querySelector('[data-act="query"]');
-        input.placeholder = 'ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า';
-        input.focus();
+      case 'scan': scan(); break;
+      case 'spane': ui.salePane = value; remember(); paint(); break;
+      case 'tablepick': {
+        const open = pos().orders.some((o) => String(o.table) === String(value));
+        if (open) {
+          openWeb('cashier', '', `รับเงิน · โต๊ะ ${value}`);
+          if (typeof selectCashierTable === 'function') selectCashierTable(value);
+        } else if (pos().cart.length && String(pos().customerTable) !== String(value)) {
+          toast('ส่งหรือล้างตะกร้าก่อนเปลี่ยนโต๊ะ');
+        } else {
+          pos().customerTable = String(value);
+          const web = document.getElementById('customerTableSelect');
+          if (web) web.value = String(value);
+          ui.salePane = 'menu';
+          remember();
+          paint();
+        }
         break;
       }
       case 'add': {
@@ -748,6 +857,7 @@
   /** Android's back: close what is open, then return to the first tab, then leave. */
   const back = () => {
     if (!document.documentElement.classList.contains('aui-on')) return false;
+    if (scanner.el) { stopScan(); return true; }
     if (!slot('sheet').hidden || document.documentElement.classList.contains('aui-sub')) { history.back(); return true; }
     const first = TABS.find((t) => t.allowed());
     if (first && ui.tab !== first.id) { go(first.id); return true; }
