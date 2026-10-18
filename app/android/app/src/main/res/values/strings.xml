@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">POS WAI</string>
+    <string name="title_activity_main">POS WAI</string>
+    <string name="package_name">com.zzaxstudio.poswai</string>
+    <string name="custom_url_scheme">com.zzaxstudio.poswai</string>
+</resources>

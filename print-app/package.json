@@ -12,14 +12,13 @@
     "ios": "cap open ios"
   },
   "dependencies": {
-    "@capacitor-community/bluetooth-le": "7.1.1",
-    "@capacitor/android": "7.4.3",
-    "@capacitor/core": "7.4.3",
-    "@capacitor/ios": "7.4.3",
-    "@capacitor/keep-awake": "7.0.2",
-    "@capacitor/preferences": "7.0.2"
+    "@capacitor-community/bluetooth-le": "^8.3.0",
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
   },
   "devDependencies": {
-    "@capacitor/cli": "7.4.3"
+    "@capacitor/cli": "^8.5.3"
   }
 }
