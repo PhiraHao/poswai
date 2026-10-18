@@ -164,6 +164,18 @@ class AppSessionTest(unittest.TestCase):
                              json={"kind": "owner", "contact": f"owner{n}@mail.com"}).status_code for n in range(6)]
         self.assertEqual(codes, [200] * 5 + [429])
 
+    # ------------------------------------------- the service fee is a web matter
+    def test_the_app_cannot_take_the_service_fee(self):
+        """Google Play would call this an in-app purchase of business software
+        made outside its billing system. The app shows the notice and nothing
+        more; only the web may take the money."""
+        headers = self.sign_in_as(1, self.pin)
+        paying = {"event_id": "fee-app-1", "amount": 399, "months": 1, "slip_image": "data:image/png;base64,AA=="}
+        refused = self.client().post("/api/billing/pay", json=paying,
+                                     headers={**headers, mobile.APP_HEADER: "1"})
+        self.assertEqual(refused.status_code, 403, refused.text)
+        self.assertIn("เว็บ", refused.json()["detail"])
+
     # -------------------------------------------------- several screens at once
     def sign_in_as(self, staff_id, pin):
         """A fresh device: its own client, no cookie, the token it was handed."""

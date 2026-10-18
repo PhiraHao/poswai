@@ -9,7 +9,15 @@
 
   const money = value => Number(value || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
   const signedIn = () => window.poswaiAuth?.current || null;
-  const mayPay = () => ['owner', 'manager'].includes(signedIn()?.role);
+  const owner = () => ['owner', 'manager'].includes(signedIn()?.role);
+  /* The fee is never taken inside the app from Google Play. Play's Payments
+     policy counts a subscription to business software as a digital purchase
+     that must go through Google Play's billing system, and it forbids leading
+     the user to any other way to pay — a link to our own page included. So the
+     app only says, in words, that the fee is due and where to renew; the web
+     keeps the QR and the slip, and the shop pays there. */
+  const inApp = () => document.documentElement.classList.contains('poswai-app');
+  const mayPay = () => owner() && !inApp();
 
   const buildNotice = () => {
     if (notice) return notice;
@@ -40,7 +48,8 @@
     element.classList.remove('is-due', 'is-late');
     element.classList.add(STATE_CLASS[state.state]);
     element.querySelector('.pbn-text').textContent = state.message
-      + (mayPay() ? '' : ' · แจ้งเจ้าของร้านให้ชำระค่าบริการ');
+      + (!owner() ? ' · แจ้งเจ้าของร้านให้ชำระค่าบริการ'
+        : inApp() ? ' · ต่ออายุได้ที่เว็บ poswai.zzaxstudio.com' : '');
     element.querySelector('.pbn-pay').hidden = !mayPay();
     const hidden = sessionStorage.getItem('poswaiBillingHidden') === state.due_date;
     element.hidden = hidden && state.state !== 'overdue';

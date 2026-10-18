@@ -4010,6 +4010,9 @@ def read_billing(request: Request):
 def pay_service_fee(req: ServicePayment, request: Request):
     """Close one month of service against a slip paid to ZZAX Studio's account."""
     require_staff(request, roles=("owner", "manager"))
+    # Never from the app: see billing-ui.js. The shop renews on the web.
+    if mobile.is_app(request):
+        raise HTTPException(403, "ชำระค่าบริการในแอปไม่ได้ ต่ออายุที่เว็บ poswai.zzaxstudio.com")
     slug = CURRENT_SHOP.get()
     if not current_billing()["applicable"]:
         raise HTTPException(409, "ร้านนี้ไม่มีค่าบริการรายเดือนในระบบ")
