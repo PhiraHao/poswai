@@ -1286,7 +1286,8 @@ def _staff_or_table_guest(request: Request, branch_id: int, table_no: str) -> Op
 
 
 def require_table_or_staff(request: Request, branch_id: int, table_no: str) -> None:
-    if request.cookies.get("poswai_session"):
+    # The page's cookie or the app's header: a till signed in either way is staff.
+    if mobile.staff_token(request):
         try:
             require_staff(request, branch_id=branch_id)
             return

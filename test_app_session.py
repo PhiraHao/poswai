@@ -125,6 +125,18 @@ class AppSessionTest(unittest.TestCase):
                            headers={mobile.STAFF_HEADER: token, "origin": mobile.APP_ORIGINS[0]})
         self.assertNotEqual(seen.status_code, 403, seen.text)
 
+    def test_the_app_rings_up_an_order_with_its_header(self):
+        """A till in the app has no cookie; its header session must be enough
+        to send an order to the kitchen, not be taken for a guest without a QR."""
+        headers = self.sign_in_as(1, self.pin)
+        menu = self.client().put("/api/menu/M1", headers=headers,
+                                 json={"branch_id": 1, "name": "กะเพรา", "price": 45})
+        self.assertEqual(menu.status_code, 200, menu.text)
+        sent = self.client().post("/api/orders", headers=headers, json={
+            "event_id": "e-app-1", "order_no": "APP-1", "branch_id": 1, "table_no": "1",
+            "total_amount": 45, "items": [{"id": "M1", "name": "กะเพรา", "price": 45, "qty": 1}]})
+        self.assertEqual(sent.status_code, 200, sent.text)
+
     # -------------------------------------------------- several screens at once
     def sign_in_as(self, staff_id, pin):
         """A fresh device: its own client, no cookie, the token it was handed."""
