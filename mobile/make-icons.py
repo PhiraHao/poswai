@@ -20,6 +20,7 @@ from PIL import Image, ImageDraw
 HERE = Path(__file__).resolve().parent
 ASSETS = HERE.parent / "assets"
 RES = HERE / "android" / "app" / "src" / "main" / "res"
+IOS = HERE / "ios" / "App" / "App" / "Assets.xcassets"
 
 LOGO = ASSETS / "brand-icon-art.webp"   # the lettering of the owner's POS WAI icon
 MASCOT = ASSETS / "mascot-pos.webp"
@@ -80,6 +81,38 @@ def opening_screen(logo: Image.Image, mascot: Image.Image, scale: float) -> Imag
     return picture
 
 
+def ios_app_icon(logo: Image.Image, px: int = 1024) -> Image.Image:
+    """iPhone's one icon file. Square, filled to the edge, and with no see-through
+    anywhere: the App Store turns away an icon that has an alpha channel."""
+    tile = Image.new("RGBA", (px, px), BACKGROUND)
+    centred(tile, fit(logo, round(px * 0.78), round(px * 0.78)))
+    return tile.convert("RGB")
+
+
+def ios_opening_screen(logo: Image.Image, mascot: Image.Image, px: int = 2732) -> Image.Image:
+    """Capacitor shows one square picture on every iPhone and iPad, cropped to the
+    screen, so the mascot and logo sit in the middle of a wide field of colour."""
+    canvas = Image.new("RGBA", (px, px), BACKGROUND)
+    centred(canvas, opening_screen(logo, mascot, px / 180 * 0.42))
+    return canvas.convert("RGB")
+
+
+def write_ios(logo: Image.Image, mascot: Image.Image) -> None:
+    icons = IOS / "AppIcon.appiconset"
+    icons.mkdir(parents=True, exist_ok=True)
+    ios_app_icon(logo).save(icons / "AppIcon-512@2x.png")
+
+    splash = IOS / "Splash.imageset"
+    splash.mkdir(parents=True, exist_ok=True)
+    # 2732 square of mostly flat colour: 255 shades hold the mascot's gradients
+    # and save about 2.3 MB across the three copies the app carries.
+    picture = ios_opening_screen(logo, mascot).quantize(colors=255, method=Image.MEDIANCUT)
+    # Capacitor asks for the same picture at 1x, 2x and 3x.
+    for name in ("splash-2732x2732.png", "splash-2732x2732-1.png", "splash-2732x2732-2.png"):
+        picture.save(splash / name, optimize=True)
+    print("iPhone icon and opening screen written to", IOS)
+
+
 def main() -> None:
     if not RES.exists():
         raise SystemExit("ยังไม่มีโฟลเดอร์ android ให้รัน npx cap add android ก่อน")
@@ -114,6 +147,10 @@ def main() -> None:
         '    <item><bitmap android:gravity="center" android:src="@drawable/splash_brand"/></item>\n'
         '</layer-list>\n', encoding="utf-8")
     print("icons and opening screen written to", RES)
+
+    # The iPhone project is optional: it only exists once `npx cap add ios` ran.
+    if IOS.exists():
+        write_ios(logo, mascot)
 
 
 if __name__ == "__main__":

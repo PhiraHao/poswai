@@ -167,8 +167,12 @@ npx cap open ios
 ```
 แล้วใน Xcode: Signing & Capabilities → เลือกทีมของบัญชี Apple → Product → Archive → ส่ง App Store Connect
 
-ยังไม่มีบนไอโฟน: **พิมพ์ผ่าน LAN** (ปลั๊กอิน `plugins/tcp-printer` มีแต่ Android ต้องเขียน Swift
-ด้วย Network framework เพิ่ม) — พิมพ์ผ่าน Bluetooth ใช้ได้ แอปจะบอกเองว่ารุ่นนี้ยังพิมพ์ LAN ไม่ได้
+พิมพ์ผ่าน LAN บนไอโฟน: เขียนแล้วที่ `ios/App/App/TcpPrinterPlugin.swift` (Network framework)
+ไม่ได้อยู่ใน `plugins/tcp-printer` เหมือนฝั่ง Android เพราะเป็นโค้ดไม่กี่บรรทัดและมีแอปนี้ใช้อยู่แอปเดียว
+จึงใส่ไว้ใน target ของแอปตรง ๆ — ทั้งสองฝั่งตอบ `TcpPrinter.send` เหมือนกัน `app-printer.js` เลยไม่ต้องรู้ว่าเป็นเครื่องไหน
+**ยังไม่เคยคอมไพล์** เพราะไม่มี Mac ต้องลองจริงรอบแรกบน Xcode
+
+รายละเอียดการส่งขึ้น App Store ทั้งหมดอยู่ใน `store/APP-STORE.md`
 
 ## ขั้นต่อไป
 
