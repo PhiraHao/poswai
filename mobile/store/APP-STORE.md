@@ -34,14 +34,25 @@
 
 ## ขั้นตอนบน Mac
 
-```bash
-# 1. ดึงโค้ดและลงของ
-git clone <repo> && cd poswai/mobile
-npm install
-sudo gem install cocoapods      # ถ้ายังไม่มี
-npx cap sync ios
+ลงก่อน: **Xcode** (จาก App Store) และ **Node.js** (`brew install node` หรือ nodejs.org)
+ไม่ต้องลง CocoaPods — โปรเจกต์นี้ใช้ Swift Package Manager (`ios/App/CapApp-SPM`) แล้ว
 
-# 2. เปิดโปรเจกต์
+```bash
+git clone -b codex/pwa-api-offline-deploy https://github.com/PhiraHao/poswai.git
+```
+```bash
+cd poswai/mobile
+```
+```bash
+npm install
+```
+```bash
+npm run build
+```
+```bash
+npx cap sync ios
+```
+```bash
 npx cap open ios
 ```
 
