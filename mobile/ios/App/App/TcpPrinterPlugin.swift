@@ -67,7 +67,14 @@ public class TcpPrinterPlugin: CAPPlugin, CAPBridgedPlugin {
             connection.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
-                    connection.send(content: bytes, completion: .contentProcessed { error in
+                    /* `.finalMessage` is what makes this the Android side's
+                       write-flush-close: the bytes go out and a FIN follows
+                       them, so the printer has the whole receipt before the
+                       socket shuts. Cancelling straight after a plain send
+                       can reset the connection with the tail still in flight
+                       and tear a receipt in half. */
+                    connection.send(content: bytes, contentContext: .finalMessage, isComplete: true,
+                                    completion: .contentProcessed { error in
                         finish(error.map { String(describing: $0) })
                     })
                 case .failed(let error):
