@@ -223,12 +223,14 @@
   /** Where a page wanted to navigate. Returns true when the app took it over. */
   app.go = (url) => {
     // Apple signs in with the phone's own sheet, not a browser tab.
-    if (/^\/api\/(owner|staff)\/auth\/apple\/start/.test(url || '')) { app.appleSignIn(url); return true; }
+    if (/^\/api\/(owner|staff|members)\/auth\/apple\/start/.test(url || '')) { app.appleSignIn(url); return true; }
     const owner = /^\/api\/owner\/auth\/([a-z]+)\/start/.exec(url || '');
     if (owner) { app.signInWith(owner[1]); return true; }
     // A member of staff with their own LINE or Google: the same tab-and-back hop.
     const staff = /^\/api\/staff\/auth\/[a-z]+\/start/.exec(url || '');
     if (staff) { app.openSignIn(url); return true; }
+    // A customer too: the card comes back over the same link instead of a cookie.
+    if (/^\/api\/members\/auth\/[a-z]+\/start/.test(url || '')) { app.openSignIn(url); return true; }
     const shop = /^\/\?shop=([^&]+)/.exec(url || '');
     if (shop) { app.enterShop(decodeURIComponent(shop[1])); return true; }
     if (url === '/') { app.reopen(); return true; }
@@ -257,9 +259,15 @@
     try { handed = new URL(url); } catch { return; }
     const got = handed.searchParams;
     plugin('Browser')?.close().catch(() => {});
+    const began = waiting || '';
     waiting = null;
     const failed = got.get('error');
-    if (failed) { app.onSignInFailed?.(failed); return; }
+    if (failed) { app.onSignInFailed?.(failed, began); return; }
+    if (got.get('member')) {
+      if (got.get('shop')) app.useShop(got.get('shop'));
+      app.onMemberSignedIn?.(got.get('member'));
+      return;
+    }
     /* A staff sign-in: the page already knows how to say every outcome when
        it opens with ?staff= or ?staff_error=, so it is reopened with that. */
     if (got.has('staff') || got.has('staff_error')) {
@@ -287,7 +295,7 @@
      lets the session this app holds ride along when an account is being linked. */
   app.appleSignIn = async (path) => {
     const apple = plugin('AppleSignIn');
-    if (!apple) { app.onSignInFailed?.('provider_unknown'); return; }
+    if (!apple) { app.onSignInFailed?.('provider_unknown', path); return; }
     try {
       const started = await fetch(path, {cache: 'no-store'});
       const handshake = await started.json().catch(() => ({}));
@@ -304,7 +312,7 @@
       finishSignIn(result.link);
     } catch (error) {
       // Closing Apple's sheet is a choice, not a failure worth explaining.
-      app.onSignInFailed?.(/cancel/i.test(String(error?.code || error?.message)) ? 'closed' : 'provider');
+      app.onSignInFailed?.(/cancel/i.test(String(error?.code || error?.message)) ? 'closed' : 'provider', path);
     }
   };
 
@@ -314,7 +322,7 @@
 
   /* The tab was closed without finishing. Say so rather than leave a spinner. */
   plugin('Browser')?.addListener('browserFinished', () => {
-    if (waiting) { waiting = null; app.onSignInFailed?.('closed'); }
+    if (waiting) { const began = waiting; waiting = null; app.onSignInFailed?.('closed', began); }
   });
 
   // -------------------------------------------------------------- opening a shop

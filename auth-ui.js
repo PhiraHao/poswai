@@ -111,6 +111,7 @@
 
       <div data-login-pane="member" hidden>
         <div class="poswai-channels" id="poswaiMemberChannels">
+          <button type="button" class="poswai-channel apple" data-member-channel="apple" hidden><span class="poswai-channel-mark" aria-hidden="true"></span>เข้าสู่ระบบด้วย Apple</button>
           <button type="button" class="poswai-channel line" data-member-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>เข้าสู่ระบบด้วย LINE</button>
           <button type="button" class="poswai-channel google" data-member-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>เข้าสู่ระบบด้วย Google</button>
         </div>
@@ -545,18 +546,14 @@
     const button = event.target.closest('[data-member-channel]');
     if (!button) return;
     const channel = button.dataset.memberChannel;
-    if (inApp()) {
-      $('#poswaiCustomerError').textContent =
-        `ในแอปเข้าด้วย ${CHANNEL_NAMES[channel]} ไม่ได้ · ใช้ชื่อกับเบอร์ที่สมัครไว้`;
-      return;
-    }
     if (!channels[channel]) {
       $('#poswaiCustomerError').textContent =
         `ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย ${CHANNEL_NAMES[channel]} ระหว่างนี้ใช้ชื่อกับเบอร์ไปก่อน`;
       return;
     }
     $('#poswaiCustomerError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[channel]}…`;
-    location.href = `/api/members/auth/${channel}/start?shop=${encodeURIComponent(shop.slug)}`;
+    // In the app the card comes back over poswai://auth (see app-bridge.js).
+    go(`/api/members/auth/${channel}/start?shop=${encodeURIComponent(shop.slug)}`);
   });
   $('#poswaiLinkChannels').addEventListener('click', event => {
     const button = event.target.closest('[data-link-channel]');
@@ -899,11 +896,8 @@
     for (const id of ['#poswaiStaffChannels', '#poswaiStaffOr', '#poswaiStaffChannelHint',
                       '#poswaiStaffLinkChannels'])
       $(id).hidden = noChannels;
-    /* A customer's LINE or Google sign-in cannot finish inside the app (the
-       card lands in the browser's cookie jar), so the app shows only the name
-       and phone the customer signed up with. */
     for (const id of ['#poswaiMemberChannels', '#poswaiMemberOr'])
-      $(id).hidden = inApp() || (!channels.line && !channels.google);
+      $(id).hidden = noChannels;
     live = !preview || !!config.staff_live;
     if (shop.is_demo) sessionStorage.setItem('poswaiPreviewPeek', '1');
     window.dispatchEvent(new CustomEvent('poswai:shop-ready', { detail: shop }));
@@ -954,10 +948,29 @@
     }
     if (window.POSWAI_APP) {
       window.POSWAI_APP.onSignedIn = ({ outcome }) => resumeOwnerSignIn(outcome);
-      window.POSWAI_APP.onSignInFailed = reason => {
+      /* A customer's card, handed back to the app by a LINE, Google or Apple sign-in. */
+      window.POSWAI_APP.onMemberSignedIn = async token => {
+        keepMemberToken(token);
+        try {
+          const response = await fetch('/api/members/card', { cache: 'no-store',
+            headers: { 'X-Member-Token': token } });
+          if (!response.ok) throw new Error(String(response.status));
+          member = { ...(await response.json()), token };
+          update();
+          showMemberCard(member);
+        } catch (_) {
+          keepMemberToken('');
+          window.POSWAI_APP.onSignInFailed('provider', '/api/members/');
+        }
+      };
+      /* Said on the tab the sign-in began from: a customer's failure belongs
+         beside the customer's buttons, not on the owner's tab. */
+      window.POSWAI_APP.onSignInFailed = (reason, path = '') => {
+        const tab = path.includes('/members/') ? 'member' : path.includes('/staff/') ? 'staff' : 'owner';
+        const box = { member: '#poswaiCustomerError', staff: '#poswaiLoginError', owner: '#poswaiOwnerError' }[tab];
         open('login');
-        showLoginTab('owner');
-        $('#poswaiOwnerError').textContent = reason === 'closed'
+        showLoginTab(tab);
+        $(box).textContent = reason === 'closed'
           ? 'ปิดหน้าเข้าสู่ระบบไปก่อนเสร็จ กรุณากดเข้าสู่ระบบอีกครั้ง'
           : (OWNER_ERRORS[reason] || OWNER_ERRORS.provider);
       };

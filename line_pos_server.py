@@ -3720,29 +3720,39 @@ MEMBER_COOKIE = "poswai_member"
 
 
 @app.get("/api/members/auth/{provider}/start")
-def member_login_start(provider: str, request: Request):
+def member_login_start(provider: str, request: Request, app: str = ""):
     """A customer signing in with the account they already have.
 
     It shares the owner's callback, and so the redirect URI already registered
     with each provider; what tells the two apart is the mode on the state row.
+    app=1 marks one begun in the POS WAI app's browser tab, whose card goes back
+    to the app rather than into that tab's cookie jar; Apple is the app's own.
     """
-    client_id, client_secret = _provider_credentials(provider)
-    if not client_id or not client_secret:
-        raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
+    native = provider in owner_auth.NATIVE_PROVIDERS
+    if not native:
+        client_id, client_secret = _provider_credentials(provider)
+        if not client_id or not client_secret:
+            raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
     if len(TABLE_QR_SECRET) < 32:
         raise HTTPException(503, "ยังไม่ได้ตั้งค่ากุญแจของร้าน")
     try:
         handshake = owner_auth.start_login(DB_PATH, provider=provider, mode="member",
-                                           slug=CURRENT_SHOP.get())
+                                           slug=CURRENT_SHOP.get(),
+                                           app_login=native or app not in ("", "0", "false"))
     except owner_auth.OwnerAuthError as exc:
         raise HTTPException(exc.status, exc.message) from exc
+    if native:
+        return {"state": handshake["state"], "nonce": handshake["nonce"]}
     return RedirectResponse(owner_auth.authorize_url(
         provider, client_id=client_id, redirect_uri=_owner_redirect_uri(request, provider),
         state=handshake["state"], nonce=handshake["nonce"]), status_code=302)
 
 
-def _finish_member_login(request: Request, slug: str, identity: dict) -> RedirectResponse:
-    """Hand the customer their card back on the shop's own page.
+def _finish_member_login(request: Request, slug: str, identity: dict,
+                         from_app: bool = False) -> RedirectResponse:
+    """Hand the customer their card back on the shop's own page — or, for a
+    sign-in begun in the app, back to the app over poswai://auth, since the
+    browser tab the app opened keeps its cookies to itself.
 
     The provider's callback carries no shop, so the slug recorded when the
     sign-in began is what says whose member list this is."""
@@ -3755,6 +3765,9 @@ def _finish_member_login(request: Request, slug: str, identity: dict) -> Redirec
         member_token = _mint_member_token(customer_id)
     finally:
         CURRENT_SHOP.reset(shop_token)
+    if from_app:
+        return RedirectResponse(mobile.app_link("auth", member=member_token, shop=slug),
+                                status_code=303)
     response = RedirectResponse(f"/?shop={slug}&member=in", status_code=303)
     response.set_cookie(MEMBER_COOKIE, member_token, max_age=MEMBER_TOKEN_TTL_SECONDS,
                         httponly=True, secure=_secure(request), samesite="lax", path="/")
@@ -3895,6 +3908,9 @@ def apple_native_sign_in(req: AppleNativeSignIn, request: Request):
         return {"link": _finish_staff_login(request, pending, identity).headers["location"]}
     if pending["mode"] == "login":
         return {"link": _finish_app_owner_login(account).headers["location"]}
+    if pending["mode"] == "member":
+        return {"link": _finish_member_login(request, pending["slug"] or MAIN_SHOP, identity,
+                                             from_app=True).headers["location"]}
     if pending["mode"] == "link":
         record = shops.get_shop(DB_PATH, pending["slug"])
         if not record or record["status"] != "active" or not pending["staff_id"]:
@@ -3927,7 +3943,8 @@ def owner_login_callback(provider: str, request: Request, code: str = "", state:
     if pending["mode"] in ("staff", "staff_link"):
         return _finish_staff_login(request, pending, identity)
     if pending["mode"] == "member":
-        return _finish_member_login(request, pending["slug"] or MAIN_SHOP, identity)
+        return _finish_member_login(request, pending["slug"] or MAIN_SHOP, identity,
+                                    from_app=bool(pending.get("app_login")))
     if pending.get("app_login"):
         return _finish_app_owner_login(account)
     if pending["mode"] == "link":

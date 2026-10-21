@@ -39,7 +39,9 @@ def hashed(nonce: str) -> str:
     return hashlib.sha256(nonce.encode()).hexdigest()
 
 
-class AppleSignInTest(OwnerAuthCase):
+class AppleCase(OwnerAuthCase):
+    """Apple's keys stood in for, and the helpers the Apple tests share."""
+
     def setUp(self):
         super().setUp()
         for item in (patch.object(owner_auth, "_apple_keys", published_keys),
@@ -72,6 +74,8 @@ class AppleSignInTest(OwnerAuthCase):
         self.assertTrue(link.startswith("poswai://auth"), link)
         return {key: values[0] for key, values in parse_qs(urlsplit(link).query).items()}
 
+
+class AppleSignInTest(AppleCase):
     # ---------------------------------------------------------------- the owner
     def test_the_app_is_handed_a_state_and_nonce_instead_of_a_redirect(self):
         """Apple's sheet is the phone's own, so there is no page to send anyone to."""
@@ -187,11 +191,74 @@ class AppleSignInTest(OwnerAuthCase):
                          "unlinked")
 
 
+class CustomerSignInFromTheAppTest(AppleCase):
+    """A customer signing in from the iPhone app gets their card in the app.
+
+    On the web the card lands in a cookie. The app's browser tab has its own
+    cookie jar, so a card left there never reached the app; the finished
+    sign-in now comes back over poswai://auth, like an owner's or staff's."""
+
+    def card(self, client, token):
+        return client.get("/api/members/card", headers={"X-Member-Token": token})
+
+    def test_a_customers_line_sign_in_comes_back_to_the_app(self):
+        client = self.client()
+        started = client.get("/api/members/auth/line/start", params={"app": "1"},
+                             follow_redirects=False)
+        self.assertEqual(started.status_code, 302, started.text)
+        state = parse_qs(urlsplit(started.headers["location"]).query)["state"][0]
+        handed = self.link(_as_json(self.callback(client, "line", state=state)))
+        self.assertEqual(handed["shop"], server.MAIN_SHOP)
+        card = self.card(self.client(), handed["member"])
+        self.assertEqual(card.status_code, 200, card.text)
+        self.assertEqual(card.json()["display_name"], "เจ้าของร้าน")
+
+    def test_a_customer_on_the_web_still_gets_a_cookie(self):
+        client = self.client()
+        started = client.get("/api/members/auth/line/start", follow_redirects=False)
+        state = parse_qs(urlsplit(started.headers["location"]).query)["state"][0]
+        landed = self.callback(client, "line", state=state)
+        self.assertIn("member=in", landed.headers["location"])
+        self.assertEqual(client.get("/api/members/card").status_code, 200)
+
+    def test_a_customer_signs_in_with_apple_and_gets_their_card(self):
+        client = self.client()
+        state, nonce = self.begin(client, "/api/members/auth/apple/start")
+        handed = self.link(self.finish(client, state, self.token(nonce), name="คุณแอปเปิล"))
+        card = self.card(self.client(), handed["member"])
+        self.assertEqual(card.status_code, 200, card.text)
+        self.assertEqual(card.json()["display_name"], "คุณแอปเปิล")
+
+    def test_the_same_apple_id_comes_back_to_the_same_card(self):
+        seen = []
+        for name in ("คุณแอปเปิล", ""):     # Apple gives the name the first time only
+            client = self.client()
+            state, nonce = self.begin(client, "/api/members/auth/apple/start")
+            handed = self.link(self.finish(client, state, self.token(nonce), name=name))
+            body = self.card(client, handed["member"]).json()
+            seen.append((body["member_id"], body["display_name"]))
+        self.assertEqual(seen[0], seen[1])
+
+
+def _as_json(redirect):
+    """A browser-tab sign-in answers with a redirect; present it as the native one does."""
+    class Reply:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"link": redirect.headers["location"]}
+
+        text = redirect.text
+    return Reply()
+
+
 class AppleSignInPageTest(OwnerAuthCase):
     """The button is only real on an iPhone, where the native sheet exists."""
 
     def test_apple_buttons_sit_beside_every_provider_the_app_offers(self):
         script = (Path(server.__file__).parent / "auth-ui.js").read_text(encoding="utf-8")
         for marker in ('data-channel="apple"', 'data-staff-channel="apple"',
-                       'data-staff-link-channel="apple"', 'data-link-channel="apple"'):
+                       'data-staff-link-channel="apple"', 'data-link-channel="apple"',
+                       'data-member-channel="apple"'):
             self.assertIn(marker, script)
