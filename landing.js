@@ -14,6 +14,11 @@
     host.querySelector('[data-lp="price"]')?.remove();
     host.querySelector('.lp-t-nav-price')?.remove();
   }
+  /* And 3.1.1 again, on the iPhone: the app may not sign a business up for a
+     service paid for elsewhere, so the free-trial button goes too. */
+  if (document.documentElement.classList.contains('poswai-ios')) {
+    host.querySelector('[data-lp="trial"]')?.remove();
+  }
 
   const fit = () => {
     const k = Math.min(window.innerWidth / 1672, 1.15);
@@ -81,6 +86,11 @@
       <p class="lp-panel-note">เอกสารของบริการ <a href="/terms" target="_blank" rel="noopener">ข้อตกลงการใช้งาน</a> ·
       <a href="/privacy" target="_blank" rel="noopener">นโยบายความเป็นส่วนตัว</a></p>`],
   };
+  /* The iPhone app has no free-trial button (see above), so the first step that
+     sends people to it is left out of the help there. */
+  if (document.documentElement.classList.contains('poswai-ios')) {
+    PANELS.help = [PANELS.help[0], PANELS.help[1].replace(/<li><strong>เปิดร้าน<\/strong>[\s\S]*?<\/li>\s*/, '')];
+  }
   const panel = document.createElement('div');
   panel.className = 'lp-panel';
   panel.hidden = true;
@@ -103,7 +113,7 @@
 
   const actions = {
     login: () => auth().openLogin?.(),
-    trial: () => auth().openSignup?.(),
+    trial: () => { if (!document.documentElement.classList.contains('poswai-ios')) auth().openSignup?.(); },
     demo: () => sample('customer'),
     home: () => host.scrollTo({ top: 0, behavior: 'smooth' }),
     features: () => host.querySelector('#lpFeatures')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),

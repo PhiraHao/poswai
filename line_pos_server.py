@@ -123,6 +123,10 @@ LINE_LOGIN_CHANNEL_ID = os.getenv("LINE_LOGIN_CHANNEL_ID", "")
 LINE_LOGIN_CHANNEL_SECRET = os.getenv("LINE_LOGIN_CHANNEL_SECRET", "")
 GOOGLE_CLIENT_ID = os.getenv("POSWAI_GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("POSWAI_GOOGLE_CLIENT_SECRET", "")
+# Sign in with Apple happens in the iPhone app itself, so the identity token Apple
+# signs names the app's bundle ID as its audience. No secret is needed to check it.
+APPLE_AUDIENCES = tuple(part.strip() for part in os.getenv(
+    "POSWAI_APPLE_AUDIENCES", "com.zzaxstudio.poswai").split(",") if part.strip())
 # Where the provider sends an owner back after signing in. It has to match the
 # callback URL registered in the LINE and Google consoles character for
 # character, so it is a setting rather than something guessed from headers.
@@ -3680,12 +3684,17 @@ def owner_login_start(provider: str, request: Request, mode: str = "login", app:
     calls this server back at the address its console already knows; what
     changes is the last hop, which goes to the app instead of to a web page.
     """
-    client_id, client_secret = _provider_credentials(provider)
-    if not client_id or not client_secret:
-        raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
-    from_app = app not in ("", "0", "false")
-    if from_app and mode != "login":
-        # Linking a provider to a shop needs the staff session the page holds.
+    # Apple: the iPhone app asks for the state and nonce itself, with the session
+    # it holds in a header, and shows Apple's own sheet (see apple_native_sign_in).
+    native = provider in owner_auth.NATIVE_PROVIDERS
+    if not native:
+        client_id, client_secret = _provider_credentials(provider)
+        if not client_id or not client_secret:
+            raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
+    from_app = native or app not in ("", "0", "false")
+    if from_app and mode != "login" and not native:
+        # Linking a provider to a shop needs the staff session the page holds,
+        # which a browser tab opened by the app does not carry.
         raise HTTPException(400, "คำขอเข้าสู่ระบบไม่ถูกต้อง")
     slug, staff_id = "", None
     if mode == "link":
@@ -3700,6 +3709,8 @@ def owner_login_start(provider: str, request: Request, mode: str = "login", app:
                                            staff_id=staff_id, app_login=from_app)
     except owner_auth.OwnerAuthError as exc:
         raise HTTPException(exc.status, exc.message) from exc
+    if native:
+        return {"state": handshake["state"], "nonce": handshake["nonce"]}
     return RedirectResponse(owner_auth.authorize_url(
         provider, client_id=client_id, redirect_uri=_owner_redirect_uri(request, provider),
         state=handshake["state"], nonce=handshake["nonce"]), status_code=302)
@@ -3757,9 +3768,11 @@ def staff_login_start(provider: str, request: Request, mode: str = "login", app:
 
     Binding needs the PIN first, so an account only ever reaches the till that
     its owner could already open."""
-    client_id, client_secret = _provider_credentials(provider)
-    if not client_id or not client_secret:
-        raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
+    native = provider in owner_auth.NATIVE_PROVIDERS
+    if not native:
+        client_id, client_secret = _provider_credentials(provider)
+        if not client_id or not client_secret:
+            raise HTTPException(503, f"ยังไม่ได้เปิดใช้การเข้าสู่ระบบด้วย {OWNER_CHANNELS[provider]}")
     slug = CURRENT_SHOP.get()
     if slug == DEMO_SHOP:
         raise HTTPException(403, "ร้านตัวอย่างไม่มีบัญชีพนักงาน")
@@ -3770,9 +3783,11 @@ def staff_login_start(provider: str, request: Request, mode: str = "login", app:
         handshake = owner_auth.start_login(DB_PATH, provider=provider,
                                            mode="staff_link" if mode == "link" else "staff",
                                            slug=slug, staff_id=staff_id,
-                                           app_login=app not in ("", "0", "false"))
+                                           app_login=native or app not in ("", "0", "false"))
     except owner_auth.OwnerAuthError as exc:
         raise HTTPException(exc.status, exc.message) from exc
+    if native:
+        return {"state": handshake["state"], "nonce": handshake["nonce"]}
     return RedirectResponse(owner_auth.authorize_url(
         provider, client_id=client_id, redirect_uri=_owner_redirect_uri(request, provider),
         state=handshake["state"], nonce=handshake["nonce"]), status_code=302)
@@ -3851,6 +3866,44 @@ def _finish_app_owner_login(account: dict) -> RedirectResponse:
     token, _ = owner_auth.open_session(DB_PATH, account["id"])
     return RedirectResponse(mobile.app_link("auth", owner=token, outcome=outcome, shop=slug),
                             status_code=303)
+
+
+class AppleNativeSignIn(BaseModel):
+    state: str
+    identity_token: str
+    name: str = ""
+
+
+@app.post("/api/auth/apple/native")
+def apple_native_sign_in(req: AppleNativeSignIn, request: Request):
+    """Finish a Sign in with Apple the iPhone app did with Apple's own sheet.
+
+    The app began it with /api/{owner,staff}/auth/apple/start, which wrote the
+    state row and handed back a nonce; Apple signed a token carrying that nonce.
+    The answer is the same poswai://auth link a LINE or Google sign-in sends the
+    app back with, so the app finishes all of them in one place.
+    """
+    try:
+        pending = owner_auth.consume_state(DB_PATH, provider="apple", state=req.state)
+        identity = owner_auth.identity_from_apple(req.identity_token, nonce=pending["nonce"],
+                                                  audiences=APPLE_AUDIENCES,
+                                                  display_name=req.name)
+        account = owner_auth.upsert_account(DB_PATH, identity)
+    except owner_auth.OwnerAuthError as exc:
+        raise HTTPException(exc.status, exc.message) from exc
+    if pending["mode"] in ("staff", "staff_link"):
+        return {"link": _finish_staff_login(request, pending, identity).headers["location"]}
+    if pending["mode"] == "login":
+        return {"link": _finish_app_owner_login(account).headers["location"]}
+    if pending["mode"] == "link":
+        record = shops.get_shop(DB_PATH, pending["slug"])
+        if not record or record["status"] != "active" or not pending["staff_id"]:
+            raise HTTPException(409, "ร้านนี้ผูกบัญชีไม่ได้")
+        owner_auth.link_shop(DB_PATH, account_id=account["id"], slug=pending["slug"],
+                             staff_id=int(pending["staff_id"]))
+        # The page already says "ผูกบัญชีแล้ว" when it reopens with staff=linked.
+        return {"link": mobile.app_link("auth", staff="linked", shop=pending["slug"])}
+    raise HTTPException(400, "คำขอเข้าสู่ระบบไม่ถูกต้อง")
 
 
 @app.get("/api/owner/auth/{provider}/callback")

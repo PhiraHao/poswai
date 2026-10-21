@@ -23,6 +23,9 @@ import httpx
 import poswai_shops as shops
 
 PROVIDERS = ("line", "google")
+# Signed into on the iPhone itself, with Apple's own sheet: there is no page to
+# send anyone to, so these never appear in authorize_url or identity_from_code.
+NATIVE_PROVIDERS = ("apple",)
 # Set POSWAI_LINE_EMAIL_PERMISSION=1 once LINE approves the channel for it.
 LINE_EMAIL_PERMISSION = os.getenv("POSWAI_LINE_EMAIL_PERMISSION", "") not in ("", "0", "false")
 STATE_LIFETIME = 600            # a sign-in that takes longer than ten minutes is stale
@@ -34,6 +37,9 @@ GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
 GOOGLE_ISSUERS = ("accounts.google.com", "https://accounts.google.com")
+APPLE_ISSUER = "https://appleid.apple.com"
+APPLE_KEYS_URL = "https://appleid.apple.com/auth/keys"
+APPLE_KEYS_LIFETIME = 3600      # Apple rotates its keys rarely; an hour spares a fetch per sign-in
 
 
 class OwnerAuthError(Exception):
@@ -105,7 +111,7 @@ def start_login(main_db: Path, *, provider: str, mode: str = "login", slug: str 
     finished session has to reach the app rather than a cookie jar, so the
     callback hands it over through the app's own link instead.
     """
-    if provider not in PROVIDERS:
+    if provider not in PROVIDERS + NATIVE_PROVIDERS:
         raise OwnerAuthError("provider", "ช่องทางเข้าสู่ระบบนี้ไม่มีในระบบ", 404)
     if mode not in ("login", "link", "member", "staff", "staff_link"):
         raise OwnerAuthError("mode", "คำขอเข้าสู่ระบบไม่ถูกต้อง", 400)
@@ -216,6 +222,59 @@ def identity_from_code(provider: str, *, code: str, nonce: str, client_id: str, 
         email = ""
     return {"provider": provider, "external_id": external_id, "email": email.lower(),
             "display_name": str(claims.get("name") or "")[:100]}
+
+
+_apple_key_cache: dict = {"keys": None, "fetched": 0.0}
+
+
+def _apple_keys() -> dict:
+    """Apple's published signing keys, kept for an hour. Wrapped so tests can
+    stand a key of their own in for Apple's."""
+    if not _apple_key_cache["keys"] or time.time() - _apple_key_cache["fetched"] > APPLE_KEYS_LIFETIME:
+        _apple_key_cache["keys"] = _get_json(APPLE_KEYS_URL, {})
+        _apple_key_cache["fetched"] = time.time()
+    return _apple_key_cache["keys"]
+
+
+def identity_from_apple(identity_token: str, *, nonce: str, audiences: tuple[str, ...],
+                        display_name: str = "") -> dict:
+    """Check an identity token Apple signed for the iPhone app, and return whose it is.
+
+    Unlike LINE and Google there is no code to exchange and no endpoint that
+    verifies for us: the token is checked here against Apple's published keys.
+    The app gave Apple the SHA-256 of the nonce this server issued, so that hash
+    is what the token must carry. Apple tells the app the person's name only on
+    the very first sign-in and never puts it in the token, so the app passes it
+    along beside the token.
+    """
+    import jwt  # PyJWT; only Apple needs it, LINE and Google verify for us
+
+    if not identity_token:
+        raise OwnerAuthError("id_token", "ไม่ได้รับข้อมูลยืนยันตัวตนจาก Apple กรุณาลองใหม่", 400)
+    if not audiences:
+        raise OwnerAuthError("unconfigured", "ยังไม่ได้เปิดใช้ช่องทางนี้", 503)
+    try:
+        kid = jwt.get_unverified_header(identity_token).get("kid")
+    except jwt.PyJWTError as exc:
+        raise OwnerAuthError("id_token", "ข้อมูลยืนยันตัวตนจาก Apple ไม่ถูกต้อง", 401) from exc
+    published = {key.get("kid"): key for key in _apple_keys().get("keys", [])}
+    if kid not in published:
+        raise OwnerAuthError("id_token", "ข้อมูลยืนยันตัวตนไม่ได้ลงนามโดย Apple", 401)
+    try:
+        key = jwt.PyJWK(published[kid], algorithm="RS256").key
+        claims = jwt.decode(identity_token, key, algorithms=["RS256"], audience=list(audiences),
+                            issuer=APPLE_ISSUER, options={"require": ["exp", "sub", "aud", "iss"]})
+    except jwt.ExpiredSignatureError as exc:
+        raise OwnerAuthError("id_token", "ข้อมูลยืนยันตัวตนหมดอายุ กรุณาลองใหม่", 401) from exc
+    except jwt.PyJWTError as exc:
+        raise OwnerAuthError("id_token", "ข้อมูลยืนยันตัวตนไม่ตรงกับแอปนี้", 401) from exc
+    if claims.get("nonce") != hashlib.sha256(nonce.encode()).hexdigest():
+        raise OwnerAuthError("nonce", "ข้อมูลยืนยันตัวตนไม่ตรงกับคำขอนี้ กรุณาลองใหม่", 401)
+    email = str(claims.get("email") or "")
+    if claims.get("email_verified") not in (True, "true", 1, "1"):
+        email = ""
+    return {"provider": "apple", "external_id": str(claims["sub"]), "email": email.lower(),
+            "display_name": " ".join(display_name.split())[:100]}
 
 
 # ------------------------------------------------------------------- the account

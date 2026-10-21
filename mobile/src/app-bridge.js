@@ -14,6 +14,10 @@
   // Before the first paint: app-shell.css styles only what carries this class,
   // so the web, which never loads this file, is never touched by it.
   document.documentElement.classList.add('poswai-app');
+  /* App Store review asks things of the iPhone app that Play does not (no shop
+     sign-up in the app, Sign in with Apple beside LINE and Google); those rules
+     sit under html.poswai-ios so Android and the web keep working as they do. */
+  if (window.Capacitor?.getPlatform?.() === 'ios') document.documentElement.classList.add('poswai-ios');
 
   const DEFAULT_SERVER = 'https://poswai.zzaxstudio.com';
   // Paths that mean the shop's server rather than a file this app ships.
@@ -218,6 +222,8 @@
 
   /** Where a page wanted to navigate. Returns true when the app took it over. */
   app.go = (url) => {
+    // Apple signs in with the phone's own sheet, not a browser tab.
+    if (/^\/api\/(owner|staff)\/auth\/apple\/start/.test(url || '')) { app.appleSignIn(url); return true; }
     const owner = /^\/api\/owner\/auth\/([a-z]+)\/start/.exec(url || '');
     if (owner) { app.signInWith(owner[1]); return true; }
     // A member of staff with their own LINE or Google: the same tab-and-back hop.
@@ -267,6 +273,39 @@
     if (!token) return;
     app.keepOwner(token);
     app.onSignedIn?.({outcome: got.get('outcome') || 'choose', shop: got.get('shop') || ''});
+  };
+
+  app.ios = () => window.Capacitor?.getPlatform?.() === 'ios';
+  /** Sign in with Apple is offered only where Apple's own sheet exists. */
+  app.appleReady = () => app.ios() && Boolean(plugin('AppleSignIn'));
+
+  /* Sign in with Apple, start to finish inside the app. The server writes the
+     state and nonce exactly as for LINE and Google; Apple's sheet signs a token
+     carrying the nonce; the server checks it and answers with the same
+     poswai://auth link a browser sign-in comes back with, so finishSignIn
+     handles all of them. Starting with fetch, not a browser tab, is also what
+     lets the session this app holds ride along when an account is being linked. */
+  app.appleSignIn = async (path) => {
+    const apple = plugin('AppleSignIn');
+    if (!apple) { app.onSignInFailed?.('provider_unknown'); return; }
+    try {
+      const started = await fetch(path, {cache: 'no-store'});
+      const handshake = await started.json().catch(() => ({}));
+      if (!started.ok) throw new Error(handshake.detail || 'provider');
+      const signed = await apple.authorize({nonce: handshake.nonce});
+      const done = await fetch('/api/auth/apple/native', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({state: handshake.state, identity_token: signed.identityToken,
+          name: [signed.givenName, signed.familyName].filter(Boolean).join(' ')}),
+      });
+      const result = await done.json().catch(() => ({}));
+      if (!done.ok || !result.link) throw new Error(result.detail || 'provider');
+      finishSignIn(result.link);
+    } catch (error) {
+      // Closing Apple's sheet is a choice, not a failure worth explaining.
+      app.onSignInFailed?.(/cancel/i.test(String(error?.code || error?.message)) ? 'closed' : 'provider');
+    }
   };
 
   plugin('App')?.addListener('appUrlOpen', ({url}) => {

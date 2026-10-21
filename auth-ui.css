@@ -64,6 +64,12 @@
 .poswai-channel.line .poswai-channel-mark { background: #06c755; font-size: .52rem; }
 .poswai-channel.google .poswai-channel-mark { background: #fff; color: #4285f4; border: 1px solid #dfe5ec; font-size: .95rem; }
 .poswai-channel.facebook .poswai-channel-mark { background: #1877f2; font-size: .95rem; }
+/* Apple's own rule for its button: black, white mark, never smaller than the others. */
+.poswai-channel.apple { background: #000; border-color: #000; color: #fff; }
+.poswai-channel.apple:hover { background: #1c1c1e; }
+.poswai-channel.apple .poswai-channel-mark { background: transparent; color: #fff; font-size: 1.15rem; }
+/* App Review 3.1.1: no shop sign-up inside the iPhone app. */
+html.poswai-ios .poswai-signup-row { display: none; }
 .poswai-or { display: flex; align-items: center; gap: 12px; margin: 15px 0 13px; color: #8a94a3; font-size: .82rem; }
 .poswai-or::before, .poswai-or::after { content: ""; flex: 1; height: 1px; background: #e4e9f0; }
 .poswai-device-shop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 13px;

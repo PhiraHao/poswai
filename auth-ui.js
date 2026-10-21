@@ -92,6 +92,7 @@
 
       <div data-login-pane="owner">
         <div class="poswai-channels">
+          <button type="button" class="poswai-channel apple" data-channel="apple" hidden><span class="poswai-channel-mark" aria-hidden="true"></span>เข้าสู่ระบบด้วย Apple</button>
           <button type="button" class="poswai-channel line" data-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>เข้าสู่ระบบด้วย LINE</button>
           <button type="button" class="poswai-channel google" data-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>เข้าสู่ระบบด้วย Google</button>
           <button type="button" class="poswai-channel facebook" data-channel="facebook"><span class="poswai-channel-mark" aria-hidden="true">f</span>เข้าสู่ระบบด้วย Facebook</button>
@@ -104,7 +105,7 @@
           <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
         </form>
         <p class="poswai-auth-switch">มีชื่อร้านในลิงก์และ PIN อยู่แล้ว? <button type="button" data-login-tab="staff">เข้าด้วยชื่อร้าน</button></p>
-        <p class="poswai-auth-switch">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
+        <p class="poswai-auth-switch poswai-signup-row">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
         <p class="poswai-auth-hint">เจ้าของร้านเข้าด้วยบัญชีของตัวเอง พนักงานหน้าร้านใช้ชื่อร้านกับ PIN ที่แท็บข้าง ๆ</p>
       </div>
 
@@ -125,6 +126,7 @@
 
       <div data-login-pane="staff" hidden>
         <div class="poswai-channels" id="poswaiStaffChannels">
+          <button type="button" class="poswai-channel apple" data-staff-channel="apple" hidden><span class="poswai-channel-mark" aria-hidden="true"></span>เข้าสู่ระบบด้วย Apple</button>
           <button type="button" class="poswai-channel line" data-staff-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>เข้าสู่ระบบด้วย LINE</button>
           <button type="button" class="poswai-channel google" data-staff-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>เข้าสู่ระบบด้วย Google</button>
         </div>
@@ -150,7 +152,7 @@
       <p class="poswai-auth-hint" id="poswaiChooserWho"></p>
       <div class="poswai-chooser-list" id="poswaiChooserList"></div>
       <p class="poswai-auth-error" id="poswaiChooserError" role="alert"></p>
-      <p class="poswai-auth-switch">ต้องการเปิดร้านใหม่อีกร้าน? <button type="button" id="poswaiChooserSignup">เปิดร้านใหม่</button></p>
+      <p class="poswai-auth-switch poswai-signup-row">ต้องการเปิดร้านใหม่อีกร้าน? <button type="button" id="poswaiChooserSignup">เปิดร้านใหม่</button></p>
       <div class="poswai-auth-actions"><button class="poswai-auth-secondary" type="button" id="poswaiChooserLogout">ออกจากบัญชี</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
     </div>
     <div id="poswaiSignupPanel" hidden>
@@ -191,6 +193,7 @@
     <div id="poswaiAccountPanel" hidden>
       <p class="poswai-auth-hint" id="poswaiAccountWho"></p>
       <div class="poswai-channels" id="poswaiStaffLinkChannels">
+        <button type="button" class="poswai-channel apple" data-staff-link-channel="apple" hidden><span class="poswai-channel-mark" aria-hidden="true"></span>ผูกบัญชี Apple</button>
         <button type="button" class="poswai-channel line" data-staff-link-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>ผูกบัญชี LINE</button>
         <button type="button" class="poswai-channel google" data-staff-link-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>ผูกบัญชี Google</button>
       </div>
@@ -220,6 +223,7 @@
         <p class="poswai-auth-hint">ผูกบัญชี LINE หรือ Google กับร้านนี้ แล้วครั้งต่อไปเข้าได้ด้วยบัญชีตัวเอง ไม่ต้องจำชื่อร้าน · ชื่อร้านกับ PIN ยังใช้ได้เหมือนเดิม</p>
         <ul class="poswai-owner-account-list" id="poswaiOwnerAccountList"></ul>
         <div class="poswai-channels" id="poswaiLinkChannels">
+          <button type="button" class="poswai-channel apple" data-link-channel="apple" hidden><span class="poswai-channel-mark" aria-hidden="true"></span>ผูกบัญชี Apple กับร้านนี้</button>
           <button type="button" class="poswai-channel line" data-link-channel="line"><span class="poswai-channel-mark" aria-hidden="true">LINE</span>ผูกบัญชี LINE กับร้านนี้</button>
           <button type="button" class="poswai-channel google" data-link-channel="google"><span class="poswai-channel-mark" aria-hidden="true">G</span>ผูกบัญชี Google กับร้านนี้</button>
         </div>
@@ -336,8 +340,19 @@
     chooser: ['เลือกร้านที่จะเข้า', 'บัญชีของคุณเป็นเจ้าของหลายร้าน', '#poswaiChooserList'],
     account: ['บัญชีของฉัน', 'ผูกบัญชีไว้ครั้งเดียว ครั้งหน้ากดเข้าได้เลยไม่ต้องพิมพ์ PIN', '#poswaiAccountLogout'],
   };
+  /* App Review 3.1.1: the iPhone app may not register a business, because the
+     service it opens is paid for outside the app. Existing shops sign in here;
+     a new shop is opened elsewhere, which this app does not point to. */
+  const signupHere = () => !window.POSWAI_APP?.ios?.();
+  const NO_SHOP_YET = 'บัญชีนี้ยังไม่ได้ผูกกับร้านใด เข้าด้วยชื่อร้านกับ PIN ก่อน แล้วผูกบัญชีนี้ได้ที่เมนูจัดการบัญชีพนักงาน';
   const open = (panel = 'login') => {
     if (panel === true) panel = 'manager';
+    if (panel === 'signup' && !signupHere()) {
+      open('login');
+      showLoginTab('owner');
+      $('#poswaiOwnerError').textContent = NO_SHOP_YET;
+      return;
+    }
     if (panel === 'manager') { showCreateForm(); loadOwnerAccounts(); }
     if (panel === 'account') {
       $('#poswaiAccountWho').textContent = current ? `${current.name} · ${ROLE_NAMES[current.role] || current.role}` : '';
@@ -422,7 +437,8 @@
     const button = event.target.closest('[data-staff-link-channel]');
     if (!button) return;
     $('#poswaiAccountError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[button.dataset.staffLinkChannel]}…`;
-    if (inApp()) {
+    // Apple binds in the app itself: its sheet is the phone's, and the session rides along.
+    if (inApp() && button.dataset.staffLinkChannel !== 'apple') {
       /* Binding needs to know who is signed in, and the browser tab the app
          opens has no session; the only way to tell it would be the token in
          the address, left in that browser's history. A one-time step, so it is
@@ -502,7 +518,7 @@
     renderDevice();
     $('#poswaiShopCode').focus();
   });
-  const CHANNEL_NAMES = {line: 'LINE', google: 'Google', facebook: 'Facebook'};
+  const CHANNEL_NAMES = {line: 'LINE', google: 'Google', facebook: 'Facebook', apple: 'Apple'};
   /* Inside the POS WAI app the page lives in a web view, and Google refuses to
      sign anyone in from one (error 400, disallowed_useragent). Sending the
      owner out to the phone's browser would work for the login itself and
@@ -552,7 +568,7 @@
       return;
     }
     $('#poswaiOwnerAccountError').textContent = `กำลังพาไปหน้า ${CHANNEL_NAMES[channel]}…`;
-    location.href = `/api/owner/auth/${channel}/start?mode=link`;
+    go(`/api/owner/auth/${channel}/start?mode=link`);
   });
   $('#poswaiOwnerEmailForm').addEventListener('submit', event => {
     event.preventDefault();
@@ -689,7 +705,10 @@
       if (response.ok) info = await response.json();
     } catch (_) { /* offline */ }
     if (!info || !info.linkable) { box.hidden = true; return; }
-    $('#poswaiLinkChannels').hidden = !(info.channels?.line || info.channels?.google);
+    $('#poswaiLinkChannels').hidden = !(info.channels?.line || info.channels?.google || channels.apple);
+    for (const button of $('#poswaiLinkChannels').querySelectorAll('[data-link-channel]'))
+      button.hidden = button.dataset.linkChannel === 'apple' ? !channels.apple
+        : !info.channels?.[button.dataset.linkChannel];
     $('#poswaiOwnerAccountList').replaceChildren(...(info.accounts || []).map(account => {
       const row = document.createElement('li');
       const label = document.createElement('span');
@@ -861,15 +880,30 @@
     preview = !!config.preview_only;
     shop = config.shop || shop;
     pointBaht = config.point_baht || pointBaht;
-    channels = config.login_channels || channels;
+    // Apple is the app's own (App Review 4.8 asks for it beside LINE and Google on an iPhone).
+    channels = { ...(config.login_channels || channels), apple: Boolean(window.POSWAI_APP?.appleReady?.()) };
+    /* Only the ways in that work: a button or a form with nothing behind it
+       ("ยังไม่ได้เปิดใช้…") is a dead end, and App Review counts it as one (2.1).
+       The close button inside the email form stays either way. */
+    const ownerPane = overlay.querySelector('[data-login-pane="owner"]');
+    for (const button of ownerPane.querySelectorAll('[data-channel]'))
+      button.hidden = !channels[button.dataset.channel];
+    for (const part of ownerPane.querySelectorAll(
+      '.poswai-or, #poswaiOwnerEmailForm label, #poswaiOwnerEmailForm input, #poswaiOwnerEmailForm .poswai-auth-primary'))
+      part.hidden = !channels.email;
     for (const button of overlay.querySelectorAll('[data-member-channel]'))
       button.hidden = !channels[button.dataset.memberChannel];
     for (const button of overlay.querySelectorAll('[data-staff-channel],[data-staff-link-channel]'))
       button.hidden = !channels[button.dataset.staffChannel || button.dataset.staffLinkChannel];
-    const noChannels = !channels.line && !channels.google;
-    for (const id of ['#poswaiMemberChannels', '#poswaiMemberOr', '#poswaiStaffChannels',
-                      '#poswaiStaffOr', '#poswaiStaffChannelHint', '#poswaiStaffLinkChannels'])
+    const noChannels = !channels.line && !channels.google && !channels.apple;
+    for (const id of ['#poswaiStaffChannels', '#poswaiStaffOr', '#poswaiStaffChannelHint',
+                      '#poswaiStaffLinkChannels'])
       $(id).hidden = noChannels;
+    /* A customer's LINE or Google sign-in cannot finish inside the app (the
+       card lands in the browser's cookie jar), so the app shows only the name
+       and phone the customer signed up with. */
+    for (const id of ['#poswaiMemberChannels', '#poswaiMemberOr'])
+      $(id).hidden = inApp() || (!channels.line && !channels.google);
     live = !preview || !!config.staff_live;
     if (shop.is_demo) sessionStorage.setItem('poswaiPreviewPeek', '1');
     window.dispatchEvent(new CustomEvent('poswai:shop-ready', { detail: shop }));

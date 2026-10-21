@@ -36,7 +36,9 @@ def google_claims(**overrides) -> dict:
     return claims
 
 
-class OwnerAccountTest(unittest.TestCase):
+class OwnerAuthCase(unittest.TestCase):
+    """A main shop, providers stood in for, and the helpers every sign-in test uses."""
+
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self.folder.cleanup)
@@ -129,6 +131,8 @@ class OwnerAccountTest(unittest.TestCase):
             self.google["nonce"] = query["nonce"][0]
         return self.callback(client, provider, state=query["state"][0])
 
+
+class OwnerAccountTest(OwnerAuthCase):
     # -------------------------------------------------------- refusing bad paths
     def test_a_channel_without_keys_cannot_be_started(self):
         with patch.object(server, "GOOGLE_CLIENT_SECRET", ""):
