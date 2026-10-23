@@ -202,6 +202,10 @@
     $('#staffSeedTemplates').hidden = items.length > 0;
   }
 
+  /* เดิมไฟล์นี้ส่งสัญญาณออกอย่างเดียวไม่เคยรับ หน้าอื่นจึงอัปเดตตามได้ แต่ตัวเองค้าง
+     — เห็นชัดตอนผูก LINE สำเร็จแล้วป้ายยังขึ้นว่ายังไม่ผูก */
+  window.addEventListener('poswai:staff-refresh', () => { refresh(); });
+
   async function refresh() {
     const user = auth();
     card.hidden = !user || !['manager','owner'].includes(user.role);

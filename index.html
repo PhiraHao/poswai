@@ -2285,6 +2285,8 @@
         });
         if (!response.ok) throw new Error((await response.json()).detail || `HTTP ${response.status}`);
         showToast("เชื่อมบัญชี LINE กับพนักงานที่เข้าสู่ระบบแล้ว");
+        // หน้ารายชื่อพนักงานถือสำเนาเดิมอยู่ ไม่บอกมันก็ยังขึ้นว่า "ยังไม่ผูก LINE" ต่อไป
+        window.dispatchEvent(new Event('poswai:staff-refresh'));
       } catch (error) { showToast(`เชื่อม LINE ไม่สำเร็จ: ${error.message}`); }
     }
 
@@ -5141,7 +5143,7 @@
   <script src="/sales-redesign.js?v=49"></script>
   <script src="/ops-redesign.js?v=19"></script>
   <script src="/people-redesign.js?v=38"></script>
-  <script src="/staff-admin.js?v=64"></script>
+  <script src="/staff-admin.js?v=65"></script>
   <script src="/staff-dossier.js?v=59"></script>
   <script src="/reports-restore.js?v=19"></script>
   <script src="/reports-live.js?v=31"></script>
