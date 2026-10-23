@@ -122,6 +122,31 @@ class CommerceTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM line_notification_outbox "
                                           "WHERE event_key=?", (f"online-order:{order_no}",)).fetchone()[0], 2)
 
+    def test_what_the_customer_chose_reaches_the_kitchen_ticket(self):
+        """ครัวได้แต่ชื่อจาน = ทําผิดตามที่ลูกค้าสั่ง เป็นของเสียจริง ไม่ใช่แค่ข้อมูลหาย"""
+        self._login()
+        self.client.put("/api/integrations/songwai/menu-map", json={
+            "branch_id": 1, "restaurant_id": 37, "songwai_menu_id": 480, "pos_item_id": "beef"})
+        order = self._songwai({"order_id": 995, "restaurant_id": 37, "delivery_mode": "rider",
+                               "items": [{"menu_id": 480, "qty": 1,
+                                          "options": "เผ็ดมาก, ไข่ดาว"}]})
+        self.assertEqual(order.status_code, 200, order.text)
+        with closing(sqlite3.connect(self.db)) as conn:
+            options = conn.execute("SELECT options FROM order_items WHERE order_no=?",
+                                   (order.json()["order_no"],)).fetchone()[0]
+        self.assertEqual(options, "เผ็ดมาก, ไข่ดาว")
+        # ตั๋วครัวอ่านค่านี้ได้จริง ไม่ใช่แค่เก็บไว้ในฐานข้อมูล
+        ticket = next(t for t in self.client.get("/api/kds").json()["tickets"]
+                      if t["order_no"] == order.json()["order_no"])
+        self.assertEqual(ticket["items"][0]["options"], "เผ็ดมาก, ไข่ดาว")
+
+        # ไม่ส่งตัวเลือกมา = ช่องว่าง ไม่ใช่คำว่า None ไปโผล่บนตั๋ว
+        plain = self._songwai({"order_id": 996, "restaurant_id": 37, "delivery_mode": "rider",
+                               "items": [{"menu_id": 480, "qty": 1}]})
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT options FROM order_items WHERE order_no=?",
+                                          (plain.json()["order_no"],)).fetchone()[0], "")
+
     def test_cancelled_order_restores_bom_once(self):
         self._login()
         self.client.put("/api/integrations/songwai/menu-map", json={

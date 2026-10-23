@@ -110,12 +110,16 @@ def create_order(
     conn.execute("INSERT INTO order_events(event_id,order_no,branch_id,table_no,total_amount) VALUES(?,?,?,?,?)",
                  ("online:" + order_no, order_no, branch_id,
                   "รับเอง" if fulfillment == "self_pickup" else "ไรเดอร์", quote["total_amount"]))
+    # ตัวเลือกที่ลูกค้าเลือกมาจากช่องทางภายนอก (เช่นความเผ็ด/ท็อปปิ้งในส่งไว)
+    # ไม่ได้เอามาคิดเงินซ้ำ — ต้นทางคิดจบแล้ว ที่นี่ส่งต่อให้ครัวอ่านบนตั๋วเท่านั้น
+    chosen = {str(line.get("id")): str(line.get("options") or "")[:200]
+              for line in items if isinstance(line, dict)}
     for item in quote["items"]:
         conn.execute("""INSERT INTO order_items
-            (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode)
-            VALUES(?,?,?,?,?,?,?,?)""",
+            (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options)
+            VALUES(?,?,?,?,?,?,?,?,?)""",
             (order_no, item["id"], item["name"], item["qty"], item["price"],
-             json.dumps(item["bom"]), item["station"], "FIRE"))
+             json.dumps(item["bom"]), item["station"], "FIRE", chosen.get(str(item["id"]), "")))
     for station in {item["station"] for item in quote["items"]}:
         conn.execute("INSERT INTO kds_station_tickets(order_no,station,status) VALUES(?,?,'queued')",
                      (order_no, station))

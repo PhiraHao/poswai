@@ -1916,6 +1916,8 @@ def set_songwai_link(req: SongwaiLink, request: Request):
 class SongwaiOrderLine(BaseModel):
     menu_id: int
     qty: int
+    # "เผ็ดมาก, ไข่ดาว" — ข้อความสั้นให้ครัวอ่าน ไม่ใช่ของที่เอามาคิดเงินซ้ำ
+    options: str = ""
 
 
 class SongwaiOrderCreate(BaseModel):
@@ -1978,7 +1980,8 @@ async def intake_songwai_order(request: Request):
                 (req.restaurant_id, line.menu_id)).fetchone()
             if not row:
                 raise HTTPException(409, f"Songwai menu {line.menu_id} is not mapped")
-            mapped.append({"id": row[0], "qty": line.qty})
+            mapped.append({"id": row[0], "qty": line.qty,
+                           "options": line.options.strip()[:200]})
         customer_id = None
         if req.user_id and req.user_id > 0:
             customer_id = upsert_customer(conn, branch_id=1, source="songwai",
