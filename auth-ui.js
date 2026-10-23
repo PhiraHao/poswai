@@ -106,7 +106,28 @@
         </form>
         <p class="poswai-auth-switch">มีชื่อร้านในลิงก์และ PIN อยู่แล้ว? <button type="button" data-login-tab="staff">เข้าด้วยชื่อร้าน</button></p>
         <p class="poswai-auth-switch poswai-signup-row">ยังไม่มีร้านในระบบ? <button type="button" id="poswaiOpenSignup">เปิดร้านใหม่ ใช้ฟรี 30 วัน</button></p>
+        <p class="poswai-auth-switch">มีร้านในแอปส่งไวอยู่แล้ว? <button type="button" data-login-tab="songwai">เข้าด้วยรหัสร้านส่งไว</button></p>
         <p class="poswai-auth-hint">เจ้าของร้านเข้าด้วยบัญชีของตัวเอง พนักงานหน้าร้านใช้ชื่อร้านกับ PIN ที่แท็บข้าง ๆ</p>
+      </div>
+
+      <!-- ร้านที่ขายในส่งไวอยู่แล้วไม่ต้องกรอกชื่อร้าน เบอร์ เมนู ราคา รูป ใหม่ทั้งหมด
+           ถามแค่ "รหัสร้าน" ช่องเดียวก่อน ถ้ายังไม่เคยเปิดร้านที่นี่ค่อยถามเพิ่มสองช่อง -->
+      <div data-login-pane="songwai" hidden>
+        <form id="poswaiSongwaiForm">
+          <label for="poswaiSongwaiToken">รหัสร้านจากแอปส่งไว</label>
+          <input id="poswaiSongwaiToken" maxlength="120" autocomplete="off" required>
+          <p class="poswai-auth-hint">รหัสเดียวกับที่ใช้เข้าแผงร้านในส่งไว เจ้าของร้านเท่านั้น พนักงานใช้รหัสพนักงานกับ PIN ตามเดิม</p>
+          <div id="poswaiSongwaiNew" hidden>
+            <label for="poswaiSongwaiSlug">ตั้งชื่อร้านในลิงก์</label>
+            <input id="poswaiSongwaiSlug" maxlength="30" pattern="[a-z0-9][a-z0-9-]{1,28}[a-z0-9]" placeholder="a-z ตัวเลข และขีดกลาง">
+            <label for="poswaiSongwaiPin">ตั้ง PIN เจ้าของร้าน (อย่างน้อย 8 ตัวอักษร)</label>
+            <input id="poswaiSongwaiPin" type="password" minlength="8" autocomplete="new-password">
+            <label class="poswai-auth-check"><input type="checkbox" id="poswaiSongwaiTerms"> <span>ยอมรับ<a href="/terms" target="_blank" rel="noopener">ข้อตกลงการใช้งาน</a></span></label>
+          </div>
+          <p class="poswai-auth-error" id="poswaiSongwaiError" role="alert"></p>
+          <div class="poswai-auth-actions"><button class="poswai-auth-primary" type="submit" id="poswaiSongwaiSubmit">เข้าสู่ระบบ</button><button class="poswai-auth-secondary" type="button" data-close-login>ปิด</button></div>
+        </form>
+        <p class="poswai-auth-switch">ใช้บัญชีอื่น? <button type="button" data-login-tab="owner">กลับไปหน้าเข้าสู่ระบบ</button></p>
       </div>
 
       <div data-login-pane="member" hidden>
@@ -285,6 +306,7 @@
   };
 
   const loginFocus = () => {
+    if (!$('[data-login-pane="songwai"]').hidden) return '#poswaiSongwaiToken';
     if (!$('[data-login-pane="member"]').hidden) return '#poswaiCustomerName';
     const staffTab = !$('[data-login-pane="staff"]').hidden;
     if (!staffTab) return '#poswaiOwnerEmail';
@@ -295,7 +317,9 @@
       tab.setAttribute('aria-selected', String(tab.dataset.loginTab === name));
     for (const pane of overlay.querySelectorAll('[data-login-pane]'))
       pane.hidden = pane.dataset.loginPane !== name;
-    $('#poswaiAuthDescription').textContent = name === 'member'
+    $('#poswaiAuthDescription').textContent = name === 'songwai'
+      ? 'ร้านที่ขายในส่งไวอยู่แล้ว เข้าด้วยรหัสร้านเดิม เมนูกับรูปดึงมาให้เอง'
+      : name === 'member'
       ? 'ลูกค้าสะสมแต้ม เข้าด้วยชื่อกับเบอร์ที่สมัครไว้'
       : name === 'owner'
       ? 'เจ้าของร้านและผู้จัดการ เข้าด้วยบัญชีของตัวเอง ไม่ต้องจำชื่อร้าน'
@@ -592,6 +616,43 @@
       } catch (_) { hint.textContent = ''; }
     }, 350);
   });
+  /* ครั้งแรกถามช่องเดียว ถ้าเซิร์ฟเวอร์บอกว่ายังไม่เคยเปิดร้านที่นี่ ค่อยกางอีกสองช่อง
+     — ร้านที่เคยเปิดแล้ว (ซึ่งจะเป็นส่วนใหญ่หลังผ่านไปสักพัก) จึงไม่ต้องเห็นช่องที่ไม่ใช้ */
+  let songwaiNeedsShop = false;
+  $('#poswaiSongwaiForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const submit = $('#poswaiSongwaiSubmit');
+    if (submit.disabled) return;
+    const token = $('#poswaiSongwaiToken').value.trim();
+    if (!token) { $('#poswaiSongwaiError').textContent = 'กรุณากรอกรหัสร้านจากแอปส่งไว'; return; }
+    submit.disabled = true; submit.textContent = 'กำลังตรวจสอบ…';
+    $('#poswaiSongwaiError').textContent = '';
+    try {
+      const result = songwaiNeedsShop
+        ? await api('/api/shops/from-songwai', {
+            token, slug: $('#poswaiSongwaiSlug').value.trim(),
+            pin: $('#poswaiSongwaiPin').value, accept_terms: $('#poswaiSongwaiTerms').checked })
+        : await api('/api/auth/songwai-token', { token });
+      $('#poswaiSongwaiPin').value = '';
+      sessionStorage.removeItem('poswaiPreviewPeek');
+      keepSession(result);
+      go(`/?shop=${encodeURIComponent(result.shop.slug)}`);
+    } catch (error) {
+      if (!songwaiNeedsShop && /ยังไม่ได้เปิดใน POS WAI/.test(error.message)) {
+        songwaiNeedsShop = true;
+        $('#poswaiSongwaiNew').hidden = false;
+        $('#poswaiSongwaiError').textContent =
+          'ยังไม่มีร้านนี้ใน POS WAI — ตั้งชื่อลิงก์กับ PIN แล้วกดเปิดร้าน เมนูและรูปจะดึงมาให้เอง';
+        $('#poswaiSongwaiSlug').focus();
+      } else {
+        $('#poswaiSongwaiError').textContent = error.message;
+      }
+    } finally {
+      submit.disabled = false;
+      submit.textContent = songwaiNeedsShop ? 'เปิดร้านจากส่งไว' : 'เข้าสู่ระบบ';
+    }
+  });
+
   $('#poswaiSignupForm').addEventListener('submit', async event => {
     event.preventDefault();
     const submit = $('#poswaiSignupSubmit');

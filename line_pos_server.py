@@ -2051,6 +2051,94 @@ def get_songwai_catalog(request: Request, branch_id: int = 1):
 
 
 SONGWAI_ORIGIN = "https://songwai.online"
+# ร้านที่เดารหัสมั่ว ๆ ได้ไม่จำกัดครั้ง = รหัสร้านของคนอื่นถูกไล่เดาจนเจอ
+SONGWAI_TOKEN_TRIES_PER_HOUR = 20
+
+
+def _install_songwai_menus(conn: sqlite3.Connection, branch_id: int, restaurant_id: int,
+                           items: list[dict]) -> tuple[int, list[tuple[str, str]]]:
+    """สร้างเมนูจากส่งไวเป็นฉบับร่างและจับคู่ให้ คืน (จำนวนที่สร้างใหม่, รูปที่ยังต้องไปโหลด)
+
+    ฉบับร่างเสมอ: เจ้าของร้านต้องได้ดูก่อนว่าจะขายจานไหน ใส่สูตรกับสต็อกแล้วค่อยเปิด
+    (เจ้าของตัดสินใจ 23 ต.ค. 69 — แล้วเปิดทั้งหมดได้ด้วยสวิตช์เดียวในหน้าจัดการเมนู)
+    เรียกจากทั้งปุ่มดึงเมนูและตอนเปิดร้านจากส่งไว ตรรกะเดียวกันจึงอยู่ที่เดียว
+    """
+    imported = 0
+    wanted_photos: list[tuple[str, str]] = []
+    for item in items:
+        menu_id = item.get("id")
+        if isinstance(menu_id, bool) or not isinstance(menu_id, int) or menu_id < 1:
+            raise HTTPException(502, "Invalid Songwai menu ID")
+        pos_id = f"songwai-{menu_id}"
+        existing = conn.execute("SELECT photo FROM menu_catalog WHERE branch_id=? AND item_id=?",
+                                (branch_id, pos_id)).fetchone()
+        # รูปเติมให้เฉพาะจานที่ยังไม่มีรูป — กดซ้ำจึงเติมของเดิมได้ และไม่ทับรูปที่ร้านอัปโหลดเอง
+        if item.get("image") and not (existing and existing[0]):
+            wanted_photos.append((pos_id, item["image"]))
+        if not existing:
+            try:
+                upsert_menu_item(conn, branch_id, pos_id, item["name"], item["price"], [], False)
+            except (CatalogError, KeyError) as exc:
+                raise HTTPException(502, "Invalid Songwai catalog item") from exc
+            imported += 1
+        conn.execute("""INSERT INTO songwai_menu_map(branch_id,restaurant_id,songwai_menu_id,pos_item_id)
+            VALUES(?,?,?,?) ON CONFLICT(branch_id,restaurant_id,songwai_menu_id) DO NOTHING""",
+            (branch_id, restaurant_id, menu_id, pos_id))
+    return imported, wanted_photos
+
+
+def _songwai_resolve(token: str, shop: str = "") -> dict:
+    """ถามส่งไวว่า "รหัสร้านนี้เป็นของร้านไหน" · shop ว่าง = ถามเฉย ๆ ไม่ผูก
+
+    ลงลายเซ็นด้วยรหัสลับที่มีแค่สองระบบนี้ รหัสร้านจึงถูกเดาจากข้างนอกไม่ได้
+    """
+    if len(SONGWAI_WEBHOOK_SECRET) < 32:
+        raise HTTPException(503, "ยังไม่ได้เปิดใช้การเชื่อมกับส่งไว")
+    stamp = str(int(time.time()))
+    digest = hmac.new(SONGWAI_WEBHOOK_SECRET.encode(),
+                      f"{stamp}.{token}.{shop}".encode(), hashlib.sha256).hexdigest()
+    try:
+        response = httpx.post(f"{SONGWAI_ORIGIN}/api/integrations/poswai/resolve",
+                              json={"token": token, "shop": shop},
+                              headers={"X-Poswai-Timestamp": stamp,
+                                       "X-Poswai-Signature": "sha256=" + digest}, timeout=10)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "ติดต่อส่งไวไม่ได้ กรุณาลองใหม่") from exc
+    if response.status_code == 404:
+        raise HTTPException(404, "ไม่พบร้านที่ใช้รหัสนี้ ตรวจรหัสร้านในแอปส่งไวอีกครั้ง")
+    if response.status_code == 409:
+        raise HTTPException(409, "ร้านนี้เชื่อมกับร้านอื่นใน POS WAI อยู่แล้ว")
+    if response.status_code != 200:
+        raise HTTPException(502, "ส่งไวไม่ยืนยันรหัสร้านนี้")
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise HTTPException(502, "ส่งไวตอบข้อมูลไม่ถูกรูป") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("restaurant_id"), int):
+        raise HTTPException(502, "ส่งไวตอบข้อมูลไม่ถูกรูป")
+    return data
+
+
+def _songwai_menu_items(data: dict) -> list[dict]:
+    """แปลงเมนูที่ส่งไวตอบมาให้เป็นรูปเดียวกับที่ตัวติดตั้งเมนูต้องการ"""
+    return [{"id": m.get("id"), "name": m.get("name") or "", "price": m.get("price"),
+             "image": m.get("image_url")}
+            for m in (data.get("menus") or []) if isinstance(m, dict)]
+
+
+def _songwai_token_throttle(request: Request) -> None:
+    """นับครั้งที่เดารหัสร้านต่อหนึ่งที่อยู่ไอพี เก็บในทะเบียนกลาง ไม่ใช่ในร้านใดร้านหนึ่ง"""
+    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown")
+    with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn, conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS songwai_token_tries (
+            client TEXT NOT NULL, tried_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
+        conn.execute("DELETE FROM songwai_token_tries WHERE tried_at < datetime('now','-1 hour')")
+        recent = conn.execute("SELECT COUNT(*) FROM songwai_token_tries WHERE client=?",
+                              (client,)).fetchone()[0]
+        if recent >= SONGWAI_TOKEN_TRIES_PER_HOUR:
+            raise HTTPException(429, "ลองใส่รหัสร้านบ่อยเกินไป กรุณารอสักครู่")
+        conn.execute("INSERT INTO songwai_token_tries (client) VALUES (?)", (client,))
 
 
 def _copy_songwai_photos(branch_id: int, wanted: list[tuple[str, str]]) -> int:
@@ -2099,30 +2187,9 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
     restaurant_id = catalog["restaurant_id"]
     if restaurant_id < 1 or not catalog["items"]:
         raise HTTPException(409, "Link the Songwai restaurant first")
-    imported = 0
-    wanted_photos: list[tuple[str, str]] = []
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
-        for item in catalog["items"]:
-            menu_id = item.get("id")
-            if isinstance(menu_id, bool) or not isinstance(menu_id, int) or menu_id < 1:
-                raise HTTPException(502, "Invalid Songwai menu ID")
-            pos_id = f"songwai-{menu_id}"
-            existing = conn.execute("SELECT photo FROM menu_catalog WHERE branch_id=? AND item_id=?",
-                                    (branch_id, pos_id)).fetchone()
-            # รูปเติมให้เฉพาะจานที่ยังไม่มีรูป — กดซ้ำจึงเติมของที่นำเข้าไปก่อนหน้านี้ได้
-            # และไม่ทับรูปที่ร้านอัปโหลดเอง
-            if item.get("image") and not (existing and existing[0]):
-                wanted_photos.append((pos_id, item["image"]))
-            if not existing:
-                try:
-                    upsert_menu_item(conn, branch_id, pos_id, item["name"], item["price"], [], False)
-                except (CatalogError, KeyError) as exc:
-                    raise HTTPException(502, "Invalid Songwai catalog item") from exc
-                imported += 1
-            conn.execute("""INSERT INTO songwai_menu_map(branch_id,restaurant_id,songwai_menu_id,pos_item_id)
-                VALUES(?,?,?,?) ON CONFLICT(branch_id,restaurant_id,songwai_menu_id) DO NOTHING""",
-                (branch_id, restaurant_id, menu_id, pos_id))
+        imported, wanted_photos = _install_songwai_menus(conn, branch_id, restaurant_id, catalog["items"])
     # นอกทรานแซกชัน: โหลดรูปทีละใบใช้เวลาเป็นวินาที ถือล็อกไว้ระหว่างนั้นคือทั้งร้านค้าง
     photos = _copy_songwai_photos(branch_id, wanted_photos)
     return {"restaurant_id": restaurant_id, "imported": imported, "photos": photos,
@@ -3701,6 +3768,110 @@ def check_shop_slug(slug: str):
     slug = slug.strip().lower()
     return {"slug": slug, "valid": shops.valid_slug(slug),
             "available": shops.slug_available(DB_PATH, slug)}
+
+
+class SongwaiShopSignup(BaseModel):
+    token: str
+    slug: str
+    pin: str
+    accept_terms: bool = False
+
+
+class SongwaiTokenLogin(BaseModel):
+    token: str
+
+
+@app.post("/api/shops/from-songwai")
+def open_shop_from_songwai(req: SongwaiShopSignup, request: Request, response: Response):
+    """เปิดร้านใน POS WAI จากร้านที่มีอยู่แล้วในส่งไว
+
+    เจ้าของร้านไม่ต้องกรอกชื่อร้าน เบอร์ เมนู ราคา รูป ใหม่ทั้งหมด — ข้อมูลชุดเดียวกัน
+    มีอยู่แล้วในส่งไว ใช้ "รหัสร้าน" ตัวเดียวกับที่เข้าหน้าร้านในส่งไวเป็นกุญแจ
+    """
+    _songwai_token_throttle(request)
+    token = req.token.strip()
+    slug = req.slug.strip().lower()
+    if not token:
+        raise HTTPException(400, "กรุณากรอกรหัสร้านจากแอปส่งไว")
+    if not req.accept_terms:
+        raise HTTPException(400, "กรุณายอมรับเงื่อนไขการใช้งาน")
+    if not shops.valid_slug(slug):
+        raise HTTPException(400, "ชื่อร้านในลิงก์ใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว")
+    pin_hash = hash_pin(req.pin)
+    data = _songwai_resolve(token, slug)
+    shop_name = (data.get("name") or "ร้านของฉัน").strip()[:80]
+    phone = re.sub(r"[\s-]", "", str(data.get("phone") or ""))
+    if not re.fullmatch(r"\+?\d{9,15}", phone):
+        phone = ""          # ส่งไวไม่ได้บังคับเบอร์ ร้านมาเติมในโปรไฟล์ทีหลังได้
+    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
+        request.client.host if request.client else "unknown")
+    try:
+        shop = shops.reserve_shop(DB_PATH, slug=slug, name=shop_name, owner_name=shop_name,
+                                  phone=phone, client_key=client, max_shops=MAX_SHOPS)
+    except ShopError as exc:
+        raise HTTPException(exc.status, str(exc)) from exc
+    CURRENT_SHOP.set(slug)
+    try:
+        with closing(connect_db()) as conn, conn:
+            conn.execute("INSERT INTO branches (id,name) VALUES (1,?)", (shop_name,))
+            cur = conn.execute("INSERT INTO staffs (branch_id,name,role,pin_code_hash) VALUES (1,?,'owner',?)",
+                               (shop_name, pin_hash))
+            owner_id = cur.lastrowid
+            store_leave_quota(conn, owner_id, None)
+            conn.execute("""INSERT INTO songwai_link(branch_id,restaurant_id,linked_by)
+                VALUES(1,?,?) ON CONFLICT(branch_id) DO UPDATE SET
+                restaurant_id=excluded.restaurant_id, linked_at=CURRENT_TIMESTAMP""",
+                (data["restaurant_id"], owner_id))
+            imported, wanted_photos = _install_songwai_menus(
+                conn, 1, data["restaurant_id"], _songwai_menu_items(data))
+            _, expires = _open_session(request, response, conn, owner_id)
+    except Exception:
+        _prepared_databases.discard(shops.shop_db_path(DB_PATH, slug))
+        shops.shop_db_path(DB_PATH, slug).unlink(missing_ok=True)
+        shops.release_shop(DB_PATH, slug)
+        raise
+    # นอกทรานแซกชัน: รูปใบหนึ่งใช้เวลาเป็นวินาที ถือล็อกไว้ระหว่างนั้นคือทั้งร้านค้าง
+    photos = _copy_songwai_photos(1, wanted_photos)
+    _remember_shop(request, response, slug)
+    return {"shop": {"slug": slug, "name": shop["name"], "trial_ends_at": shop["trial_ends_at"]},
+            "staff_id": owner_id, "role": "owner", "expires": expires,
+            "songwai": {"restaurant_id": data["restaurant_id"], "imported": imported,
+                        "photos": photos, "enabled": bool(data.get("poswai_enabled"))}}
+
+
+@app.post("/api/auth/songwai-token")
+def login_with_songwai_token(req: SongwaiTokenLogin, request: Request, response: Response):
+    """เข้าสู่ระบบ POS WAI ด้วยรหัสร้านของส่งไว — เฉพาะเจ้าของร้านเท่านั้น
+
+    พนักงานคนอื่นใช้รหัสพนักงานกับ PIN ตามเดิม รหัสร้านเป็นของเจ้าของ ไม่ใช่ของทั้งร้าน
+    ถามส่งไวใหม่ทุกครั้ง เปลี่ยนรหัสร้านในส่งไวเมื่อไหร่ รหัสเก่าก็เข้าที่นี่ไม่ได้ทันที
+    """
+    _songwai_token_throttle(request)
+    token = req.token.strip()
+    if not token:
+        raise HTTPException(400, "กรุณากรอกรหัสร้านจากแอปส่งไว")
+    data = _songwai_resolve(token)
+    slug = str(data.get("poswai_shop") or "").strip().lower()
+    if not slug or not _known_shop(slug):
+        raise HTTPException(404, "ร้านนี้ยังไม่ได้เปิดใน POS WAI — กดเปิดร้านจากส่งไวก่อน")
+    stopped = shops.get_shop(DB_PATH, slug) if slug not in (MAIN_SHOP, DEMO_SHOP) else None
+    if stopped and stopped["status"] != "active":
+        raise HTTPException(403, _out_of_service_text(stopped))
+    CURRENT_SHOP.set(slug)
+    with closing(connect_db()) as conn, conn:
+        # ส่งไวบอกว่ารหัสนี้คุมร้านไหน ฝั่งนี้ต้องยืนยันว่าร้านนั้นผูกกับเลขร้านเดียวกันจริง
+        # ไม่งั้นการผูกที่ค้างอยู่ผิดร้านจะกลายเป็นประตูเข้าร้านคนอื่น
+        link = conn.execute("SELECT restaurant_id FROM songwai_link WHERE branch_id=1").fetchone()
+        if not link or int(link[0]) != data["restaurant_id"]:
+            raise HTTPException(403, "รหัสร้านนี้ไม่ตรงกับร้านที่เชื่อมไว้")
+        owner = conn.execute("SELECT id,name FROM staffs WHERE branch_id=1 AND role='owner' "
+                             "AND is_active=1 ORDER BY id LIMIT 1").fetchone()
+        if not owner:
+            raise HTTPException(404, "ร้านนี้ยังไม่มีบัญชีเจ้าของร้าน")
+        token_value, expires = _open_session(request, response, conn, owner[0])
+    _remember_shop(request, response, slug)
+    return {"shop": {"slug": slug}, "staff_id": owner[0], "name": owner[1],
+            "role": "owner", "expires": expires, "session": token_value}
 
 
 @app.post("/api/shops")
