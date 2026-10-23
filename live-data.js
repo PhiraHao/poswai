@@ -909,7 +909,18 @@
     state.staffStats = []; state.leaveRequests = []; state.stockLogs = [];
     state.reservedTables = {}; state.slips = {};
     const branchSelect = document.getElementById('branchSelect');
-    if (branchSelect) { branchSelect.selectedIndex = Math.min(branch() - 1, branchSelect.options.length - 1); branchSelect.disabled = true; }
+    if (branchSelect) {
+      /* ชื่อสาขาในหน้าเป็นของร้านตัวอย่าง ("สาขา 1: เชียงใหม่ (นิมมาน)") ร้านจริง
+         เห็นค้างอยู่หัวทุกหน้าแล้วงงว่าสาขาใคร กดก็ไม่ได้เพราะระบบปิดไว้ — ใส่ชื่อร้านจริงแทน
+         ยังคง element ไว้ เพราะหน้าอื่นอ่านเลขสาขาจากตัวนี้ */
+      const shopName = String(window.poswaiShopName || '').trim();
+      if (shopName) {
+        branchSelect.replaceChildren(new Option(shopName, shopName));
+        branchSelect.classList.add('branch-select-single');
+      }
+      branchSelect.selectedIndex = Math.min(branch() - 1, branchSelect.options.length - 1);
+      branchSelect.disabled = true;
+    }
     state.shift.startingCash = 0; state.shift.cashSales = 0;
     state.shift.totalSalesToday = 0; state.shift.totalCostToday = 0;
     document.getElementById('autoDemoBtn')?.remove();
@@ -930,6 +941,15 @@
       if (config.preview_only) localStorage.removeItem(KEY);
       else localStorage.setItem(KEY, config.shop?.slug || 'main');
     } catch (_) { /* private browsing */ }
+    // ชื่อร้านจริง ใช้แทนชื่อสาขาตัวอย่างบนหัวหน้า — ต้องตั้งก่อน enterLive
+    if (config.shop?.name) window.poswaiShopName = config.shop.name;
     if (!config.preview_only) enterLive();
+    // enterLive อาจถูกเรียกไปแล้วก่อน config มา จึงเติมชื่อร้านซ้ําอีกครั้ง
+    const topBranch = document.getElementById('branchSelect');
+    if (topBranch && window.poswaiShopName && !config.preview_only) {
+      topBranch.replaceChildren(new Option(window.poswaiShopName, window.poswaiShopName));
+      topBranch.classList.add('branch-select-single');
+      topBranch.disabled = true;
+    }
   }).catch(() => {});
 })();

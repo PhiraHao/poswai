@@ -377,3 +377,6 @@ table.data-table tr:hover td { background: #fafcfb; }
 
 @media (max-width: 380px) { .module-state { display: none; } .menu-item { min-height: 164px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
+
+/* ร้านสาขาเดียว: ไม่ต้องดูเหมือนช่องที่กดได้ จะได้ไม่มีใครนั่งกดรอ */
+.branch-select-single { appearance: none; -webkit-appearance: none; background-image: none; cursor: default; opacity: 1; }
