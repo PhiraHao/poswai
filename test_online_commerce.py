@@ -82,6 +82,45 @@ class CommerceTest(unittest.TestCase):
         self.assertEqual(customers[0]["completed_orders"], 1)
         self.assertEqual(customers[0]["lifetime_amount"], 100)
 
+    def test_songwai_order_pushes_line_alert_once_per_recipient(self):
+        """Thai shops watch LINE, not the POS screen - a delivery order must ping them."""
+        with closing(sqlite3.connect(self.db)) as conn, conn:
+            conn.execute("UPDATE staffs SET line_user_id='U-manager' WHERE id=1")
+            conn.execute("INSERT INTO staffs(id,branch_id,name,role,pin_code_hash,line_user_id) "
+                         "VALUES(2,1,'Cook','kitchen',?,'U-cook')", (server.hash_pin("secure-cook-pin"),))
+            conn.execute("INSERT INTO staffs(id,branch_id,name,role,pin_code_hash,line_user_id) "
+                         "VALUES(3,1,'Waiter','service',?,'U-waiter')", (server.hash_pin("secure-waiter-pin"),))
+        self._login()
+        self.client.put("/api/integrations/songwai/menu-map", json={
+            "branch_id": 1, "restaurant_id": 37, "songwai_menu_id": 480, "pos_item_id": "beef"})
+        payload = {"order_id": 993, "restaurant_id": 37, "delivery_mode": "rider",
+                   "customer_name": "Somchai", "contact_phone": "0812345678",
+                   "items": [{"menu_id": 480, "qty": 2}]}
+        with patch.object(server, "LINE_CHANNEL_ACCESS_TOKEN", ""):
+            order = self._songwai(payload)
+        self.assertEqual(order.status_code, 200, order.text)
+        order_no = order.json()["order_no"]
+        with closing(sqlite3.connect(self.db)) as conn:
+            rows = conn.execute("SELECT recipient,message_json,status FROM line_notification_outbox "
+                                "WHERE event_key=? ORDER BY recipient", (f"online-order:{order_no}",)).fetchall()
+        self.assertEqual([row[0] for row in rows], ["U-cook", "U-manager"])  # service staff stays out of it
+        text = json.loads(rows[0][1])["text"]
+        for fragment in (order_no, "Beef", "Somchai", "0812345678", "100.00"):
+            self.assertIn(fragment, text)
+        self.assertTrue(all(row[2] == "pending" for row in rows))
+
+        # ยิงซ้ำด้วยใบเดิม ต้องไม่เกิดข้อความใหม่ (PRIMARY KEY กันไว้) และต้องพยายามส่งเมื่อมีโทเคน
+        with patch.object(server, "LINE_CHANNEL_ACCESS_TOKEN", "token"), \
+             patch.object(server, "flush_line_notifications") as flush:
+            self.assertEqual(self._songwai(payload).json()["order_no"], order_no)
+            flush.assert_not_called()   # ใบซ้ำคืนของเดิม ไม่ต้องยิงอะไรอีก
+            fresh = dict(payload, order_id=994)
+            self.assertEqual(self._songwai(fresh).status_code, 200)
+            self.assertEqual(flush.call_count, 1)
+        with closing(sqlite3.connect(self.db)) as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM line_notification_outbox "
+                                          "WHERE event_key=?", (f"online-order:{order_no}",)).fetchone()[0], 2)
+
     def test_cancelled_order_restores_bom_once(self):
         self._login()
         self.client.put("/api/integrations/songwai/menu-map", json={

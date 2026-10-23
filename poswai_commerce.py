@@ -65,6 +65,13 @@ def init_commerce(conn: sqlite3.Connection) -> None:
         pos_item_id TEXT NOT NULL,
         PRIMARY KEY(branch_id,restaurant_id,songwai_menu_id)
     )""")
+    # ร้านนี้ผูกกับร้านไหนในส่งไว — ต้องอยู่ในฐานข้อมูลของร้านเอง ไม่ใช่ค่าตั้งของเซิร์ฟเวอร์
+    conn.execute("""CREATE TABLE IF NOT EXISTS songwai_link (
+        branch_id INTEGER PRIMARY KEY,
+        restaurant_id INTEGER NOT NULL,
+        linked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        linked_by INTEGER
+    )""")
     conn.execute("""CREATE TABLE IF NOT EXISTS crm_campaigns (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         branch_id INTEGER NOT NULL,

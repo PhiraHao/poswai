@@ -130,19 +130,45 @@
       target.append(summary,send);
     } catch(error) { notice(error.message); }
   });
+  // เลขร้านในส่งไวของร้านนี้ · 0 = ยังไม่ผูก
+  // POS WAI เปิดได้หลายร้าน เลขนี้จึงต้องมาจากเซิร์ฟเวอร์ (ของร้านที่กำลังเปิดอยู่)
+  // ไม่ใช่เลขเดียวฝังในโค้ดอย่างเดิม ซึ่งทำให้ร้านที่สองจับคู่เมนูของร้านแรก
+  let songwaiRestaurantId = 0;
+  function linkRow(link) {
+    const linked = Number(link.restaurant_id) || 0;
+    const warn = link.secret_ready ? '' : '<small>ยังไม่ได้ตั้งรหัสลับฝั่งเซิร์ฟเวอร์ — ออเดอร์จะยังไม่วิ่งเข้ามา แจ้งผู้ดูแลระบบ</small>';
+    return `<div class="commerce-map-row"><span>เลขร้านของคุณในแอปส่งไว · ${linked?`ผูกไว้แล้ว #${linked}`:'ยังไม่ผูก'}</span><input type="number" min="1" step="1" id="songwaiLinkId" value="${linked||''}" placeholder="เช่น 37" aria-label="เลขร้านของคุณในแอปส่งไว"><button class="commerce-btn secondary" id="songwaiLinkSave">ผูกร้าน</button></div>${warn}`;
+  }
   async function loadMap() {
     const box = shell.querySelector('#commerceMap');
     if (!manager()) { box.textContent='ผู้จัดการเท่านั้นที่จับคู่เมนูได้'; return; }
+    let link;
+    try { link = await api(`/api/integrations/songwai/link?branch_id=${branch()}`); }
+    catch(error) { box.textContent=`โหลดการเชื่อมส่งไวไม่ได้: ${error.message}`; return; }
+    songwaiRestaurantId = Number(link.restaurant_id) || 0;
+    if (!songwaiRestaurantId) { box.innerHTML = linkRow(link) + '<small>ใส่เลขร้านของคุณในแอปส่งไวก่อน แล้วเมนูจะขึ้นมาให้จับคู่</small>'; return; }
     try {
       const [catalog, mapping, pos] = await Promise.all([api(`/api/integrations/songwai/catalog?branch_id=${branch()}`),api(`/api/integrations/songwai/menu-map?branch_id=${branch()}`),api(`/api/menu?branch_id=${branch()}&include_inactive=true`)]);
-      box.innerHTML = catalog.items.length ? catalog.items.map(item=>{const mapped=mapping.mappings.find(m=>m.songwai_menu_id===item.id);const selected=pos.items.find(p=>p.id===mapped?.pos_item_id);return `<div class="commerce-map-row"><span>${escapeHtml(item.name)} · ${money(item.price)}${selected&&!selected.active?' · รอสูตรและสต็อก':''}</span><select aria-label="เมนู POS สำหรับ ${escapeHtml(item.name)}" data-menu="${Number(item.id)}"><option value="">ยังไม่จับคู่</option>${pos.items.map(p=>`<option value="${escapeHtml(p.id)}" ${mapped?.pos_item_id===p.id?'selected':''}>${escapeHtml(p.name)} · ${p.active?'เปิดขาย':'ฉบับร่าง'}</option>`).join('')}</select><button class="commerce-btn secondary" data-save="${Number(item.id)}" ${selected&&!selected.active?'disabled title="ใส่สูตรและสต็อกก่อน"':''}>บันทึก</button></div>`;}).join('') : 'ร้าน Songwai ยังไม่มีเมนู';
-    } catch(error) { box.textContent=`โหลดเมนู Songwai ไม่ได้: ${error.message}`; }
+      box.innerHTML = linkRow(link) + (catalog.items.length ? catalog.items.map(item=>{const mapped=mapping.mappings.find(m=>m.songwai_menu_id===item.id);const selected=pos.items.find(p=>p.id===mapped?.pos_item_id);return `<div class="commerce-map-row"><span>${escapeHtml(item.name)} · ${money(item.price)}${selected&&!selected.active?' · รอสูตรและสต็อก':''}</span><select aria-label="เมนู POS สำหรับ ${escapeHtml(item.name)}" data-menu="${Number(item.id)}"><option value="">ยังไม่จับคู่</option>${pos.items.map(p=>`<option value="${escapeHtml(p.id)}" ${mapped?.pos_item_id===p.id?'selected':''}>${escapeHtml(p.name)} · ${p.active?'เปิดขาย':'ฉบับร่าง'}</option>`).join('')}</select><button class="commerce-btn secondary" data-save="${Number(item.id)}" ${selected&&!selected.active?'disabled title="ใส่สูตรและสต็อกก่อน"':''}>บันทึก</button></div>`;}).join('') : 'ร้าน Songwai ยังไม่มีเมนู');
+    } catch(error) { box.innerHTML = linkRow(link) + `<small>โหลดเมนู Songwai ไม่ได้: ${escapeHtml(error.message)}</small>`; }
   }
   shell.querySelector('#commerceMap').addEventListener('click', async event => {
+    if (event.target.id === 'songwaiLinkSave') {
+      if (preview()) { notice('โหมดตัวอย่างยังผูกร้านไม่ได้'); return; }
+      const value = Number(shell.querySelector('#songwaiLinkId')?.value);
+      if (!Number.isInteger(value) || value < 1) { notice('ใส่เลขร้านเป็นตัวเลขก่อน'); return; }
+      // ย้ายไปผูกร้านอื่น = เลขเมนูที่จับคู่ไว้เป็นของร้านเก่า ใช้ต่อไม่ได้ ฝั่งเซิร์ฟเวอร์จะล้างให้
+      if (songwaiRestaurantId && value !== songwaiRestaurantId &&
+          !confirm('เปลี่ยนเลขร้านจะล้างการจับคู่เมนูเดิมทั้งหมด ยืนยันหรือไม่?')) return;
+      try { await post('/api/integrations/songwai/link',{branch_id:branch(),restaurant_id:value},'PUT'); notice('ผูกร้านส่งไวแล้ว'); await loadMap(); }
+      catch(error) { notice(error.message); }
+      return;
+    }
     const button=event.target.closest('[data-save]'); if (!button || preview()) return;
+    if (!songwaiRestaurantId) { notice('ผูกเลขร้านส่งไวก่อน'); return; }
     const menuId=Number(button.dataset.save); const value=shell.querySelector(`select[data-menu="${menuId}"]`)?.value;
     if (!value) { notice('เลือกเมนู POS WAI ก่อน'); return; }
-    try { await post('/api/integrations/songwai/menu-map',{branch_id:branch(),restaurant_id:37,songwai_menu_id:menuId,pos_item_id:value},'PUT'); notice('จับคู่เมนูแล้ว'); }
+    try { await post('/api/integrations/songwai/menu-map',{branch_id:branch(),restaurant_id:songwaiRestaurantId,songwai_menu_id:menuId,pos_item_id:value},'PUT'); notice('จับคู่เมนูแล้ว'); }
     catch(error) { notice(error.message); }
   });
   shell.querySelector('#commerceImport').addEventListener('click', async () => {

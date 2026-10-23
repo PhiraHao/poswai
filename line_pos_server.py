@@ -1736,6 +1736,38 @@ def _online_order_record(conn: sqlite3.Connection, order_no: str) -> dict:
     return result
 
 
+def _notify_online_order(conn: sqlite3.Connection, branch_id: int, record: dict, headline: str) -> int:
+    """คิวข้อความ LINE บอกคนในร้านว่ามีออเดอร์จากช่องทางนอกร้านเข้ามา
+
+    ร้านไทยส่วนใหญ่เฝ้าไลน์มากกว่าเฝ้าจอ POS — ออเดอร์เดลิเวอรีที่เงียบอยู่ในจอ
+    คือออเดอร์ที่ลืมทำ จึงต้องเด้งเข้าไลน์ของคนที่รับผิดชอบด้วย
+    เข้าคิวในทรานแซกชันเดียวกับออเดอร์ แล้วให้ flush เป็นคนยิงจริง (ยิงไม่ออกก็ไม่หาย)
+    คืนจำนวนคนที่เข้าคิว
+    """
+    items = record.get("items") or []
+    lines = [f"• {item['qty']}× {item['name']}" for item in items[:20]]
+    if len(items) > 20:
+        lines.append(f"• (อีก {len(items) - 20} รายการ)")
+    channel = record.get("channel") or "นอกร้าน"
+    paid = "ชำระแล้ว" if record.get("payment_status") == "paid" else "รอชำระ"
+    detail = [headline, f"บิล {record['order_no']} · ช่องทาง {channel}", *lines,
+              f"ยอดตามราคาในร้าน {float(record.get('total_amount') or 0):,.2f} บาท",
+              f"สถานะเงินฝั่ง {channel}: {paid}",
+              "ไรเดอร์มารับ" if record.get("fulfillment") == "rider_pickup" else "ลูกค้ามารับเอง"]
+    if record.get("customer_name") or record.get("contact_phone"):
+        detail.append(f"ลูกค้า {record.get('customer_name') or '-'} {record.get('contact_phone') or ''}".strip())
+    if record.get("pickup_code"):
+        detail.append(f"รหัสรับของ {record['pickup_code']}")
+    message = {"type": "text", "text": "\n".join(detail)[:4900]}
+    queued = 0
+    for row in conn.execute(
+            "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN ('owner','manager','kitchen','cashier') "
+            "AND is_active=1 AND line_user_id IS NOT NULL AND line_user_id<>''", (branch_id,)).fetchall():
+        enqueue_line_notification(conn, f"online-order:{record['order_no']}", row[0], branch_id, message)
+        queued += 1
+    return queued
+
+
 @app.post("/api/online/orders")
 def place_online_order(req: OnlineOrderCreate):
     if req.branch_id < 1 or req.fulfillment != "self_pickup" or not re.fullmatch(r"[A-Za-z0-9_-]{8,80}", req.event_id):
@@ -1768,6 +1800,59 @@ def place_online_order(req: OnlineOrderCreate):
         return _online_order_record(conn, result["order_no"])
 
 
+def songwai_restaurant_id(conn: sqlite3.Connection, branch_id: int = 1) -> int:
+    """เลขร้านในส่งไวที่ผูกกับร้านนี้ · 0 = ยังไม่ผูก
+
+    POS WAI เปิดได้หลายร้าน แต่ละร้านมีฐานข้อมูลของตัวเอง เลขร้านส่งไวจึงต้องอยู่ในนั้น
+    ถ้าเก็บเป็นค่าตั้งของเซิร์ฟเวอร์ตัวเดียว ร้านที่สองจะเชื่อมไม่ได้เลย
+    ร้านหลักยังอ่านจาก env ได้ถ้ายังไม่เคยกดผูก เพื่อไม่ให้ของที่ตั้งไว้ก่อนหน้านี้หลุด
+    """
+    row = conn.execute("SELECT restaurant_id FROM songwai_link WHERE branch_id=?",
+                       (branch_id,)).fetchone()
+    if row and row[0]:
+        return int(row[0])
+    return SONGWAI_RESTAURANT_ID if CURRENT_SHOP.get() == MAIN_SHOP else 0
+
+
+class SongwaiLink(BaseModel):
+    branch_id: int = 1
+    restaurant_id: int
+
+
+@app.get("/api/integrations/songwai/link")
+def get_songwai_link(request: Request, branch_id: int = 1):
+    require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        row = conn.execute("SELECT linked_at FROM songwai_link WHERE branch_id=?",
+                           (branch_id,)).fetchone()
+        restaurant_id = songwai_restaurant_id(conn, branch_id)
+    return {"shop": CURRENT_SHOP.get(), "restaurant_id": restaurant_id,
+            "linked_at": row[0] if row else None,
+            "source": "shop" if row else ("server" if restaurant_id else "none"),
+            # ไม่มีรหัสลับ = ส่งไวยิงเข้ามาไม่ได้แม้ผูกเลขร้านถูก (ต้องบอกเจ้าของร้านให้รู้)
+            "secret_ready": len(SONGWAI_WEBHOOK_SECRET) >= 32}
+
+
+@app.put("/api/integrations/songwai/link")
+def set_songwai_link(req: SongwaiLink, request: Request):
+    """เจ้าของร้าน/ผู้จัดการกรอกเลขร้านของตัวเองในส่งไว"""
+    staff = require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
+    if not 1 <= req.restaurant_id <= 10_000_000:
+        raise HTTPException(400, "Invalid Songwai restaurant ID")
+    require_paid_subscription()
+    with closing(connect_db()) as conn, conn:
+        conn.execute("BEGIN IMMEDIATE")
+        # เปลี่ยนไปผูกร้านอื่น = เมนูที่จับคู่ไว้เดิมใช้ไม่ได้แล้ว (เลขเมนูเป็นของร้านเก่า)
+        # ปล่อยค้างไว้จะกลายเป็นออเดอร์เข้าผิดจาน จึงล้างทิ้งให้จับคู่ใหม่
+        conn.execute("DELETE FROM songwai_menu_map WHERE branch_id=? AND restaurant_id<>?",
+                     (req.branch_id, req.restaurant_id))
+        conn.execute("""INSERT INTO songwai_link(branch_id,restaurant_id,linked_by)
+            VALUES(?,?,?) ON CONFLICT(branch_id) DO UPDATE SET
+            restaurant_id=excluded.restaurant_id, linked_by=excluded.linked_by,
+            linked_at=CURRENT_TIMESTAMP""", (req.branch_id, req.restaurant_id, staff["id"]))
+    return {"status": "linked", "shop": CURRENT_SHOP.get(), "restaurant_id": req.restaurant_id}
+
+
 class SongwaiOrderLine(BaseModel):
     menu_id: int
     qty: int
@@ -1776,6 +1861,9 @@ class SongwaiOrderLine(BaseModel):
 class SongwaiOrderCreate(BaseModel):
     order_id: int
     restaurant_id: int
+    # ร้านปลายทางใน POS WAI — อยู่ในข้อมูลที่เซ็นลายเซ็นแล้ว จึงเอาไปสวมใส่ร้านอื่นไม่ได้
+    # ("" = ส่งไวรุ่นเก่าที่ยังไม่ส่งมา ใช้ได้กับร้านหลักเท่านั้น)
+    shop: str = ""
     user_id: int | None = None
     delivery_mode: str
     customer_name: str = ""
@@ -1786,7 +1874,7 @@ class SongwaiOrderCreate(BaseModel):
 
 @app.post("/api/integrations/songwai/orders")
 async def intake_songwai_order(request: Request):
-    if len(SONGWAI_WEBHOOK_SECRET) < 32 or SONGWAI_RESTAURANT_ID < 1:
+    if len(SONGWAI_WEBHOOK_SECRET) < 32:
         raise HTTPException(503, "Songwai integration is not configured")
     require_paid_subscription()
     body = await request.body()
@@ -1804,14 +1892,20 @@ async def intake_songwai_order(request: Request):
         req = SongwaiOrderCreate.model_validate_json(body)
     except ValidationError as exc:
         raise HTTPException(422, "Invalid Songwai order") from exc
-    if req.restaurant_id != SONGWAI_RESTAURANT_ID or req.order_id < 1:
-        raise HTTPException(403, "Unmapped Songwai restaurant")
+    if req.order_id < 1:
+        raise HTTPException(400, "Invalid Songwai order ID")
+    # ส่งไวบอกมาว่าใบนี้ของร้านไหน — ต้องตรงกับร้านที่คำขอนี้เปิดอยู่ (?shop=)
+    # ถ้าไม่ตรวจ ใครดักใบที่เซ็นแล้วไปยิงใส่ ?shop= ของร้านอื่นได้ใน 5 นาที
+    if req.shop and req.shop != CURRENT_SHOP.get():
+        raise HTTPException(403, "Songwai order addressed to another shop")
     if req.delivery_mode not in ("pickup", "rider") or req.payment_status not in ("pending", "paid"):
         raise HTTPException(400, "Invalid Songwai fulfillment or payment state")
     if len(req.customer_name.strip()) > 100 or len(req.contact_phone.strip()) > 30:
         raise HTTPException(400, "Invalid customer details")
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
+        if req.restaurant_id != songwai_restaurant_id(conn, 1):
+            raise HTTPException(403, "Unmapped Songwai restaurant")
         external_id = str(req.order_id)
         existing = conn.execute("SELECT order_no FROM online_orders WHERE branch_id=1 AND source='songwai' AND external_id=?",
                                 (external_id,)).fetchone()
@@ -1839,7 +1933,20 @@ async def intake_songwai_order(request: Request):
                 channel="Songwai")
         except CatalogError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
-        return _online_order_record(conn, result["order_no"])
+        record = _online_order_record(conn, result["order_no"])
+        queued = _notify_online_order(conn, 1, record, "🛵 ออเดอร์ใหม่จากส่งไว")
+    # ออกจาก with แล้ว = ออเดอร์ลงตารางแน่แล้ว ค่อยยิงไลน์
+    # (ยิงใน thread แยก เพราะ httpx ของ flush เป็นแบบบล็อก ห้ามค้าง event loop)
+    # ยิงพลาดก็ไม่เป็นไร คิวยังอยู่ ตัวส่งเบื้องหลังลองใหม่ทุกนาที
+    if queued and LINE_CHANNEL_ACCESS_TOKEN and (not PREVIEW_ONLY or STAFF_LIVE):
+        def send_now():
+            with closing(connect_db()) as fresh:
+                flush_line_notifications(fresh, LINE_CHANNEL_ACCESS_TOKEN, 1)
+        try:
+            await asyncio.to_thread(send_now)
+        except (sqlite3.Error, OSError):
+            pass
+    return record
 
 
 class ManualChannelOrder(BaseModel):
@@ -1893,9 +2000,11 @@ class SongwaiMenuMap(BaseModel):
 @app.put("/api/integrations/songwai/menu-map")
 def map_songwai_menu(req: SongwaiMenuMap, request: Request):
     require_staff(request, roles=("manager", "owner"), branch_id=req.branch_id)
-    if req.restaurant_id != SONGWAI_RESTAURANT_ID or req.songwai_menu_id < 1 or not req.pos_item_id.strip():
-        raise HTTPException(400, "Invalid Songwai menu mapping")
     with closing(connect_db()) as conn, conn:
+        if req.restaurant_id != songwai_restaurant_id(conn, req.branch_id):
+            raise HTTPException(409, "Link the Songwai restaurant first")
+        if req.songwai_menu_id < 1 or not req.pos_item_id.strip():
+            raise HTTPException(400, "Invalid Songwai menu mapping")
         item = conn.execute("SELECT 1 FROM menu_catalog WHERE branch_id=? AND item_id=? AND active=1",
                             (req.branch_id, req.pos_item_id.strip())).fetchone()
         if not item:
@@ -1911,30 +2020,33 @@ def map_songwai_menu(req: SongwaiMenuMap, request: Request):
 def list_songwai_menu_map(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     with closing(connect_db()) as conn:
+        restaurant_id = songwai_restaurant_id(conn, branch_id)
         rows = conn.execute("""SELECT songwai_menu_id,pos_item_id FROM songwai_menu_map
             WHERE branch_id=? AND restaurant_id=? ORDER BY songwai_menu_id""",
-            (branch_id, SONGWAI_RESTAURANT_ID)).fetchall()
-    return {"restaurant_id": SONGWAI_RESTAURANT_ID,
+            (branch_id, restaurant_id)).fetchall()
+    return {"restaurant_id": restaurant_id,
             "mappings": [{"songwai_menu_id": row[0], "pos_item_id": row[1]} for row in rows]}
 
 
 @app.get("/api/integrations/songwai/catalog")
 def get_songwai_catalog(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
-    if SONGWAI_RESTAURANT_ID < 1:
+    with closing(connect_db()) as conn:
+        restaurant_id = songwai_restaurant_id(conn, branch_id)
+    if restaurant_id < 1:
         raise HTTPException(503, "Songwai restaurant is not configured")
     try:
-        response = httpx.get(f"https://songwai.online/api/restaurants/{SONGWAI_RESTAURANT_ID}/menus", timeout=8)
+        response = httpx.get(f"https://songwai.online/api/restaurants/{restaurant_id}/menus", timeout=8)
         response.raise_for_status()
         items = response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(502, "Cannot load Songwai menu") from exc
     if not isinstance(items, list):
         raise HTTPException(502, "Invalid Songwai menu response")
-    return {"restaurant_id": SONGWAI_RESTAURANT_ID, "items": [
+    return {"restaurant_id": restaurant_id, "items": [
         {"id": item.get("id"), "name": item.get("name") or item.get("name_th") or "",
          "price": item.get("price")}
-        for item in items if isinstance(item, dict) and item.get("restaurant_id") == SONGWAI_RESTAURANT_ID
+        for item in items if isinstance(item, dict) and item.get("restaurant_id") == restaurant_id
     ]}
 
 
@@ -1943,8 +2055,9 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
     """Create inactive POS menu placeholders; never overwrite an existing recipe."""
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     catalog = get_songwai_catalog(request, branch_id)
-    if catalog["restaurant_id"] != 37 or not catalog["items"]:
-        raise HTTPException(409, "Expected restaurant 37 catalog")
+    restaurant_id = catalog["restaurant_id"]
+    if restaurant_id < 1 or not catalog["items"]:
+        raise HTTPException(409, "Link the Songwai restaurant first")
     imported = 0
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -1963,8 +2076,8 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
                 imported += 1
             conn.execute("""INSERT INTO songwai_menu_map(branch_id,restaurant_id,songwai_menu_id,pos_item_id)
                 VALUES(?,?,?,?) ON CONFLICT(branch_id,restaurant_id,songwai_menu_id) DO NOTHING""",
-                (branch_id, SONGWAI_RESTAURANT_ID, menu_id, pos_id))
-    return {"restaurant_id": SONGWAI_RESTAURANT_ID, "imported": imported,
+                (branch_id, restaurant_id, menu_id, pos_id))
+    return {"restaurant_id": restaurant_id, "imported": imported,
             "total": len(catalog["items"]), "status": "drafts_inactive"}
 
 
