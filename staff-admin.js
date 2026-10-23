@@ -26,7 +26,7 @@
       <label>ชื่อพนักงาน<input name="name" maxlength="100" required></label>
       <label>ตำแหน่ง<select name="role" required>${roleOptions(['staff','service','cashier','kitchen','manager'])}</select></label>
       <label>รหัส PIN อย่างน้อย 8 ตัว<input name="pin" type="password" minlength="8" autocomplete="new-password" required placeholder="ห้ามใช้ PIN ของผู้จัดการ"></label>
-      <label>ค่าจ้างต่อชั่วโมง (บาท)<input name="hourly_rate" type="number" min="0" max="100000" step="0.01" placeholder="50"></label>
+      <label>ประเภทค่าจ้าง<select name="pay_type"><option value="hourly">รายชั่วโมง</option><option value="daily">รายวัน</option><option value="monthly">รายเดือน (พนักงานประจำ)</option></select></label><label class="staff-pay-amount">ค่าจ้าง (บาท<span data-pay-unit>ต่อชั่วโมง</span>)<input name="pay_amount" type="number" min="0" max="1000000" step="0.01" placeholder="50"></label>
       <span class="staff-quota-label">โควตาวันลาต่อปี</span>${quotaFields}
       <div class="staff-admin-actions"><button type="submit">สร้างบัญชี</button>
         <button type="button" id="staffCancelCreate" class="staff-secondary">ยกเลิก</button></div>
@@ -39,7 +39,7 @@
         <form id="staffProfileForm"><strong id="staffDetailTitle"></strong>
           <label>ชื่อพนักงาน<input name="name" maxlength="100" required></label>
           <label>ตำแหน่ง<select name="role" required>${roleOptions(['staff','service','cashier','kitchen','manager'])}<option value="owner" disabled>เจ้าของร้าน</option></select></label>
-          <label>ค่าจ้างต่อชั่วโมง (บาท)<input name="hourly_rate" type="number" min="0" max="100000" step="0.01"></label>
+          <label>ประเภทค่าจ้าง<select name="pay_type"><option value="hourly">รายชั่วโมง</option><option value="daily">รายวัน</option><option value="monthly">รายเดือน (พนักงานประจำ)</option></select></label><label class="staff-pay-amount">ค่าจ้าง (บาท<span data-pay-unit>ต่อชั่วโมง</span>)<input name="pay_amount" type="number" min="0" max="1000000" step="0.01"></label>
           <span class="staff-quota-label">โควตาวันลาต่อปี <small id="staffQuotaUsed"></small></span>${quotaFields}
           <button type="submit" id="staffSaveProfile">บันทึกข้อมูล</button>
         </form>
@@ -81,6 +81,21 @@
     return data;
   };
   const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+  /* ป้ายหน่วยต้องเปลี่ยนตามประเภท ไม่งั้นช่องเดียวกันหมายความคนละอย่างโดยไม่มีอะไรบอก */
+  const PAY_UNITS = {hourly: 'ต่อชั่วโมง', daily: 'ต่อวัน', monthly: 'ต่อเดือน'};
+  const syncPayUnit = form => {
+    const type = form.elements.namedItem('pay_type')?.value || 'hourly';
+    const unit = form.querySelector('[data-pay-unit]');
+    if (unit) unit.textContent = PAY_UNITS[type] || PAY_UNITS.hourly;
+  };
+  const payValues = form => {
+    const amount = form.elements.namedItem('pay_amount')?.value ?? '';
+    return {pay_type: form.elements.namedItem('pay_type')?.value || 'hourly',
+            pay_amount: amount === '' ? null : Number(amount)};
+  };
+  document.addEventListener('change', event => {
+    if (event.target?.name === 'pay_type') syncPayUnit(event.target.form);
+  });
   const quotaValues = form => {
     const quota = {};
     for (const field of ['sick','personal','vacation']) {
@@ -127,12 +142,14 @@
     const form = $$('#staffProfileForm');
     form.elements.namedItem('name').value = person.name;
     form.elements.namedItem('role').value = person.role;
-    form.elements.namedItem('hourly_rate').value = person.hourly_rate ?? '';
+    form.elements.namedItem('pay_type').value = person.pay_type || 'hourly';
+    form.elements.namedItem('pay_amount').value = person.pay_amount ?? person.hourly_rate ?? '';
+    syncPayUnit(form);
     fillQuota(form, person.leave_quota || defaultQuota);
     $$('#staffQuotaUsed').textContent = person.leave_quota
       ? `ใช้ไปแล้วปีนี้ ป่วย ${person.leave_quota.sick.used} · กิจ ${person.leave_quota.personal.used} · พักร้อน ${person.leave_quota.vacation.used} วัน`
       : 'ยังไม่เคยกำหนด จะใช้ค่าเริ่มต้นเมื่อกดบันทึก';
-    for (const field of ['name','role','hourly_rate','sick','personal','vacation'])
+    for (const field of ['name','role','pay_type','pay_amount','sick','personal','vacation'])
       form.elements.namedItem(field).disabled = !canEdit;
     form.elements.namedItem('role').disabled = !canEdit || person.role === 'owner' || own;
     form.elements.namedItem('role').querySelector('[value="manager"]').hidden = user.role !== 'owner' && person.role !== 'manager';
@@ -183,13 +200,12 @@
   $$('#staffCreateForm').addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
-    const rate = form.elements.namedItem('hourly_rate').value;
     try {
       const created = await api('/api/staff', 'POST', {
         name: form.elements.namedItem('name').value.trim(),
         role: form.elements.namedItem('role').value,
         pin: form.elements.namedItem('pin').value,
-        hourly_rate: rate === '' ? null : Number(rate),
+        ...payValues(form),
         leave_quota: quotaValues(form),
       });
       form.reset();
@@ -216,9 +232,11 @@
     const form = event.currentTarget;
     try {
       const person = directory.find(item => item.id === selectedStaffId);
-      const rate = form.elements.namedItem('hourly_rate').value;
+      const pay = payValues(form);
       const profile = {name: form.elements.namedItem('name').value, leave_quota: quotaValues(form)};
-      if (rate !== '') profile.hourly_rate = Number(rate);
+      // ไม่ได้กรอกยอด = ไม่แตะค่าจ้างเดิม แต่ประเภทส่งไปเสมอ ไม่งั้นเปลี่ยนประเภทอย่างเดียวไม่ได้
+      profile.pay_type = pay.pay_type;
+      if (pay.pay_amount !== null) profile.pay_amount = pay.pay_amount;
       if (person && person.id !== auth()?.staff_id && person.role !== 'owner') profile.role = form.elements.namedItem('role').value;
       await api(`/api/staff/${selectedStaffId}/profile`, 'PATCH', profile);
       directoryStatus('บันทึกข้อมูลพนักงานแล้ว');
