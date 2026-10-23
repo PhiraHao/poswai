@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-wai-offline-v104';
+const CACHE_NAME = 'pos-wai-offline-v105';
 const ASSETS = [
   "/",
   "/index.html",
@@ -61,8 +61,8 @@ const ASSETS = [
   "/print-agent-ui.js?v=90",
   "/print-direct.js?v=90",
   "/inventory-live.js?v=23",
-  "/commerce-ui.css?v=29",
-  "/commerce-ui.js?v=31",
+  "/commerce-ui.css?v=30",
+  "/commerce-ui.js?v=32",
   "/cashier-void.js?v=72",
   "/icons.svg",
   "/manifest.json",

@@ -28,7 +28,7 @@
     <section class="commerce-pane" data-pane="orders"><div class="commerce-card"><div class="commerce-toolbar"><h2>รับออเดอร์ออนไลน์</h2><select id="commerceOrderFilter" aria-label="กรองออเดอร์"><option value="active">กำลังดำเนินการ</option><option value="all">ทั้งหมด</option></select><button id="commerceRefresh" class="commerce-btn secondary">รีเฟรช</button></div><div id="commerceOrders" class="commerce-list"></div></div></section>
     <section class="commerce-pane" data-pane="members" hidden><div class="commerce-stats" id="commerceStats"></div><div class="commerce-card"><h2>สมาชิกและแต้มสะสม</h2><p class="commerce-muted">ลูกค้าสมัครเองผ่าน LINE ได้ หรือพนักงานสมัครให้ที่หน้าร้านด้วยชื่อและเบอร์โทร จากนั้นบันทึกยอดซื้อเพื่อสะสมแต้ม หรือหักแต้มที่ลูกค้าขอใช้</p><form id="commerceJoinForm" class="commerce-form"><label>ชื่อลูกค้า<input name="display_name" maxlength="100" required></label><label>เบอร์โทร<input name="phone" type="tel" maxlength="20" required></label><label class="wide"><span><input name="consent" type="checkbox"> ลูกค้ายินยอมรับข่าวสารทาง LINE</span></label><button class="commerce-btn secondary" type="submit">สมัครสมาชิกให้ลูกค้า</button></form><p id="commerceJoinResult" role="status"></p><form id="commercePointForm" class="commerce-form"><label>เบอร์สมาชิก<input name="phone" type="tel" maxlength="20" required></label><label>ทำรายการ<select name="mode"><option value="earn">สะสมแต้มจากยอดซื้อ</option><option value="redeem">ใช้แต้ม</option></select></label><label id="commercePointValueLabel">ยอดซื้อ (บาท)<input name="value" type="number" min="1" step="0.01" required></label><label>หมายเหตุ<input name="note" maxlength="200"></label><button class="commerce-btn" type="submit">บันทึก</button></form><p id="commercePointResult" role="status"></p></div><div class="commerce-card"><div class="commerce-toolbar"><h2>ลูกค้าร้าน</h2><select id="commerceSegment" aria-label="กลุ่มลูกค้า"><option value="all">ทั้งหมด</option><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></div><div id="commerceMembers" class="commerce-list"></div></div></section>
     <section class="commerce-pane" data-pane="campaigns" hidden><div class="commerce-card"><h2>ส่งโปรโมชันผ่าน LINE OA</h2><p class="commerce-muted">ส่งเฉพาะผู้ที่ยินยอมรับข่าวสารและเชื่อม LINE แล้ว ตรวจข้อความและจำนวนผู้รับก่อนส่งทุกครั้ง</p><form id="commerceCampaignForm" class="commerce-form"><label>กลุ่มเป้าหมาย<select name="segment"><option value="new">ลูกค้าใหม่</option><option value="returning">ลูกค้าประจำ</option><option value="dormant30">หายไปเกิน 30 วัน</option></select></label><label class="wide">ข้อความ<textarea name="message" rows="4" maxlength="500" required></textarea></label><button class="commerce-btn" type="submit">สร้างฉบับร่าง</button></form><div id="commerceCampaignDraft" class="commerce-muted"></div></div></section>
-    <section class="commerce-pane" data-pane="connectors" hidden><div class="commerce-card"><h2>เชื่อมกับแอปส่งไว</h2><p class="commerce-muted">เตรียมเมนูจาก Songwai เป็นฉบับร่างก่อน เมนูจะยังไม่เปิดขายจนกว่าจะใส่สูตรและสต็อกจริง</p><button id="commerceImport" class="commerce-btn" type="button">ดึงเมนูจากส่งไวมาเป็นฉบับร่าง</button><div id="commerceMap" class="commerce-list"></div></div><div class="commerce-card"><h3>ออเดอร์จากแอปอื่น · พนักงานบันทึก</h3><p class="commerce-muted">ใช้เมื่อร้านได้รับออเดอร์ในแอปแล้ว จึงบันทึกเข้าคิวครัว POS WAI ช่องทางเหล่านี้ยังไม่ได้ดึงออเดอร์อัตโนมัติ</p><form id="commerceManualForm" class="commerce-form"><label>ช่องทาง<select name="channel"><option>GrabFood</option><option>LINE MAN</option><option>ShopeeFood</option><option>TikTok Shop</option><option>โทรศัพท์</option></select></label><label>เลขออเดอร์ในแอป<input name="external_order_id" required maxlength="80" pattern="[A-Za-z0-9_-]{2,80}"></label><label>วิธีรับอาหาร<select name="fulfillment"><option value="rider_pickup">ไรเดอร์มารับ</option><option value="self_pickup">ลูกค้ามารับเอง</option></select></label><label>ชื่อลูกค้า<input name="customer_name" maxlength="100"></label><label>เบอร์โทร<input name="contact_phone" maxlength="30"></label><div class="wide commerce-menu-lines" id="commerceManualMenu"></div><button class="commerce-btn" type="submit">บันทึกเข้าคิวครัว</button></form><p id="commerceManualResult" role="status"></p></div></section>`;
+    <section class="commerce-pane" data-pane="connectors" hidden><div class="commerce-card"><h2>เชื่อมกับแอปส่งไว</h2><p class="commerce-muted">เตรียมเมนูจาก Songwai เป็นฉบับร่างก่อน เมนูจะยังไม่เปิดขายจนกว่าจะใส่สูตรและสต็อกจริง</p><button id="commerceImport" class="commerce-btn" type="button">ดึงเมนูจากส่งไวมาเป็นฉบับร่าง</button><div id="commerceMap" class="commerce-list"></div></div><div class="commerce-card"><h3>ออเดอร์จากแอปอื่น · พนักงานบันทึก</h3><p class="commerce-muted">ใช้เมื่อร้านได้รับออเดอร์ในแอปแล้ว จึงบันทึกเข้าคิวครัว POS WAI ช่องทางเหล่านี้ยังไม่ได้ดึงออเดอร์อัตโนมัติ</p><form id="commerceManualForm" class="commerce-form"><label>ช่องทาง<select name="channel"><option>GrabFood</option><option>LINE MAN</option><option>ShopeeFood</option><option>TikTok Shop</option><option>โทรศัพท์</option></select></label><label>เลขออเดอร์ในแอป<input name="external_order_id" required maxlength="80" pattern="[A-Za-z0-9_-]{2,80}"></label><label>วิธีรับอาหาร<select name="fulfillment"><option value="rider_pickup">ไรเดอร์มารับ</option><option value="self_pickup">ลูกค้ามารับเอง</option></select></label><label>ชื่อลูกค้า<input name="customer_name" maxlength="100"></label><label>เบอร์โทร<input name="contact_phone" maxlength="30"></label><div class="wide commerce-menu-lines" id="commerceManualMenu"></div><p id="commerceManualTotal" class="commerce-manual-total">ยังไม่ได้เลือกรายการ</p><button class="commerce-btn" type="submit">บันทึกเข้าคิวครัว</button></form><p id="commerceManualResult" role="status"></p></div></section>`;
   crm.querySelector('.module-intro')?.after(shell);
   const notice = message => { document.querySelector('#commerceNotice').textContent = message; };
   const panes = [...shell.querySelectorAll('.commerce-pane')];
@@ -181,9 +181,46 @@
     if (!staff()) { box.textContent='เข้าสู่ระบบพนักงานก่อนบันทึกออเดอร์'; return; }
     try {
       const {items}=await api(`/api/menu?branch_id=${branch()}`);
-      box.innerHTML=items.length ? items.map(item=>`<label class="commerce-menu-line"><span>${escapeHtml(item.name)}</span><small>${money(item.price)}</small><input type="number" min="0" max="99" value="0" data-manual-item="${escapeHtml(item.id)}" aria-label="จำนวน ${escapeHtml(item.name)}"></label>`).join('') : 'ยังไม่มีเมนูจริงที่เปิดขาย';
+      box.innerHTML=items.length ? items.map(item=>`<div class="commerce-menu-line commerce-count-line"><span>${escapeHtml(item.name)}</span><small>${money(item.price)}</small><span class="commerce-count"><button type="button" class="commerce-step" data-step="-1" aria-label="ลด ${escapeHtml(item.name)}">−</button><input type="number" min="0" max="99" value="0" inputmode="numeric" data-manual-item="${escapeHtml(item.id)}" data-price="${Number(item.price)}" aria-label="จำนวน ${escapeHtml(item.name)}"><button type="button" class="commerce-step" data-step="1" aria-label="เพิ่ม ${escapeHtml(item.name)}">+</button></span></div>`).join('') : 'ยังไม่มีเมนูจริงที่เปิดขาย';
+      manualTotal();
     } catch(error) { box.textContent=error.message; }
   }
+  /* พนักงานต้องคีย์ออเดอร์จากแอปอื่นด้วยมือ (แพลตฟอร์มพวกนั้นไม่เปิดให้ดึงอัตโนมัติ)
+     ช่องพิมพ์เลขทีละจานบนมือถือช้าและกดพลาดง่าย จึงทำเป็นปุ่มกดและโชว์ยอดรวมสด ๆ
+     ให้เทียบกับยอดในแอปต้นทางได้ก่อนกดบันทึก */
+  const manualTotal = () => {
+    const box = shell.querySelector('#commerceManualTotal');
+    if (!box) return;
+    let sum = 0, count = 0;
+    for (const input of shell.querySelectorAll('[data-manual-item]')) {
+      const qty = Number(input.value) || 0;
+      if (qty > 0) { count += qty; sum += qty * (Number(input.dataset.price) || 0); }
+    }
+    box.textContent = count ? `${count} รายการ · รวม ${money(sum)}` : 'ยังไม่ได้เลือกรายการ';
+    box.className = count ? 'commerce-manual-total has-items' : 'commerce-manual-total';
+  };
+
+  shell.querySelector('#commerceManualMenu').addEventListener('click', event => {
+    const step = event.target.closest('[data-step]');
+    if (!step) return;
+    const input = step.parentElement.querySelector('[data-manual-item]');
+    const next = (Number(input.value) || 0) + Number(step.dataset.step);
+    input.value = String(Math.max(0, Math.min(99, next)));
+    manualTotal();
+  });
+  shell.querySelector('#commerceManualMenu').addEventListener('input', manualTotal);
+
+  /* ร้านหนึ่งมักรับจากช่องทางเดิมซ้ำ ๆ ทั้งวัน จำไว้ให้ไม่ต้องเลือกใหม่ทุกใบ */
+  const CHANNEL_KEY = 'poswaiManualChannel';
+  const channelField = shell.querySelector('#commerceManualForm [name="channel"]');
+  try {
+    const last = localStorage.getItem(CHANNEL_KEY);
+    if (last && [...channelField.options].some(o => o.value === last)) channelField.value = last;
+  } catch { /* โหมดส่วนตัว: ใช้ค่าตั้งต้นไป */ }
+  channelField.addEventListener('change', () => {
+    try { localStorage.setItem(CHANNEL_KEY, channelField.value); } catch { /* ไม่เป็นไร */ }
+  });
+
   shell.querySelector('#commerceManualForm').addEventListener('submit',async event=>{
     event.preventDefault();
     const result=shell.querySelector('#commerceManualResult');
@@ -194,6 +231,9 @@
     try {
       const order=await post('/api/online/manual-orders',{branch_id:branch(),channel:data.get('channel'),external_order_id:String(data.get('external_order_id')).trim(),fulfillment:data.get('fulfillment'),items,customer_name:data.get('customer_name'),contact_phone:data.get('contact_phone')});
       result.textContent=`เข้าคิวครัวแล้ว ${order.order_no} · ${money(order.total_amount)}`;
+      // ใบถัดไปเริ่มจากศูนย์ ไม่ให้จำนวนใบเก่าค้างแล้วบันทึกซ้ำโดยไม่ตั้งใจ
+      for (const input of shell.querySelectorAll('[data-manual-item]')) input.value = '0';
+      manualTotal();
       await loadOrders();
     } catch(error) { result.textContent=error.message; }
   });
