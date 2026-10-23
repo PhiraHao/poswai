@@ -17,7 +17,10 @@
   directoryCard.innerHTML = `<div class="card-header staff-directory-header">
       <div><div class="card-title">จัดการพนักงาน</div>
         <p class="staff-admin-note">ตั้งชื่อ ตำแหน่ง รหัส PIN ค่าจ้าง และโควตาวันลา ได้ในที่เดียว</p></div>
-      <button type="button" id="staffAddButton" class="staff-roster-action">+ เพิ่มพนักงาน</button>
+      <div class="staff-admin-actions">
+        <button type="button" id="staffLinkLine" class="staff-roster-action">เชื่อม LINE รับแจ้งเตือน</button>
+        <button type="button" id="staffAddButton" class="staff-roster-action">+ เพิ่มพนักงาน</button>
+      </div>
     </div>
     <details class="staff-role-policy"><summary>ตรวจสิทธิ์การใช้งานตามตำแหน่ง</summary>
       <div id="staffPermissionMatrix" class="staff-permission-matrix"></div></details>
@@ -91,6 +94,13 @@
     // ข้อความทั้งก้อนอยู่ในชิ้นเดียว ไม่งั้น display:grid ของป้ายหั่นเป็นคนละบรรทัด
     if (unit) unit.textContent = `ค่าจ้าง (บาท${PAY_UNITS[type] || PAY_UNITS.hourly})`;
   };
+  /* ปุ่มเดิมอยู่ท้ายการ์ดใบลา ลึกลงไปเกือบสามพันพิกเซล เจ้าของร้านหาไม่เจอ
+     ตัวเชื่อมยังเป็นตัวเดิม ย้ายแค่ทางเข้ามาไว้ตรงที่คนมองหาเรื่องพนักงาน */
+  document.addEventListener('click', event => {
+    if (event.target?.id !== 'staffLinkLine') return;
+    if (typeof window.linkLineAccount === 'function') window.linkLineAccount();
+    else status('เปิดหน้านี้จากในแอป LINE ก่อน แล้วกดอีกครั้ง');
+  });
   const employmentValue = form =>
     (form.elements.namedItem('is_permanent')?.checked ?? true) ? 'permanent' : 'temporary';
   const payValues = form => {
