@@ -3902,7 +3902,15 @@
 
         let badge = `<span class="badge badge-empty">ว่าง</span>`;
         if (hasSlip) badge = `<span class="badge badge-verify">รอตรวจสลิป</span>`;
-        else if (sub > 0) badge = `<span class="badge badge-occupied">ทานอยู่</span>`;
+        else if (sub > 0) {
+          /* โต๊ะที่มียอดค้างเคยขึ้นว่า "ทานอยู่" เสมอ แม้ครัวยังไม่ได้เริ่มทํา
+             สองจอจึงขัดกันเอง ใช้คําเดียวกับจอครัว คนหน้าร้านกับครัวจะได้คุยเรื่องเดียวกัน */
+          const cook = (window.poswaiTableKitchen || {})[tStr];
+          badge = cook === "cooking" ? `<span class="badge badge-verify">กําลังทํา</span>`
+                : cook === "held" ? `<span class="badge badge-purple">พักไว้</span>`
+                : cook === "ready" ? `<span class="badge badge-occupied">พร้อมเสิร์ฟ</span>`
+                : `<span class="badge badge-occupied">ทานอยู่</span>`;
+        }
         else if (reserved) badge = `<span class="badge badge-purple">จองแล้ว</span>`;
 
         html += `
@@ -5150,7 +5158,7 @@
   <script src="/guest-ui.js?v=2"></script>
   <script src="/offline-review.js?v=2"></script>
   <script src="/service-call.js?v=77"></script>
-  <script src="/guest-order-alert.js?v=1"></script>
+  <script src="/guest-order-alert.js?v=2"></script>
   <script src="/auth-ui.js?v=95"></script>
   <script src="/landing.js?v=44"></script>
   <script src="/payment-ui.js?v=21"></script>
