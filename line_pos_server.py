@@ -468,6 +468,10 @@ def init_db() -> None:
     # The note to the kitchen ("ไม่ใส่ผัก") that came with the order.
     if "note" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
         cur.execute("ALTER TABLE order_events ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+    # ออเดอร์นี้มาจากแคชเชียร์กดเอง หรือลูกค้าสแกน QR ที่โต๊ะสั่งเอง
+    # แบบหลังต้องมีคนไปบอก ไม่งั้นอาหารขึ้นจอครัวเฉย ๆ โดยที่หน้าร้านไม่รู้เรื่อง
+    if "ordered_by" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
+        cur.execute("ALTER TABLE order_events ADD COLUMN ordered_by TEXT NOT NULL DEFAULT 'staff'")
     cur.execute("""CREATE TABLE IF NOT EXISTS kds_station_tickets (
         order_no TEXT NOT NULL REFERENCES order_events(order_no),
         station TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('held','queued','ready')),
@@ -1341,12 +1345,16 @@ def _staff_or_table_guest(request: Request, branch_id: int, table_no: str) -> Op
     return None
 
 
-def require_table_or_staff(request: Request, branch_id: int, table_no: str) -> None:
+def require_table_or_staff(request: Request, branch_id: int, table_no: str) -> str:
+    """คืน 'staff' หรือ 'guest' — ออเดอร์ที่ลูกค้ากดเองจาก QR โต๊ะต้องมีคนรู้
+
+    ที่แคชเชียร์กดเอง คนกดรู้อยู่แล้ว ไม่ต้องเตือนซ้ํา
+    """
     # The page's cookie or the app's header: a till signed in either way is staff.
     if mobile.staff_token(request):
         try:
             require_staff(request, branch_id=branch_id)
-            return
+            return "staff"
         except HTTPException as exc:
             if exc.status_code != 401:
                 raise
@@ -1363,6 +1371,7 @@ def require_table_or_staff(request: Request, branch_id: int, table_no: str) -> N
             raise ValueError("Invalid table token")
     except (ValueError, KeyError, TypeError):
         raise HTTPException(403, "QR โต๊ะไม่ถูกต้องหรือหมดอายุแล้ว")
+    return "guest"
 
 
 class OrderItem(BaseModel):
@@ -2434,6 +2443,56 @@ def _offline_stamp(value: Optional[str]) -> Optional[str]:
     return text or None
 
 
+def _notify_guest_order(conn: sqlite3.Connection, branch_id: int, table_no: str, order_no: str) -> int:
+    """คิวข้อความ LINE เมื่อลูกค้าสั่งเองจาก QR ที่โต๊ะ
+
+    ออเดอร์แบบนี้ขึ้นจอครัวเฉย ๆ คนหน้าร้านไม่รู้เลยว่าโต๊ะไหนสั่งมา
+    ร้านเล็กที่ไม่มีคนยืนเฝ้าจอครัวจึงรู้ตัวอีกทีหลังตอนลูกค้าเรียกหา
+    คิวในทรานแซกชันเดียวกับออเดอร์ — ไลน์ล่มก็ไม่มีข้อความหาย
+    """
+    conn.row_factory = sqlite3.Row
+    lines = [f"• {row['quantity']}× {row['name']}" for row in conn.execute(
+        "SELECT name,quantity FROM order_items WHERE order_no=? LIMIT 20", (order_no,))]
+    total = conn.execute("SELECT total_amount FROM order_events WHERE order_no=?",
+                         (order_no,)).fetchone()
+    text = "\n".join([f"🔔 ลูกค้าสั่งเองที่โต๊ะ {table_no}",
+                       f"บิล {order_no}", *lines,
+                       f"รวม {float(total['total_amount'] if total else 0):,.2f} บาท"])[:4900]
+    queued = 0
+    for row in conn.execute(
+            "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN ('owner','manager','kitchen','cashier') "
+            "AND is_active=1 AND line_user_id IS NOT NULL AND line_user_id<>''", (branch_id,)).fetchall():
+        enqueue_line_notification(conn, f"guest-order:{order_no}", row[0], branch_id,
+                                  {"type": "text", "text": text})
+        queued += 1
+    return queued
+
+
+def _push_line_now(branch_id: int) -> None:
+    """ส่งข้อความที่ค้างคิวอยู่ทันที ผิดก็ไม่เป็นไร ตัวส่งเบื้องหลังลองใหม่ทุกนาที"""
+    if not LINE_CHANNEL_ACCESS_TOKEN or (PREVIEW_ONLY and not STAFF_LIVE):
+        return
+    try:
+        with closing(connect_db()) as conn:
+            flush_line_notifications(conn, LINE_CHANNEL_ACCESS_TOKEN, branch_id)
+    except (sqlite3.Error, OSError):
+        pass
+
+
+@app.get("/api/orders/guest-waiting")
+def guest_orders_waiting(request: Request, branch_id: int = 1):
+    """ออเดอร์ที่ลูกค้าสั่งเองและยังไม่ปิดบิล — หน้าแคชเชียร์เอาไปขึ้นป้ายเตือน"""
+    require_staff(request, roles=("cashier", "manager", "owner"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT e.order_no, e.table_no, e.total_amount, e.created_at FROM order_events e "
+            "LEFT JOIN payment_events p ON p.order_no = e.order_no "
+            "WHERE e.branch_id=? AND e.ordered_by='guest' AND p.order_no IS NULL "
+            "ORDER BY e.created_at DESC LIMIT 50", (branch_id,)).fetchall()
+    return {"branch_id": branch_id, "orders": [dict(row) for row in rows]}
+
+
 @app.post("/api/orders")
 def create_order(req: OrderCreate, request: Request):
     if not math.isfinite(req.total_amount) or req.total_amount < 0 or not req.items or any(not math.isfinite(item.price) for item in req.items):
@@ -2443,8 +2502,9 @@ def create_order(req: OrderCreate, request: Request):
         # Only staff at the till may claim a sale was made offline; a guest's
         # own order from a table QR is checked against the menu as always.
         staff = require_staff(request, roles=OFFLINE_ORDER_ROLES, branch_id=req.branch_id)
-    else:
-        require_table_or_staff(request, req.branch_id, req.table_no)
+    ordered_by = "staff"
+    if not offline_at:
+        ordered_by = require_table_or_staff(request, req.branch_id, req.table_no)
     require_paid_subscription()
     with closing(connect_db()) as conn, conn:
         cur = conn.cursor()
@@ -2504,7 +2564,14 @@ def create_order(req: OrderCreate, request: Request):
         if offline_at:
             _note_offline(conn, req.order_no, req.branch_id, ordered_at=offline_at,
                           taken_by=staff["id"], notes=notes)
-    return {"status": "open", "order_no": req.order_no, "notes": notes}
+        if ordered_by == "guest":
+            conn.execute("UPDATE order_events SET ordered_by='guest' WHERE order_no=?", (req.order_no,))
+            _notify_guest_order(conn, req.branch_id, req.table_no, req.order_no)
+    # ยิงนอกทรานแซกชัน และห้ามทําให้ออเดอร์ล้ม — ลูกค้านั่งรออยู่ที่โต๊ะ
+    if ordered_by == "guest":
+        _push_line_now(req.branch_id)
+    return {"status": "open", "order_no": req.order_no, "notes": notes,
+            "ordered_by": ordered_by}
 
 
 @app.get("/api/orders")
@@ -3739,7 +3806,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
