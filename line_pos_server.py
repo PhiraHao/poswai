@@ -2108,7 +2108,8 @@ def get_songwai_catalog(request: Request, branch_id: int = 1):
         raise HTTPException(502, "Invalid Songwai menu response")
     return {"restaurant_id": restaurant_id, "items": [
         {"id": item.get("id"), "name": item.get("name") or item.get("name_th") or "",
-         "price": item.get("price"), "image": item.get("image_url")}
+         "price": item.get("price"), "image": item.get("image_url"),
+         "options": item.get("options")}
         for item in items if isinstance(item, dict) and item.get("restaurant_id") == restaurant_id
     ]}
 
@@ -2116,6 +2117,50 @@ def get_songwai_catalog(request: Request, branch_id: int = 1):
 SONGWAI_ORIGIN = "https://songwai.online"
 # ร้านที่เดารหัสมั่ว ๆ ได้ไม่จำกัดครั้ง = รหัสร้านของคนอื่นถูกไล่เดาจนเจอ
 SONGWAI_TOKEN_TRIES_PER_HOUR = 20
+
+
+def _songwai_options(raw) -> dict:
+    """ตัวเลือกของส่งไว → ตัวเลือกแบบ POS WAI
+
+    ส่งไวเก็บเป็นกลุ่ม ๆ: [{name, multi, choices:[{label, price_delta}]}]
+    POS WAI มีสองแบบ — "ระดับ" เลือกได้อันเดียวและไม่คิดเงินเพิ่ม (ความเผ็ด ความหวาน)
+    กับ "ท็อปปิ้ง" เลือกได้หลายอันและมีราคาของตัวเอง
+
+    กลุ่มที่เลือกอันเดียวกลุ่มแรกจึงกลายเป็นระดับ (POS WAI มีได้กลุ่มเดียว) ที่เหลือ
+    ลงไปเป็นท็อปปิ้งทั้งหมด ซึ่งอ่านบนตั๋วได้เหมือนกันและเจ้าของร้านแก้ทีหลังได้
+    ราคาท็อปปิ้งตั้งต้นจากส่วนต่างของส่งไว ร้านปรับเองได้ภายหลัง (ราคาไม่ซิงก์กัน)
+    ตัวเลือกพังหรือรูปแบบไม่ตรง = ข้ามไป ไม่ทำให้การนำเข้าเมนูล้มทั้งชุด
+    """
+    groups = raw
+    if isinstance(raw, str):
+        try:
+            groups = json.loads(raw)
+        except ValueError:
+            return {}
+    if not isinstance(groups, list):
+        return {}
+    title, levels, addons = "", [], []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        name = str(group.get("name") or "").strip()[:80]
+        labels = []
+        for choice in group.get("choices") or []:
+            label = str((choice or {}).get("label") if isinstance(choice, dict) else choice or "").strip()[:80]
+            delta = (choice or {}).get("price_delta", 0) if isinstance(choice, dict) else 0
+            if label:
+                labels.append((label, delta))
+        if not labels:
+            continue
+        single = group.get("multi") is not True
+        free = all(not isinstance(d, (int, float)) or float(d) == 0 for _, d in labels)
+        if single and free and not levels:
+            title, levels = name, [label for label, _ in labels]
+        else:
+            for label, delta in labels:
+                price = float(delta) if isinstance(delta, (int, float)) and delta > 0 else 0
+                addons.append({"name": f"{name}: {label}" if name else label, "price": price})
+    return {"option_title": title, "levels": levels[:12], "addons": addons[:30]}
 
 
 def _install_songwai_menus(conn: sqlite3.Connection, branch_id: int, restaurant_id: int,
@@ -2139,10 +2184,17 @@ def _install_songwai_menus(conn: sqlite3.Connection, branch_id: int, restaurant_
         if item.get("image") and not (existing and existing[0]):
             wanted_photos.append((pos_id, item["image"]))
         if not existing:
+            options = _songwai_options(item.get("options"))
             try:
-                upsert_menu_item(conn, branch_id, pos_id, item["name"], item["price"], [], False)
-            except (CatalogError, KeyError) as exc:
-                raise HTTPException(502, "Invalid Songwai catalog item") from exc
+                upsert_menu_item(conn, branch_id, pos_id, item["name"], item["price"], [], False,
+                                 **options)
+            except (CatalogError, KeyError):
+                # ตัวเลือกไม่ผ่านด่านตรวจ: เอาเมนูเข้ามาก่อน ร้านใส่ตัวเลือกเองทีหลังได้
+                # ดีกว่าเมนูทั้งจานหายไปเพราะท็อปปิ้งอันเดียวผิดรูป
+                try:
+                    upsert_menu_item(conn, branch_id, pos_id, item["name"], item["price"], [], False)
+                except (CatalogError, KeyError) as exc:
+                    raise HTTPException(502, "Invalid Songwai catalog item") from exc
             imported += 1
         conn.execute("""INSERT INTO songwai_menu_map(branch_id,restaurant_id,songwai_menu_id,pos_item_id)
             VALUES(?,?,?,?) ON CONFLICT(branch_id,restaurant_id,songwai_menu_id) DO NOTHING""",

@@ -222,6 +222,41 @@ class CommerceTest(unittest.TestCase):
             self.assertEqual([c.args[0] for c in again.call_args_list if not c.args[0].endswith("/menus")], [])
         self.assertEqual((second["imported"], second["photos"]), (0, 0))
 
+    def test_menu_options_come_across_as_levels_and_toppings(self):
+        """ร้านไม่ควรต้องมาพิมพ์ความเผ็ดกับท็อปปิ้งใหม่ทั้งหมด ของมีอยู่แล้วในส่งไว"""
+        self._login()
+        payload = [{"id": 480, "name": "กะเพราหมู", "price": 50, "restaurant_id": 37, "options": [
+            {"name": "ความเผ็ด", "multi": False, "choices": [
+                {"label": "ไม่เผ็ด", "price_delta": 0}, {"label": "เผ็ดมาก", "price_delta": 0}]},
+            {"name": "ท็อปปิ้ง", "multi": True, "choices": [
+                {"label": "ไข่ดาว", "price_delta": 10}, {"label": "หมูกรอบ", "price_delta": 20}]}]}]
+        with patch.object(server.httpx, "get") as get:
+            get.return_value.status_code = 200
+            get.return_value.json.return_value = payload
+            self.assertEqual(self.client.post("/api/integrations/songwai/import-drafts").json()["imported"], 1)
+
+        item = next(i for i in self.client.get("/api/menu?include_inactive=true").json()["items"]
+                    if i["id"] == "songwai-480")
+        # กลุ่มเลือกอันเดียวที่ไม่คิดเงิน → ระดับ
+        self.assertEqual(item["option_title"], "ความเผ็ด")
+        self.assertEqual(item["levels"], ["ไม่เผ็ด", "เผ็ดมาก"])
+        # กลุ่มเลือกหลายอัน/มีราคา → ท็อปปิ้ง พร้อมราคาตั้งต้น
+        names = {addon["name"]: addon["price"] for addon in item["addons"]}
+        self.assertEqual(names, {"ท็อปปิ้ง: ไข่ดาว": 10, "ท็อปปิ้ง: หมูกรอบ": 20})
+
+    def test_a_broken_option_list_still_lets_the_dish_in(self):
+        """ท็อปปิ้งอันเดียวผิดรูป ต้องไม่ทําให้เมนูทั้งจานหายไป"""
+        self._login()
+        payload = [{"id": 481, "name": "ข้าวผัด", "price": 50, "restaurant_id": 37,
+                    "options": "{ไม่ใช่ JSON"}]
+        with patch.object(server.httpx, "get") as get:
+            get.return_value.status_code = 200
+            get.return_value.json.return_value = payload
+            self.assertEqual(self.client.post("/api/integrations/songwai/import-drafts").json()["imported"], 1)
+        item = next(i for i in self.client.get("/api/menu?include_inactive=true").json()["items"]
+                    if i["id"] == "songwai-481")
+        self.assertEqual((item["levels"], item["addons"]), ([], []))
+
     def test_manual_partner_order_is_labeled_idempotent_and_uses_stock(self):
         payload = {"branch_id": 1, "channel": "GrabFood", "external_order_id": "GF-123",
                    "fulfillment": "rider_pickup", "items": [{"id": "beef", "qty": 2}]}
