@@ -19,6 +19,14 @@
   const mayPrint = () => ['cashier', 'manager', 'owner'].includes(auth().current?.role);
   const REMEMBERED = 'poswaiLocalPrinter';
 
+  /* ESC p 0: pulse the drawer port (RJ11 on the back of the counter printer).
+     ชุดเดียวกับ mobile/src/app-printer.js — ก่อนหน้านี้เปิดลิ้นชักได้เฉพาะในแอป
+     ร้านที่ใช้ผ่านเบราว์เซอร์จึงต้องเอื้อมมือกดเองทุกบิล */
+  const DRAWER_KICK = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+  /* เปิดเฉพาะบิลเงินสด — บิลโอน/สแกนจ่ายไม่มีเหตุให้ลิ้นชักเด้ง
+     กติกาเดียวกับฝั่งแอป: มองหาคำว่าเงินสดในสี่บรรทัดแรกของใบเสร็จ */
+  const isCashReceipt = text => /เงินสด/.test(String(text).split('\n').slice(0, 4).join(' '));
+
   let parts = null;                             // the two modules, loaded once
   let link = null;
 
@@ -50,6 +58,7 @@
     '.pdirect strong{font-size:.9rem}.pdirect small{display:block;color:#6b7280;font-size:.76rem}',
     '.pdirect .who{flex:1;min-width:150px}',
     '.pdirect-paper{padding:7px 9px;border:1px solid #d1d5db;border-radius:9px;background:#fff}',
+    '.pdirect-drawer{display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;white-space:nowrap}',
   ].join('');
   document.head.append(style);
 
@@ -75,11 +84,24 @@
     remember({...(remembered() || {name: link?.name || ''}), paper: Number(paper.value)});
     window.showToast?.(`ตั้งเป็นกระดาษ ${paper.value} มม. แล้ว`);
   });
+  /* ลิ้นชักเสียบสายที่หลังเครื่องพิมพ์ ไม่ใช่ที่แท็บเล็ต จึงเป็นค่าของเครื่องพิมพ์เครื่องนั้น */
+  const drawerWrap = document.createElement('label');
+  drawerWrap.className = 'pdirect-drawer';
+  const drawerBox = document.createElement('input');
+  drawerBox.type = 'checkbox';
+  drawerWrap.append(drawerBox, document.createTextNode(' เปิดลิ้นชักตอนรับเงินสด'));
+  drawerBox.addEventListener('change', () => {
+    remember({...(remembered() || {name: link?.name || ''}), paper: paperSize(), drawer: drawerBox.checked});
+    window.showToast?.(drawerBox.checked
+      ? 'บิลเงินสดจะเปิดลิ้นชักให้'
+      : 'ปิดการเปิดลิ้นชักแล้ว');
+  });
+
   const test = document.createElement('button');
   test.type = 'button';
   test.className = 'btn btn-sm btn-outline';
   test.textContent = 'พิมพ์ใบทดสอบ';
-  box.append(who, paper, connect, test);
+  box.append(who, paper, drawerWrap, connect, test);
 
   const show = () => {
     note.textContent = link
@@ -88,11 +110,14 @@
     connect.textContent = link ? 'เปลี่ยนเครื่องพิมพ์' : 'เชื่อมเครื่องพิมพ์';
     test.disabled = !link;
     paper.value = String(paperSize());
+    drawerBox.checked = Boolean(remembered()?.drawer);
   };
 
-  const print = async text => {
+  const print = async (text, {allowDrawer = true} = {}) => {
     const {escpos, ble} = await load();
-    await ble.write(link, escpos.chunks(escpos.drawReceipt(text, {paper: paperSize()})));
+    const page = escpos.drawReceipt(text, {paper: paperSize()});
+    const kick = allowDrawer && remembered()?.drawer && isCashReceipt(text);
+    await ble.write(link, escpos.chunks(kick ? escpos.join([page, DRAWER_KICK]) : page));
   };
 
   connect.addEventListener('click', async () => {
@@ -135,7 +160,7 @@
         '--------------------------------',
         'รวม                     ฿50.00',
         '   ขอบคุณที่ใช้บริการครับ',
-      ].join('\n'));
+      ].join('\n'), {allowDrawer: false});   // ใบทดสอบไม่ต้องเด้งลิ้นชัก
       window.showToast?.('✅ ส่งใบทดสอบแล้ว');
     } catch (error) { window.showToast?.(`⚠️ ${error.message}`); }
   });
