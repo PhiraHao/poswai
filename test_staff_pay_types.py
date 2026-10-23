@@ -112,6 +112,34 @@ class StaffPayTypeTest(unittest.TestCase):
         listed = {row["name"]: row for row in self.client.get("/api/staff/directory").json()["items"]}
         self.assertEqual((listed["ประจำ"]["pay_type"], listed["ประจำ"]["pay_amount"]), ("daily", 500))
 
+    def test_permanent_and_temporary_are_told_apart(self):
+        """ลูกจ้างรายวันเป็นคนประจําก็ได้ มาเฉพาะเสาร์อาทิตย์ก็ได้ — คนละเรื่องกับวิธีจ่ายเงิน"""
+        part = self._hire("เสาร์อาทิตย์", pay_type="daily", pay_amount=450,
+                          employment_type="temporary")
+        full = self._hire("คนประจํา", pay_type="daily", pay_amount=450,
+                          employment_type="permanent")
+        self.assertEqual(part.json()["employment_type"], "temporary")
+        self.assertEqual(full.json()["employment_type"], "permanent")
+
+        listed = {row["name"]: row for row in self.client.get("/api/staff/directory").json()["items"]}
+        self.assertEqual(listed["เสาร์อาทิตย์"]["employment_type"], "temporary")
+        # ไม่ระบุมา = ประจํา ตามค่าตั้งต้นของคอลัมน์
+        self.assertEqual(self._hire("ไม่ระบุ").json()["employment_type"], "permanent")
+        self.assertEqual(self._hire("ประเภทมั่ว", employment_type="freelance").status_code, 400)
+
+        # เปลี่ยนทีหลังได้ คนชั่วคราวที่ร้านรับเข้าประจํามีจริง
+        staff_id = part.json()["staff_id"]
+        moved = self.client.patch(f"/api/staff/{staff_id}/profile",
+                                  json={"employment_type": "permanent"})
+        self.assertEqual(moved.status_code, 200, moved.text)
+        listed = {row["id"]: row for row in self.client.get("/api/staff/directory").json()["items"]}
+        self.assertEqual(listed[staff_id]["employment_type"], "permanent")
+
+        self._work(staff_id, "2026-11-02", 8)
+        payroll = {row["name"]: row for row in
+                   self.client.get("/api/staff/payroll?month=2026-11").json()["staff"]}
+        self.assertEqual(payroll["เสาร์อาทิตย์"]["employment_type"], "permanent")
+
     def test_staff_hired_before_this_existed_stay_hourly(self):
         with sqlite3.connect(self.db) as conn:
             # ไม่ระบุ pay_type เหมือนแถวที่มีมาก่อนการย้ายโครงสร้าง

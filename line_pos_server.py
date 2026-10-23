@@ -215,6 +215,8 @@ BANGKOK_TZ = datetime.timezone(datetime.timedelta(hours=7))
 # SQLite stores CURRENT_TIMESTAMP in UTC; this shifts such a column to shop time
 # so "today" in a query means the same day the staff are working.
 BANGKOK_SQL_OFFSET = f"{BANGKOK_TZ.utcoffset(None) // datetime.timedelta(hours=1):+d} hours"
+EMPLOYMENT_TYPES = ("permanent", "temporary")
+EMPLOYMENT_LABELS = {"permanent": "ประจำ", "temporary": "ชั่วคราว"}
 PAY_TYPES = ("hourly", "daily", "monthly")
 PAY_TYPE_LABELS = {"hourly": "รายชั่วโมง", "daily": "รายวัน", "monthly": "รายเดือน"}
 # ใช้แปลงค่าจ้างรายเดือนเป็นค่าชั่วโมงสำหรับคิด OT — ไทยนิยมหาร 30 วัน
@@ -432,6 +434,11 @@ def init_db() -> None:
     # บอกว่าตัวเลขนั้นคือต่ออะไร แล้วเรียกมันว่า pay_amount ในทุกเส้น API แทน
     if "pay_type" not in {row[1] for row in cur.execute("PRAGMA table_info(staffs)")}:
         cur.execute("ALTER TABLE staffs ADD COLUMN pay_type TEXT NOT NULL DEFAULT 'hourly'")
+    # ประจำหรือชั่วคราว — คนละเรื่องกับวิธีจ่ายเงิน ลูกจ้างรายวันอาจเป็นคนประจำที่มา
+    # ทุกวันก็ได้ หรือเป็นคนมาช่วยเฉพาะวันเสาร์อาทิตย์ก็ได้ ร้านต้องแยกให้ออกเวลาดู
+    # รายชื่อ คิดวันลา และทำเอกสารประกันสังคม
+    if "employment_type" not in {row[1] for row in cur.execute("PRAGMA table_info(staffs)")}:
+        cur.execute("ALTER TABLE staffs ADD COLUMN employment_type TEXT NOT NULL DEFAULT 'permanent'")
     cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS staff_social_identity ON staffs(social_id)"
                 " WHERE social_id IS NOT NULL")
     cur.execute("""CREATE TABLE IF NOT EXISTS inventory (
@@ -907,6 +914,7 @@ class StaffCreate(BaseModel):
     hourly_rate: Optional[float] = None      # ชื่อเดิมจากตอนที่มีแบบเดียว
     pay_amount: Optional[float] = None       # ยอดเงินของประเภทที่เลือก
     pay_type: Optional[str] = None
+    employment_type: Optional[str] = None
     leave_quota: Optional[LeaveQuotaInput] = None
 
 
@@ -921,6 +929,9 @@ def create_staff(req: StaffCreate, request: Request):
         raise HTTPException(400, "LINE ID ไม่ถูกต้อง")
     if req.pay_type is not None and req.pay_type not in PAY_TYPES:
         raise HTTPException(400, "ประเภทค่าจ้างต้องเป็นรายชั่วโมง รายวัน หรือรายเดือน")
+    if req.employment_type is not None and req.employment_type not in EMPLOYMENT_TYPES:
+        raise HTTPException(400, "ประเภทการจ้างต้องเป็นประจำหรือชั่วคราว")
+    employment = _employment_type(req.employment_type)
     # รับได้ทั้งชื่อใหม่และชื่อเดิม แอปรุ่นเก่าที่ยังส่ง hourly_rate มาจึงใช้งานได้ต่อ
     amount = req.pay_amount if req.pay_amount is not None else req.hourly_rate
     pay_type = _pay_type(req.pay_type)
@@ -930,20 +941,21 @@ def create_staff(req: StaffCreate, request: Request):
     with closing(connect_db()) as conn, conn:
         try:
             if amount is None:
-                cur = conn.execute("INSERT INTO staffs (branch_id,line_user_id,name,role,pin_code_hash,pay_type) "
-                                   "VALUES (?,?,?,?,?,?)",
-                                   (manager["branch_id"], req.line_user_id, req.name.strip(), req.role, pin_hash,
-                                    pay_type))
-            else:
-                cur = conn.execute("INSERT INTO staffs (branch_id,line_user_id,name,role,pin_code_hash,hourly_rate,pay_type) "
+                cur = conn.execute("INSERT INTO staffs (branch_id,line_user_id,name,role,pin_code_hash,pay_type,employment_type) "
                                    "VALUES (?,?,?,?,?,?,?)",
                                    (manager["branch_id"], req.line_user_id, req.name.strip(), req.role, pin_hash,
-                                    amount, pay_type))
+                                    pay_type, employment))
+            else:
+                cur = conn.execute("INSERT INTO staffs (branch_id,line_user_id,name,role,pin_code_hash,hourly_rate,pay_type,employment_type) "
+                                   "VALUES (?,?,?,?,?,?,?,?)",
+                                   (manager["branch_id"], req.line_user_id, req.name.strip(), req.role, pin_hash,
+                                    amount, pay_type, employment))
         except sqlite3.IntegrityError as exc:
             raise HTTPException(409, "LINE นี้ผูกกับพนักงานคนอื่นแล้ว") from exc
         store_leave_quota(conn, cur.lastrowid, req.leave_quota.model_dump() if req.leave_quota else None)
     return {"staff_id": cur.lastrowid, "branch_id": manager["branch_id"], "name": req.name.strip(),
-            "role": req.role, "pay_type": pay_type, "pay_amount": amount, "hourly_rate": amount}
+            "role": req.role, "pay_type": pay_type, "pay_amount": amount, "hourly_rate": amount,
+            "employment_type": employment}
 
 
 def _can_manage_staff(actor: dict, target: sqlite3.Row) -> bool:
@@ -959,12 +971,13 @@ def staff_directory(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     with closing(connect_db()) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT id,name,role,is_active,hourly_rate,pay_type FROM staffs WHERE branch_id=? ORDER BY is_active DESC,id",
+        rows = conn.execute("SELECT id,name,role,is_active,hourly_rate,pay_type,employment_type FROM staffs WHERE branch_id=? ORDER BY is_active DESC,id",
                             (branch_id,)).fetchall()
         quotas = leave_quota_map(conn, branch_id)
     return {"items": [{"id": row["id"], "name": row["name"], "role": row["role"],
                        "is_active": bool(row["is_active"]), "hourly_rate": row["hourly_rate"],
                        "pay_type": _pay_type(row["pay_type"]), "pay_amount": row["hourly_rate"],
+                       "employment_type": _employment_type(row["employment_type"]),
                        "leave_quota": quotas.get(row["id"])} for row in rows],
             "default_leave_quota": DEFAULT_LEAVE_QUOTA}
 
@@ -976,6 +989,7 @@ class StaffProfileUpdate(BaseModel):
     hourly_rate: Optional[float] = None
     pay_amount: Optional[float] = None
     pay_type: Optional[str] = None
+    employment_type: Optional[str] = None
     leave_quota: Optional[LeaveQuotaInput] = None
 
 
@@ -992,6 +1006,8 @@ def update_staff_profile(staff_id: int, req: StaffProfileUpdate, request: Reques
         raise HTTPException(400, "สิทธิ์ที่เลือกไม่ถูกต้อง")
     if "pay_type" in updates and updates["pay_type"] not in PAY_TYPES:
         raise HTTPException(400, "ประเภทค่าจ้างต้องเป็นรายชั่วโมง รายวัน หรือรายเดือน")
+    if "employment_type" in updates and updates["employment_type"] not in EMPLOYMENT_TYPES:
+        raise HTTPException(400, "ประเภทการจ้างต้องเป็นประจำหรือชั่วคราว")
     # ชื่อใหม่ชนะชื่อเดิม แล้วเก็บลงคอลัมน์เดียวกัน
     if "pay_amount" in updates:
         updates["hourly_rate"] = updates.pop("pay_amount")
@@ -3244,6 +3260,12 @@ def commissions(request: Request, work_date: str, branch_id: int = 1):
             "equal_share": round(pool / divisor, 2) if divisor else 0.0}
 
 
+def _employment_type(value, default: str = "permanent") -> str:
+    """ประเภทการจ้างที่ยอมรับ · ค่าที่ไม่รู้จักถือว่าประจำ ตามค่าตั้งต้นของคอลัมน์"""
+    text = str(value or "").strip().lower()
+    return text if text in EMPLOYMENT_TYPES else default
+
+
 def _pay_cap(pay_type: str) -> float:
     """เพดานที่พอจะดักเลขพิมพ์ผิดได้ โดยไม่ขวางร้านที่จ่ายจริงสูงกว่าปกติ
 
@@ -3301,7 +3323,7 @@ def staff_payroll(request: Request, month: str, branch_id: int = 1):
     with closing(connect_db()) as conn, conn:
         conn.row_factory = sqlite3.Row
         staff_rows = conn.execute(
-            "SELECT id, name, role, hourly_rate, pay_type FROM staffs "
+            "SELECT id, name, role, hourly_rate, pay_type, employment_type FROM staffs "
             "WHERE branch_id=? AND is_active=1 ORDER BY name",
             (branch_id,),
         ).fetchall()
@@ -3323,6 +3345,7 @@ def staff_payroll(request: Request, month: str, branch_id: int = 1):
     by_staff = {row["id"]: {
         "id": row["id"], "name": row["name"], "role": row["role"],
         "pay_type": _pay_type(row["pay_type"]),
+        "employment_type": _employment_type(row["employment_type"]),
         "pay_amount": float(row["hourly_rate"] or 0),
         # ชื่อเดิม เก็บไว้ให้แอปรุ่นที่ยังไม่อัปเดตอ่านได้เหมือนเดิม
         "hourly_rate": float(row["hourly_rate"] or 0), "regular_hours": 0.0,
@@ -3378,7 +3401,8 @@ def staff_payroll(request: Request, month: str, branch_id: int = 1):
         item["total_pay"] = round(item["base_pay"] + item["ot_pay"] + item["commission"], 2)
     return {"month": month, "branch_id": branch_id, "regular_hours_per_day": regular_hours_per_day,
             "ot_multiplier": ot_multiplier, "days_per_month": PAYROLL_DAYS_PER_MONTH,
-            "pay_type_labels": PAY_TYPE_LABELS, "staff": list(by_staff.values()),
+            "pay_type_labels": PAY_TYPE_LABELS, "employment_labels": EMPLOYMENT_LABELS,
+            "staff": list(by_staff.values()),
             "note": "Estimated gross pay before deductions and benefits; confirm configured payroll policy before use."}
 
 
