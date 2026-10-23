@@ -28,6 +28,18 @@ PROVIDERS = ("line", "google")
 NATIVE_PROVIDERS = ("apple",)
 # Set POSWAI_LINE_EMAIL_PERMISSION=1 once LINE approves the channel for it.
 LINE_EMAIL_PERMISSION = os.getenv("POSWAI_LINE_EMAIL_PERMISSION", "") not in ("", "0", "false")
+# LINE's "auto login" hands the sign-in to the LINE app through a Universal Link.
+# It is seamless when it works and a dead end when it does not: the app opens on
+# "เกิดข้อผิดพลาดที่ไม่ทราบสาเหตุ" and the browser never comes back, which is what
+# an owner on an iPhone hit on 23 Oct 2026. LINE lists the ways it breaks —
+# private browsing, in-app browsers, and reaching the authorization URL by a
+# JavaScript redirect, which is exactly how the sign-in button navigates here —
+# and tells you to retry with the hand-off switched off:
+#   https://developers.line.biz/en/docs/line-login/how-to-handle-auto-login-failure/
+# So we switch it off from the start. The owner still gets one tap whenever the
+# browser already has a LINE session (SSO "ดำเนินการต่อในชื่อ…"), and an email or
+# QR code login when it does not. Set POSWAI_LINE_AUTO_LOGIN=1 to hand off again.
+LINE_AUTO_LOGIN = os.getenv("POSWAI_LINE_AUTO_LOGIN", "") not in ("", "0", "false")
 STATE_LIFETIME = 600            # a sign-in that takes longer than ten minutes is stale
 SESSION_LIFETIME = 30 * 24 * 3600   # an owner signs in on their own phone, not a shared till
 LINE_AUTH_URL = "https://access.line.me/oauth2/v2.1/authorize"
@@ -174,6 +186,9 @@ def authorize_url(provider: str, *, client_id: str, redirect_uri: str, state: st
         scope = "openid profile email" if LINE_EMAIL_PERMISSION else "openid profile"
         query = {"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
                  "state": state, "scope": scope, "nonce": nonce}
+        if not LINE_AUTO_LOGIN:
+            # Documented as a string, and only "true" turns it on.
+            query["disable_auto_login"] = "true"
         return f"{LINE_AUTH_URL}?{urlencode(query)}"
     query = {"response_type": "code", "client_id": client_id, "redirect_uri": redirect_uri,
              "state": state, "scope": "openid email profile", "nonce": nonce,

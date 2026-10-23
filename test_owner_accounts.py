@@ -156,6 +156,24 @@ class OwnerAccountTest(OwnerAuthCase):
         self.assertTrue(len(query["state"][0]) >= 32 and len(query["nonce"][0]) >= 16)
         self.assertNotEqual(query["state"][0], query["nonce"][0])
 
+    def test_line_is_asked_not_to_hand_the_sign_in_to_the_phone_app(self):
+        """Auto login opens the LINE app and dies there on some phones (23 Oct 2026).
+
+        LINE sends the browser back to the callback with a `state` that does not
+        match, so the sign-in cannot be rescued — it is refused as a forged state.
+        Turning the hand-off off keeps the whole sign-in on the page.
+        """
+        query = parse_qs(urlsplit(self.start(self.client(), "line").headers["location"]).query)
+        self.assertEqual(query["disable_auto_login"], ["true"])
+        # Google has no such hand-off; the parameter is LINE's alone.
+        google = parse_qs(urlsplit(self.start(self.client(), "google").headers["location"]).query)
+        self.assertNotIn("disable_auto_login", google)
+
+    def test_the_hand_off_can_be_switched_back_on(self):
+        with patch.object(owner_auth, "LINE_AUTO_LOGIN", True):
+            query = parse_qs(urlsplit(self.start(self.client(), "line").headers["location"]).query)
+        self.assertNotIn("disable_auto_login", query)
+
     def test_a_state_the_server_never_issued_is_refused(self):
         browser = self.client()
         response = self.callback(browser, state="made-up-state")
