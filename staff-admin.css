@@ -6,6 +6,11 @@
 .staff-admin form { display: grid; align-content: start; gap: 10px; padding: 16px; background: #fffaf0; border: 1px solid #f7e4ac; border-radius: 14px; }
 .staff-admin form strong { font-size: .95rem; color: #172132; }
 .staff-admin label { display: grid; gap: 5px; font-size: .78rem; color: #566174; }
+/* ป้ายทั่วไปเป็น grid (ข้อความอยู่บน ช่องกรอกอยู่ล่าง) แต่ช่องติ๊กต้องอ่านเป็น
+   ประโยคเดียว: กล่องติ๊ก ข้อความ และคำอธิบาย เรียงต่อกันในแถวเดียว */
+.staff-admin label.staff-employment { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: #172132; font-weight: 600; }
+.staff-admin label.staff-employment input[type="checkbox"] { width: auto; min-width: 0; flex: none; margin: 0; }
+.staff-admin label.staff-employment small { font-weight: 400; color: #64748b; }
 .staff-admin input,.staff-admin select { width: 100%; min-width: 0; padding: 9px 10px; background: #fff; border: 1px solid #d9dfe7; border-radius: 9px; color: #172132; }
 .staff-admin button { border: 0; border-radius: 9px; padding: 10px 13px; font-weight: 700; background: #ffcb28; color: #172132; cursor: pointer; }
 .staff-admin-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 16px; font-size: .86rem; }

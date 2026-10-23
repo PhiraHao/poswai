@@ -27,7 +27,7 @@
       <label>ตำแหน่ง<select name="role" required>${roleOptions(['staff','service','cashier','kitchen','manager'])}</select></label>
       <label>รหัส PIN อย่างน้อย 8 ตัว<input name="pin" type="password" minlength="8" autocomplete="new-password" required placeholder="ห้ามใช้ PIN ของผู้จัดการ"></label>
       <label class="staff-employment"><input type="checkbox" name="is_permanent" checked> พนักงานประจำ <small>เอาติ๊กออกถ้าเป็นพนักงานชั่วคราว</small></label>
-      <label>ประเภทค่าจ้าง<select name="pay_type"><option value="hourly">รายชั่วโมง</option><option value="daily">รายวัน</option><option value="monthly">รายเดือน (พนักงานประจำ)</option></select></label><label class="staff-pay-amount">ค่าจ้าง (บาท<span data-pay-unit>ต่อชั่วโมง</span>)<input name="pay_amount" type="number" min="0" max="1000000" step="0.01" placeholder="50"></label>
+      <label>ประเภทค่าจ้าง<select name="pay_type"><option value="hourly">รายชั่วโมง</option><option value="daily">รายวัน</option><option value="monthly">รายเดือน (พนักงานประจำ)</option></select></label><label class="staff-pay-amount"><span data-pay-unit>ค่าจ้าง (บาทต่อชั่วโมง)</span><input name="pay_amount" type="number" min="0" max="1000000" step="0.01" placeholder="50"></label>
       <span class="staff-quota-label">โควตาวันลาต่อปี</span>${quotaFields}
       <div class="staff-admin-actions"><button type="submit">สร้างบัญชี</button>
         <button type="button" id="staffCancelCreate" class="staff-secondary">ยกเลิก</button></div>
@@ -41,7 +41,7 @@
           <label>ชื่อพนักงาน<input name="name" maxlength="100" required></label>
           <label>ตำแหน่ง<select name="role" required>${roleOptions(['staff','service','cashier','kitchen','manager'])}<option value="owner" disabled>เจ้าของร้าน</option></select></label>
           <label class="staff-employment"><input type="checkbox" name="is_permanent" checked> พนักงานประจำ <small>เอาติ๊กออกถ้าเป็นพนักงานชั่วคราว</small></label>
-          <label>ประเภทค่าจ้าง<select name="pay_type"><option value="hourly">รายชั่วโมง</option><option value="daily">รายวัน</option><option value="monthly">รายเดือน (พนักงานประจำ)</option></select></label><label class="staff-pay-amount">ค่าจ้าง (บาท<span data-pay-unit>ต่อชั่วโมง</span>)<input name="pay_amount" type="number" min="0" max="1000000" step="0.01"></label>
+          <label>ประเภทค่าจ้าง<select name="pay_type"><option value="hourly">รายชั่วโมง</option><option value="daily">รายวัน</option><option value="monthly">รายเดือน (พนักงานประจำ)</option></select></label><label class="staff-pay-amount"><span data-pay-unit>ค่าจ้าง (บาทต่อชั่วโมง)</span><input name="pay_amount" type="number" min="0" max="1000000" step="0.01"></label>
           <span class="staff-quota-label">โควตาวันลาต่อปี <small id="staffQuotaUsed"></small></span>${quotaFields}
           <button type="submit" id="staffSaveProfile">บันทึกข้อมูล</button>
         </form>
@@ -88,7 +88,8 @@
   const syncPayUnit = form => {
     const type = form.elements.namedItem('pay_type')?.value || 'hourly';
     const unit = form.querySelector('[data-pay-unit]');
-    if (unit) unit.textContent = PAY_UNITS[type] || PAY_UNITS.hourly;
+    // ข้อความทั้งก้อนอยู่ในชิ้นเดียว ไม่งั้น display:grid ของป้ายหั่นเป็นคนละบรรทัด
+    if (unit) unit.textContent = `ค่าจ้าง (บาท${PAY_UNITS[type] || PAY_UNITS.hourly})`;
   };
   const employmentValue = form =>
     (form.elements.namedItem('is_permanent')?.checked ?? true) ? 'permanent' : 'temporary';
