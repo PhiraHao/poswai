@@ -215,6 +215,8 @@ BANGKOK_TZ = datetime.timezone(datetime.timedelta(hours=7))
 # SQLite stores CURRENT_TIMESTAMP in UTC; this shifts such a column to shop time
 # so "today" in a query means the same day the staff are working.
 BANGKOK_SQL_OFFSET = f"{BANGKOK_TZ.utcoffset(None) // datetime.timedelta(hours=1):+d} hours"
+# ตำแหน่งที่ได้รับแจ้งเตือนออเดอร์ทาง LINE — ที่เดียวที่กำหนด ไม่ให้หน้าจอกับเซิร์ฟเวอร์เพี้ยนกัน
+LINE_ORDER_ROLES = ("owner", "manager", "kitchen", "cashier")
 EMPLOYMENT_TYPES = ("permanent", "temporary")
 EMPLOYMENT_LABELS = {"permanent": "ประจำ", "temporary": "ชั่วคราว"}
 PAY_TYPES = ("hourly", "daily", "monthly")
@@ -975,13 +977,16 @@ def staff_directory(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
     with closing(connect_db()) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT id,name,role,is_active,hourly_rate,pay_type,employment_type FROM staffs WHERE branch_id=? ORDER BY is_active DESC,id",
+        rows = conn.execute("SELECT id,name,role,is_active,hourly_rate,pay_type,employment_type,line_user_id FROM staffs WHERE branch_id=? ORDER BY is_active DESC,id",
                             (branch_id,)).fetchall()
         quotas = leave_quota_map(conn, branch_id)
     return {"items": [{"id": row["id"], "name": row["name"], "role": row["role"],
                        "is_active": bool(row["is_active"]), "hourly_rate": row["hourly_rate"],
                        "pay_type": _pay_type(row["pay_type"]), "pay_amount": row["hourly_rate"],
                        "employment_type": _employment_type(row["employment_type"]),
+                       # บอกแค่ว่าผูกแล้วหรือยัง ไม่ส่ง LINE ID ออกไป — เป็นของส่วนตัวและหน้าจอไม่ได้ใช้
+                       "line_linked": bool(row["line_user_id"]),
+                       "line_notifies": row["role"] in LINE_ORDER_ROLES,
                        "leave_quota": quotas.get(row["id"])} for row in rows],
             "default_leave_quota": DEFAULT_LEAVE_QUOTA}
 
@@ -1816,7 +1821,7 @@ def _notify_online_order(conn: sqlite3.Connection, branch_id: int, record: dict,
     message = {"type": "text", "text": "\n".join(detail)[:4900]}
     queued = 0
     for row in conn.execute(
-            "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN ('owner','manager','kitchen','cashier') "
+            "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN (%s) " % ",".join("'%s'" % r for r in LINE_ORDER_ROLES) +
             "AND is_active=1 AND line_user_id IS NOT NULL AND line_user_id<>''", (branch_id,)).fetchall():
         enqueue_line_notification(conn, f"online-order:{record['order_no']}", row[0], branch_id, message)
         queued += 1
@@ -2460,7 +2465,7 @@ def _notify_guest_order(conn: sqlite3.Connection, branch_id: int, table_no: str,
                        f"รวม {float(total['total_amount'] if total else 0):,.2f} บาท"])[:4900]
     queued = 0
     for row in conn.execute(
-            "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN ('owner','manager','kitchen','cashier') "
+            "SELECT line_user_id FROM staffs WHERE branch_id=? AND role IN (%s) " % ",".join("'%s'" % r for r in LINE_ORDER_ROLES) +
             "AND is_active=1 AND line_user_id IS NOT NULL AND line_user_id<>''", (branch_id,)).fetchall():
         enqueue_line_notification(conn, f"guest-order:{order_no}", row[0], branch_id,
                                   {"type": "text", "text": text})

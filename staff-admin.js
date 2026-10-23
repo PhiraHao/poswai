@@ -17,6 +17,7 @@
   directoryCard.innerHTML = `<div class="card-header staff-directory-header">
       <div><div class="card-title">จัดการพนักงาน</div>
         <p class="staff-admin-note">ตั้งชื่อ ตำแหน่ง รหัส PIN ค่าจ้าง และโควตาวันลา ได้ในที่เดียว</p></div>
+      <p id="staffLineWarning" class="staff-line-note" hidden role="status"></p>
       <div class="staff-admin-actions">
         <button type="button" id="staffLinkLine" class="staff-roster-action">เชื่อม LINE รับแจ้งเตือน</button>
         <button type="button" id="staffAddButton" class="staff-roster-action">+ เพิ่มพนักงาน</button>
@@ -101,6 +102,23 @@
     if (typeof window.linkLineAccount === 'function') window.linkLineAccount();
     else status('เปิดหน้านี้จากในแอป LINE ก่อน แล้วกดอีกครั้ง');
   });
+  const lineTag = person => !person.line_notifies ? ''
+    : person.line_linked ? ' · <span class="staff-line-on">LINE ✓</span>'
+    : ' · <span class="staff-line-off">ยังไม่ผูก LINE</span>';
+
+  const renderLineWarning = () => {
+    const box = document.getElementById('staffLineWarning');
+    if (!box) return;
+    const eligible = directory.filter(p => p.is_active && p.line_notifies);
+    const linked = eligible.filter(p => p.line_linked);
+    if (!eligible.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.className = linked.length ? 'staff-line-note ok' : 'staff-line-note warn';
+    box.textContent = linked.length
+      ? `รับแจ้งเตือนออเดอร์ทาง LINE แล้ว ${linked.length} / ${eligible.length} คน`
+      : 'ยังไม่มีใครผูก LINE — ออเดอร์ที่เข้ามาจะไม่มีข้อความแจ้งเตือนใครเลย กดปุ่มเชื่อม LINE จากในแอป LINE';
+  };
+
   const employmentValue = form =>
     (form.elements.namedItem('is_permanent')?.checked ?? true) ? 'permanent' : 'temporary';
   const payValues = form => {
@@ -146,7 +164,8 @@
     if (!user) return;
     $$('#staffDirectoryList').innerHTML = directory.map(person =>
       `<button type="button" data-staff-id="${person.id}" class="${person.id===selectedStaffId?'selected':''}">
-        <strong>${escape(person.name)}</strong><small>รหัส ${(window.staffCode || String)(person.id)} · ${escape(ROLE_LABELS[person.role] || person.role)} · ${person.employment_type === 'temporary' ? 'ชั่วคราว' : 'ประจำ'} · ${person.is_active?'ใช้งาน':'ปิดใช้งาน'}</small></button>`).join('');
+        <strong>${escape(person.name)}</strong><small>รหัส ${(window.staffCode || String)(person.id)} · ${escape(ROLE_LABELS[person.role] || person.role)} · ${person.employment_type === 'temporary' ? 'ชั่วคราว' : 'ประจำ'} · ${person.is_active?'ใช้งาน':'ปิดใช้งาน'}${lineTag(person)}</small></button>`).join('');
+    renderLineWarning();
     const person = directory.find(item => item.id === selectedStaffId);
     const detail = $$('#staffDirectoryDetail');
     detail.hidden = !person;

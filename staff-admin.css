@@ -11,6 +11,11 @@
 .staff-admin label.staff-employment { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: #172132; font-weight: 600; }
 .staff-admin label.staff-employment input[type="checkbox"] { width: auto; min-width: 0; flex: none; margin: 0; }
 .staff-admin label.staff-employment small { font-weight: 400; color: #64748b; }
+.staff-line-on { color: #0f7a3d; font-weight: 700; }
+.staff-line-off { color: #b45309; font-weight: 700; }
+.staff-line-note { margin: 0 0 10px; padding: 9px 12px; border-radius: 10px; font-size: .82rem; }
+.staff-line-note.ok { background: #ecfdf3; border: 1px solid #b7e4c7; color: #0f7a3d; }
+.staff-line-note.warn { background: #fff4e5; border: 1px solid #f7cf9b; color: #92400e; }
 .staff-admin input,.staff-admin select { width: 100%; min-width: 0; padding: 9px 10px; background: #fff; border: 1px solid #d9dfe7; border-radius: 9px; color: #172132; }
 .staff-admin button { border: 0; border-radius: 9px; padding: 10px 13px; font-weight: 700; background: #ffcb28; color: #172132; cursor: pointer; }
 .staff-admin-line { display: flex; justify-content: space-between; align-items: center; gap: 12px; border-top: 1px solid #e5e7eb; padding-top: 16px; margin-top: 16px; font-size: .86rem; }
