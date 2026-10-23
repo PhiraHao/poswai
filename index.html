@@ -2,8 +2,8 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>POS WAI - ระบบ POS ร้านอาหารครบวงจรผ่าน LINE (Offline-First, BOM, CRM, BI)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS WAI — ระบบจัดการร้านอาหาร</title>
   <style>
     :root {
       --line-green: #06C755;
@@ -526,9 +526,15 @@
       transition: all 0.15s ease;
     }
     .menu-item.sold-out {
-      opacity: 0.58;
+      /* The food still looks like food. Fading the photo hid the dish the
+         customer came in for; the banner and the badge say it is off today. */
       background: #f1f5f9;
       border-color: #cbd5e1;
+    }
+    .menu-item.sold-out .menu-name,
+    .menu-item.sold-out .menu-sub,
+    .menu-item.sold-out .menu-price {
+      color: #64748b;
     }
     .menu-item.pinned-item {
       border: 2px solid var(--line-green);
@@ -647,15 +653,37 @@
       user-select: none;
     }
 
+    .kds-options { display: block; font-size: .78rem; color: #b45309; font-weight: 600; }
+    .kds-note { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: #fff7ed; color: #9a3412; font-size: .82rem; font-weight: 600; }
   </style>
+  <link rel="stylesheet" href="/ui.css">
+  <link rel="stylesheet" href="/assets/fonts.css">
+  <link rel="stylesheet" href="/workspace.css?v=45">
+  <link rel="stylesheet" href="/sales-redesign.css?v=49">
+  <link rel="stylesheet" href="/ops-redesign.css?v=19">
+  <link rel="stylesheet" href="/people-redesign.css?v=19">
+  <link rel="stylesheet" href="/staff-admin.css?v=40">
+  <link rel="stylesheet" href="/staff-dossier.css?v=39">
+  <link rel="stylesheet" href="/reports-restore.css?v=19">
+  <link rel="stylesheet" href="/reports-live.css?v=20">
+  <link rel="stylesheet" href="/service-call.css?v=77">
+  <link rel="stylesheet" href="/auth-ui.css?v=86">
+  <link rel="stylesheet" href="/landing.css?v=43">
+  <link rel="stylesheet" href="/payment-ui.css?v=21">
+  <link rel="stylesheet" href="/guest-ui.css?v=2">
+  <link rel="stylesheet" href="/billing-ui.css?v=49">
+  <link rel="icon" href="/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#FFC928">
 </head>
-<body>
+<body data-active-tab="customer">
 
   <!-- Top Control Bar -->
   <header class="sim-topbar">
     <div class="sim-topbar-row">
       <div class="brand-title">
-        <span class="line-badge">⚡ POS WAI</span>
+        <span class="line-badge"><span class="brand-symbol" aria-hidden="true">W</span><span>POS WAI</span></span>
         <select id="branchSelect" class="branch-select" onchange="switchBranch()">
           <option value="สาขา 1: เชียงใหม่ (นิมมาน)">📍 สาขา 1: เชียงใหม่ (นิมมาน)</option>
           <option value="สาขา 2: เชียงใหม่ (แม่ริม)">📍 สาขา 2: เชียงใหม่ (แม่ริม)</option>
@@ -664,7 +692,7 @@
       </div>
       <div class="net-controls">
         <div style="display:flex; background:#1e293b; border:1px solid #334155; border-radius:8px; padding:2px;">
-          <button class="btn btn-sm" id="topLangBtnTH" style="background:#06C755; color:#fff; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
+          <button class="btn btn-sm" id="topLangBtnTH" style="background:#FFC928; color:#141B24; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
           <button class="btn btn-sm" id="topLangBtnEN" style="background:transparent; color:#cbd5e1; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('EN')">🇬🇧 EN</button>
           <button class="btn btn-sm" id="topLangBtnCN" style="background:transparent; color:#cbd5e1; padding:3px 8px; font-size:0.74rem;" onclick="setMenuLanguage('CN')">🇨🇳 中文</button>
         </div>
@@ -685,40 +713,44 @@
   </div>
 
   <!-- 7 Complete Modules Navigation -->
-  <nav class="role-tabs-wrap">
+  <nav class="role-tabs-wrap" aria-label="เมนูหลัก">
+    <div class="nav-brand"><span class="nav-brand-mark" aria-hidden="true">W</span><span><strong>POS WAI</strong><small>Restaurant workspace</small></span></div>
+    <div class="nav-section-label">พื้นที่ทำงาน</div>
     <div class="role-tabs">
-      <button class="role-tab active" onclick="switchTab('customer', this)">
-        <span>📱 1. ลูกค้าสั่งอาหาร/คิว</span>
-        <small>QR Order & สมาชิก</small>
+      <button class="role-tab active" onclick="switchTab('customer', this)" aria-current="page" title="สั่งอาหาร">
+        <svg aria-hidden="true"><use href="/icons.svg#menu"></use></svg><span>สั่งอาหาร</span>
+        <small>เมนูและตะกร้า</small>
       </button>
-      <button class="role-tab" onclick="switchTab('kitchen', this)">
-        <span>👨‍🍳 2. จอครัว KDS</span>
-        <small>ส่งครัว & พิมพ์ใบครัว</small>
+      <button class="role-tab" onclick="switchTab('kitchen', this)" title="จอครัว">
+        <svg aria-hidden="true"><use href="/icons.svg#chef"></use></svg><span>จอครัว</span>
+        <small>รายการและสถานะ</small>
         <span id="kitchenBadge" class="tab-badge" style="display:none;">0</span>
       </button>
-      <button class="role-tab" onclick="switchTab('cashier', this)">
-        <span>💰 3. แคชเชียร์ & กะ</span>
-        <small>แยกบิล/ย้ายโต๊ะ/VAT</small>
+      <button class="role-tab" onclick="switchTab('cashier', this)" title="แคชเชียร์">
+        <svg aria-hidden="true"><use href="/icons.svg#cashier"></use></svg><span>แคชเชียร์</span>
+        <small>โต๊ะและการชำระเงิน</small>
         <span id="cashierBadge" class="tab-badge" style="display:none;">0</span>
       </button>
-      <button class="role-tab" onclick="switchTab('inventory', this)">
-        <span>📦 4. สต็อก & สูตร BOM</span>
-        <small>ตัดวัตถุดิบ/PO/ของเสีย</small>
+      <button class="role-tab" onclick="switchTab('inventory', this)" title="สต็อก">
+        <svg aria-hidden="true"><use href="/icons.svg#inventory"></use></svg><span>สต็อก</span>
+        <small>วัตถุดิบและสูตร</small>
         <span id="stockBadge" class="tab-badge" style="display:none;">0</span>
       </button>
-      <button class="role-tab" onclick="switchTab('crm', this)">
-        <span>🎁 5. สมาชิก & เดลิเวอรี</span>
-        <small>แต้ม/คูปอง/Grab/LINE MAN</small>
+      <button class="role-tab" onclick="switchTab('crm', this)" title="สมาชิก">
+        <svg aria-hidden="true"><use href="/icons.svg#users"></use></svg><span>สมาชิก</span>
+        <small>CRM และเดลิเวอรี</small>
       </button>
-      <button class="role-tab" onclick="switchTab('staff', this)">
-        <span>⏰ 6. พนักงาน & สิทธิ์</span>
-        <small>ลงเวลา/คอมมิชชัน/PIN</small>
+      <button class="role-tab" onclick="switchTab('staff', this)" title="พนักงาน">
+        <svg aria-hidden="true"><use href="/icons.svg#staff"></use></svg><span>พนักงาน</span>
+        <small>กะ ใบลา คอมมิชชัน</small>
       </button>
-      <button class="role-tab" onclick="switchTab('analytics', this)">
-        <span>📊 7. รายงาน & กำไร</span>
-        <small>Star Matrix & Peak Hour</small>
+      <button class="role-tab" onclick="switchTab('analytics', this)" title="รายงาน">
+        <svg aria-hidden="true"><use href="/icons.svg#chart"></use></svg><span>รายงาน</span>
+        <small>ยอดขายและข้อมูลเชิงลึก</small>
       </button>
     </div>
+    <button class="mobile-more" type="button" onclick="toggleMobileNavigation()" aria-expanded="false" aria-label="ดูเมนูเพิ่มเติม"><svg aria-hidden="true"><use href="/icons.svg#more"></use></svg><span>เพิ่มเติม</span></button>
+    <div class="nav-footer"><span class="nav-status-dot" aria-hidden="true"></span><span>ระบบตัวอย่าง</span></div>
   </nav>
 
   <main class="container">
@@ -727,6 +759,7 @@
          TAB 1: ลูกค้าสแกนสั่งอาหาร + ชุดเซตโปรโมชัน + ตัวเลือกท็อปปิ้ง/แยกคอร์ส + โหมดจัดการเมนูด่วนหน้าร้าน
          ================================================================= -->
     <section id="view-customer" class="view-section active">
+      <div class="module-intro"><div><h1>สั่งอาหาร</h1><p>เลือกเมนู จัดการตะกร้า และติดตามบิลของโต๊ะ</p></div><span class="module-state">หน้าลูกค้า</span></div>
       <div class="liff-header">
         <div>
           <div style="font-size:0.75rem; opacity:0.92;">POS WAI • ระบบจัดการร้านอาหารอัจฉริยะผ่าน LINE OA & Offline-First</div>
@@ -735,11 +768,11 @@
         <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
           <!-- Multi-language switcher -->
           <div style="display:flex; background:rgba(0,0,0,0.2); border-radius:8px; padding:2px;">
-            <button class="btn btn-sm" id="langBtnTH" style="background:#fff; color:#0f172a; padding:4px 8px;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
-            <button class="btn btn-sm" id="langBtnEN" style="background:transparent; color:#fff; padding:4px 8px;" onclick="setMenuLanguage('EN')">🇬🇧 EN</button>
-            <button class="btn btn-sm" id="langBtnCN" style="background:transparent; color:#fff; padding:4px 8px;" onclick="setMenuLanguage('CN')">🇨🇳 中文</button>
+            <button class="btn btn-sm" id="langBtnTH" style="background:#FFC928; color:#141B24; padding:4px 8px;" onclick="setMenuLanguage('TH')">🇹🇭 ไทย</button>
+            <button class="btn btn-sm" id="langBtnEN" style="background:transparent; color:#141B24; padding:4px 8px;" onclick="setMenuLanguage('EN')">🇬🇧 EN</button>
+            <button class="btn btn-sm" id="langBtnCN" style="background:transparent; color:#141B24; padding:4px 8px;" onclick="setMenuLanguage('CN')">🇨🇳 中文</button>
           </div>
-          <button class="btn btn-sm btn-warning" onclick="issueSmartQueue()">🎫 รับบัตรคิว LINE</button>
+          <button class="btn btn-sm btn-warning" onclick="issueSmartQueue()">ทดลองรับบัตรคิว</button>
           <select id="customerTableSelect" class="table-selector" onchange="onCustomerTableChange()">
             <option value="1">โต๊ะ 1 (หน้าร้าน)</option>
             <option value="2">โต๊ะ 2 (ริมหน้าต่าง)</option>
@@ -752,17 +785,18 @@
       </div>
 
       <!-- Quick Service Call Bar via Table QR -->
-      <div class="card" style="padding:10px 14px; margin-bottom:12px; background:#fff; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-        <div style="font-size:0.8rem; font-weight:700; color:var(--text-main);">
-          🔔 บริการด่วนผ่าน QR โต๊ะ (แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟ):
-        </div>
-        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <details id="serviceActions" class="card service-actions" open>
+        <summary>บริการที่โต๊ะ <span>เรียกพนักงาน • ขออุปกรณ์ • เช็กบิล</span></summary>
+        <div class="service-actions-content">
+        <div class="service-actions-label">บริการที่โต๊ะ</div>
+        <div class="service-actions-buttons">
           <button class="btn btn-sm btn-outline" onclick="sendTableServiceCall('ขอน้ำแข็ง/น้ำเปล่าเพิ่ม')">🧊 ขอน้ำแข็งเพิ่ม</button>
           <button class="btn btn-sm btn-outline" onclick="sendTableServiceCall('ขอน้ำซุป/ถ้วยแบ่ง/ช้อนส้อม')">🥣 ขอน้ำซุป/จานชาม</button>
           <button class="btn btn-sm btn-outline" onclick="sendTableServiceCall('เรียกพนักงานที่โต๊ะ')">🙋‍♂️ เรียกพนักงาน</button>
           <button class="btn btn-sm btn-primary" onclick="sendTableServiceCall('ลูกค้ากดเรียกเช็กบิล')">🧾 เรียกเช็กบิล</button>
         </div>
-      </div>
+        </div>
+      </details>
 
       <div class="grid-2">
         <!-- Left Column: Search, Category Pills, Quick Edit Mode & Menu Grid -->
@@ -770,12 +804,9 @@
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-title" id="menuSectionTitle">🍽️ เลือกเมนูอาหาร & ชุดเซตสุดคุ้ม (แตะเมนูเพื่อเลือกความเผ็ด/ท็อปปิ้ง/แยกคอร์ส)</div>
-                <div style="font-size:0.74rem; color:var(--text-muted);">ระบบตัดสต็อกวัตถุดิบ (BOM) ตามเมนูและท็อปปิ้งที่เลือกจริง พร้อมแยกปรินต์ตามสเตชันครัวอัตโนมัติ</div>
+                <div class="card-title" id="menuSectionTitle">เมนูอาหาร</div>
+                <div style="font-size:0.74rem; color:var(--text-muted);">เลือกเมนูและตัวเลือกก่อนเพิ่มลงตะกร้า</div>
               </div>
-              <button id="toggleQuickEditBtn" class="btn btn-sm btn-outline" style="border-color:var(--info); color:var(--info);" onclick="toggleManagerQuickEditMode()">
-                ⚙️ จัดการเมนู / ของหมด (Manager PIN)
-              </button>
             </div>
 
             <!-- Search Bar -->
@@ -797,7 +828,7 @@
             <!-- Manager Quick Edit Panel (Hidden until toggled by Manager PIN) -->
             <div id="managerQuickEditPanel" style="display:none; background:#eff6ff; border:2px solid #60a5fa; border-radius:12px; padding:12px; margin-bottom:12px;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-                <strong style="color:#1e3a8a; font-size:0.86rem;">🔓 โหมดจัดการเมนูด่วนหน้าร้าน (Quick Edit & 86 List - สิทธิ์ผู้จัดการ PIN: 1234)</strong>
+                <strong style="color:#1e3a8a; font-size:0.86rem;">โหมดจัดการเมนูด่วนหน้าร้าน (ตัวอย่างสิทธิ์ผู้จัดการ)</strong>
                 <span class="badge badge-cooking">แตะปุ่มบนการ์ดเมนูด้านล่างเพื่อปิด "ของหมด" / แก้ราคา / ปักหมุด ได้ทันที</span>
               </div>
               <div style="display:grid; grid-template-columns:1.2fr 0.9fr 0.7fr 0.9fr auto; gap:6px; align-items:end; flex-wrap:wrap;">
@@ -831,7 +862,9 @@
           </div>
 
           <!-- Back-office No-Code Promotion Rules Engine -->
-          <div class="card">
+          <details class="card settings-panel">
+            <summary>จัดการเมนูและโปรโมชัน <span>ส่วนจัดการตัวอย่าง</span></summary>
+            <button id="toggleQuickEditBtn" class="btn btn-sm btn-outline" style="margin:0 18px 12px; border-color:var(--info); color:var(--info);" onclick="toggleManagerQuickEditMode()">⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)</button>
             <div class="card-header">
               <div>
                 <div class="card-title">🎯 ตั้งกติกาโปรโมชันอัตโนมัติ (No-Code Promotion & Combo Rules Engine)</div>
@@ -863,12 +896,12 @@
               <button class="btn btn-purple" onclick="addCustomPromoRule()">✨ เปิดใช้งานกติกา</button>
             </div>
             <div id="activePromoRulesList" style="margin-top:8px; font-size:0.76rem; display:flex; flex-direction:column; gap:4px;"></div>
-          </div>
+          </details>
         </div>
 
         <!-- Right Column: Smart Cart Validation + Spend Threshold Banner + Active Bill -->
         <div>
-          <div class="card">
+          <div class="card" id="customerCartPanel">
             <div class="card-header">
               <div class="card-title">🛒 ตะกร้าสั่งอาหารอัจฉริยะ (<span id="cartCountLabel">0</span> รายการ)</div>
               <button class="btn btn-sm btn-outline" onclick="clearCart()">ล้างตะกร้า</button>
@@ -887,7 +920,7 @@
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px;">
               <div>
                 <label class="label">เบอร์โทรสมาชิก (สะสมแต้ม CRM):</label>
-                <input type="text" id="custMemberPhone" class="input" value="0891112222" />
+                <input type="tel" id="custMemberPhone" class="input" placeholder="กรอกเบอร์สมาชิก (ถ้ามี)" autocomplete="tel" />
               </div>
               <div>
                 <label class="label">คูปองเสริม / แลกแต้ม:</label>
@@ -930,7 +963,7 @@
                   <div class="promptpay-body">
                     <canvas id="qrCanvas" width="190" height="190"></canvas>
                     <div style="font-weight:800; font-size:1.1rem; color:var(--promptpay-blue);" id="qrAmountText">฿0.00</div>
-                    <div style="font-size:0.72rem; color:var(--text-muted);">พร้อมเพย์ร้าน: <span id="qrTargetAccountText">0812345678</span></div>
+                    <div style="font-size:0.72rem; color:var(--text-muted);">พร้อมเพย์ร้าน: <span id="qrTargetAccountText">—</span></div>
                   </div>
                 </div>
                 <button class="btn btn-line btn-block" onclick="simulateCustomerSendSlip('slip_promptpay_verified.jpg')">
@@ -947,6 +980,7 @@
          TAB 2: จอครัวอัตโนมัติ (KDS - แยกครัวร้อน/บาร์น้ำ & รับออเดอร์ Delivery)
          ================================================================= -->
     <section id="view-kitchen" class="view-section">
+      <div class="module-intro"><div><h1>จอครัว</h1><p>ติดตามรายการที่รอทำ กำลังทำ และพร้อมเสิร์ฟ</p></div><span class="module-state">Kitchen display</span></div>
       <div class="card">
         <div class="card-header">
           <div>
@@ -973,6 +1007,7 @@
          TAB 3: แคชเชียร์ POS ครบวงจร (Shift, ย้าย/รวมโต๊ะ, Split Bill, VAT/ใบกำกับภาษี, สแกนบาร์โค้ด)
          ================================================================= -->
     <section id="view-cashier" class="view-section">
+      <div class="module-intro"><div><h1>แคชเชียร์</h1><p>ดูสถานะโต๊ะ ตรวจบิล และจัดการกะ</p></div><span class="module-state">จุดชำระเงิน</span></div>
       <!-- Shift & Cash Drawer Bar -->
       <div class="card" style="background:#f8fafc; border-left:5px solid var(--info);">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -983,9 +1018,9 @@
             </div>
           </div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn btn-sm btn-outline" onclick="recordDrawerCash('IN')">➕ นำเงินทอนเข้าลิ้นชัก</button>
-            <button class="btn btn-sm btn-outline" onclick="recordDrawerCash('OUT')">➖ นำเงินสดออก (ซื้อของสด/น้ำแข็ง)</button>
-            <button class="btn btn-sm btn-primary" onclick="closeShiftReport()">📊 ปิดกะ & กระทบยอดลิ้นชัก</button>
+            <button class="btn btn-sm btn-outline" disabled title="ต้องมีฟอร์มจำนวนเงินและผู้ทำรายการ">นำเงินเข้าลิ้นชัก (ยังไม่พร้อม)</button>
+            <button class="btn btn-sm btn-outline" disabled title="ต้องมีฟอร์มจำนวนเงินและผู้ทำรายการ">นำเงินออกลิ้นชัก (ยังไม่พร้อม)</button>
+            <button class="btn btn-sm btn-primary" disabled title="ต้องนับเงินสดจริงก่อนกระทบยอด">ปิดกะ (ยังไม่พร้อม)</button>
           </div>
         </div>
       </div>
@@ -997,8 +1032,8 @@
             <div class="card-header">
               <div class="card-title">🪑 ผังโต๊ะอาหาร (เพิ่ม-ลดโต๊ะเองได้ / ย้ายโต๊ะ / รวมโต๊ะ)</div>
               <div style="display:flex; gap:5px; flex-wrap:wrap;">
-                <button class="btn btn-sm btn-outline" onclick="moveOrMergeTable('MOVE')">🔄 ย้ายโต๊ะ</button>
-                <button class="btn btn-sm btn-outline" onclick="moveOrMergeTable('MERGE')">🔗 รวมโต๊ะ</button>
+                <button class="btn btn-sm btn-outline" disabled title="ต้องเลือกโต๊ะต้นทางและปลายทางก่อน">ย้ายโต๊ะ (ยังไม่พร้อม)</button>
+                <button class="btn btn-sm btn-outline" disabled title="ต้องเลือกโต๊ะต้นทางและปลายทางก่อน">รวมโต๊ะ (ยังไม่พร้อม)</button>
                 <button class="btn btn-sm btn-purple" onclick="toggleReserveTable()">📅 จองโต๊ะ</button>
               </div>
             </div>
@@ -1033,7 +1068,7 @@
               <div class="card-title">💰 คิดเงิน & ออกใบเสร็จ: <span id="selectedTableHeader">โต๊ะ 1</span></div>
               <div style="display:flex; gap:6px;">
                 <span id="selectedTableStatusBadge" class="badge badge-empty">ว่าง</span>
-                <button class="btn btn-sm btn-danger" onclick="voidTableWithManagerPin()">🔒 ยกเลิกบิล (ต้องใช้ PIN ผู้จัดการ)</button>
+                <button class="btn btn-sm btn-danger" disabled title="ต้องมีระบบยืนยันสิทธิ์ผู้จัดการก่อน">ยกเลิกบิล (ยังไม่พร้อม)</button>
               </div>
             </div>
 
@@ -1057,8 +1092,8 @@
                   <input type="number" id="splitBillCount" class="input" value="1" min="1" max="20" style="width:60px;" onchange="renderSelectedTableBill()" />
                   <span id="splitBillPerPersonLabel" style="font-weight:700; color:var(--purple);">คนละ ฿0.00</span>
                 </div>
-                <button class="btn btn-sm btn-outline" onclick="splitBillBySelectedItems()">🧾 แยกบิลตามเมนูที่เลือกทาน</button>
-                <button class="btn btn-sm btn-line" onclick="sendDigitalEReceiptToLine()">📲 ส่ง E-Receipt เข้า LINE ลูกค้า</button>
+                <button class="btn btn-sm btn-outline" disabled title="ยังไม่มีหน้าจอเลือกรายการที่จะแยก">แยกบิลตามเมนู (ยังไม่พร้อม)</button>
+                <button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE ลูกค้า">ส่งใบเสร็จเข้า LINE (ยังไม่พร้อม)</button>
               </div>
               <div style="margin-top:8px;">
                 <input type="text" id="taxInvoiceCustomerInfo" class="input" placeholder="ชื่อบริษัท / เลขผู้เสียภาษี 13 หลัก (กรณีขอใบกำกับภาษีเต็มรูป)" />
@@ -1079,6 +1114,7 @@
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
               <button class="btn btn-line" onclick="confirmPaymentAndPrint('เงินสด (Cash)')">💵 เงินสด (เข้าลิ้นชัก)</button>
               <button class="btn btn-primary" onclick="showCashierPromptPayModal()">📲 สร้าง QR พร้อมเพย์</button>
+              <button class="btn btn-line" id="confirmTransferBtn" onclick="confirmBankTransferSeen()">🏦 โอนแล้ว · เห็นเงินเข้าบัญชี</button>
               <button class="btn btn-purple" onclick="confirmPaymentAndPrint('บัตรเครดิต/เดบิต (EDC)')">💳 บัตรเครดิต / เดบิต</button>
               <button class="btn btn-warning" onclick="confirmPaymentAndPrint('e-Wallet (TrueMoney/LINE Pay)')">📱 e-Wallet / สแกนจ่าย</button>
               <button class="btn btn-outline" onclick="printReceiptForTable(state.selectedCashierTable, 'ใบแจ้งหนี้ (Pre-Bill)', false)">🧾 พิมพ์ใบแจ้งหนี้</button>
@@ -1117,15 +1153,16 @@
          TAB 4: ระบบจัดการสินค้าคงคลัง สูตรอาหาร (BOM) ใบสั่งซื้อ (PO) & ของเสีย (Waste)
          ================================================================= -->
     <section id="view-inventory" class="view-section">
+      <div class="module-intro"><div><h1>สต็อกและสูตรอาหาร</h1><p>ตรวจวัตถุดิบ สูตร BOM และรายการเคลื่อนไหว</p></div><span class="module-state">คลังสินค้า</span></div>
       <div class="grid-2">
         <div>
           <div class="card">
             <div class="card-header">
               <div>
-                <div class="card-title">📦 สต็อกวัตถุดิบ Real-time & จุดสั่งซื้อซ้ำ (Reorder Point)</div>
+                <div class="card-title">สต็อกวัตถุดิบและจุดสั่งซื้อซ้ำ</div>
                 <div style="font-size:0.76rem; color:var(--text-muted);">ตัดสต็อกอัตโนมัติตามสูตรอาหาร (BOM) ทันทีที่ขายหน้าร้านหรือเดลิเวอรี</div>
               </div>
-              <div style="display:flex; gap:6px;"><button class="btn btn-sm btn-primary" onclick="generatePurchaseOrder()">📝 ออกใบสั่งซื้อ (PO)</button><button class="btn btn-sm btn-line" onclick="sendPoViaLineToSupplier()">📲 ส่งใบ PO เข้า LINE ซัพพลายเออร์</button></div>
+              <div style="display:flex; gap:6px;"><button class="btn btn-sm btn-primary" onclick="generatePurchaseOrder()">📝 ดูใบสั่งซื้อจำลอง</button><button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE ซัพพลายเออร์">ส่งใบ PO เข้า LINE (ยังไม่พร้อม)</button></div>
             </div>
             <table class="data-table">
               <thead>
@@ -1150,7 +1187,7 @@
                 <div class="card-title">🧪 สูตรตัดวัตถุดิบอัตโนมัติ (Hybrid BOM: ระบบตั้งให้อัตโนมัติ + ร้านค้าแก้ไขต่อได้)</div>
                 <div style="font-size:0.74rem; color:var(--text-muted);">มีสูตรมาตรฐานเริ่มต้นให้ทุกเมนู และร้านค้าสามารถปรับปริมาณกรัม/มล. ตามช้อนตวงจริงของร้านได้ทันที</div>
               </div>
-              <button class="btn btn-sm btn-purple" onclick="resetBomToStandardTemplate()">✨ ดึงค่าสูตรมาตรฐานอัตโนมัติ</button>
+              <button class="btn btn-sm btn-purple" disabled title="ยังไม่มีระบบรีเซ็ตสูตรจริง">คืนค่าสูตรมาตรฐาน (ยังไม่พร้อม)</button>
             </div>
 
             <div style="background:#f8fafc; padding:10px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:8px;">
@@ -1220,13 +1257,14 @@
          TAB 5: ระบบสมาชิก CRM & โปรโมชัน + เชื่อมต่อ E-Commerce / Delivery
          ================================================================= -->
     <section id="view-crm" class="view-section">
+      <div class="module-intro"><div><h1>สมาชิกและเดลิเวอรี</h1><p>ดูสมาชิก สิทธิประโยชน์ และช่องทางรับออเดอร์</p></div><span class="module-state">ความสัมพันธ์ลูกค้า</span></div>
       <div class="grid-2">
         <!-- CRM & Loyalty Tier Membership -->
         <div>
           <div class="card">
             <div class="card-header">
               <div class="card-title">🎁 ระบบสะสมแต้มและระดับสมาชิก (CRM & Tier Membership)</div>
-              <button class="btn btn-sm btn-line" onclick="sendTargetedLineBroadcast()">📢 ส่งบรอดแคสต์โปรโมชันเข้า LINE เฉพาะกลุ่ม</button>
+              <button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE และการยินยอมรับข้อความ">บรอดแคสต์ LINE (ยังไม่พร้อม)</button>
             </div>
             <table class="data-table">
               <thead>
@@ -1251,11 +1289,11 @@
               <span class="badge badge-verify">โหมดจำลองทดสอบ + รองรับ API Key จริง</span>
             </div>
             <div style="padding:8px 10px; background:var(--info-light); border-radius:8px; font-size:0.76rem; color:var(--info); margin-bottom:10px;">
-              ℹ️ <strong>สถานะการเชื่อมต่อ:</strong> ปุ่มด้านล่างเป็น <strong>โหมดจำลองรับออเดอร์ (Webhook Simulator)</strong> เพื่อให้ทดสอบการตัดสต็อกและส่งเข้าครัวได้ทันที ส่วนการใช้งานจริงกับแอป Grab / LINE MAN / Shopee ต้องนำ <strong>Partner API Token / Webhook URL</strong> จากแพลตฟอร์มมาใส่ในช่องตั้งค่าด้านล่างเพื่อเปิดรับออเดอร์จริงครับ
+              ℹ️ <strong>สถานะการเชื่อมต่อ:</strong> ปุ่มด้านล่างจำลองออเดอร์เพื่อทดลองหน้าจอเท่านั้น การเชื่อมต่อ Grab, LINE MAN, Shopee และ TikTok จริงต้องตั้งค่า API อย่างปลอดภัยบนเซิร์ฟเวอร์ก่อน
             </div>
             <div style="display:grid; grid-template-columns:1fr auto; gap:6px; margin-bottom:10px;">
-              <input type="text" id="deliveryApiKeyInput" class="input" placeholder="ใส่ Grab / LINE MAN (Wongnai) Partner API Token หรือ Webhook Secret..." />
-              <button class="btn btn-sm btn-outline" onclick="saveDeliveryWebhookConfig()">🔗 บันทึก API Token</button>
+              <input type="password" id="deliveryApiKeyInput" class="input" placeholder="การเชื่อมต่อจริงตั้งค่าผ่านเซิร์ฟเวอร์" disabled />
+              <button class="btn btn-sm btn-outline" disabled title="ยังไม่ได้เชื่อมต่อ API ของผู้ให้บริการ">เชื่อมต่อช่องทาง (ยังไม่พร้อม)</button>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
               <button class="btn btn-line" onclick="simulateDeliveryOrder('GrabFood', 30)">🛵 รับออเดอร์ GrabFood (GP 30%)</button>
@@ -1273,6 +1311,7 @@
          TAB 6: ระบบพนักงาน ลางานผ่าน LINE, อนุมัติ Flex Message, ตรวจขาดงาน, ล็อกสิทธิ์ POS & คอมมิชชันหารคนทำงานจริง
          ================================================================= -->
     <section id="view-staff" class="view-section">
+      <div class="module-intro"><div><h1>พนักงาน</h1><p>ลงเวลา ใบลา ตารางกะ และคอมมิชชัน</p></div><span class="module-state">ทีมงาน</span></div>
       <div class="grid-2">
         <!-- Left Column: Step 1 (LINE LIFF Leave & Attendance) + Step 2 (Manager LINE Flex Approval) -->
         <div>
@@ -1288,10 +1327,10 @@
 
             <label class="label" style="margin-top:0;">เลือกพนักงาน (ดึงจาก LINE User ID อัตโนมัติ):</label>
             <select id="staffSelect" class="input" onchange="onStaffSelectChange()">
-              <option value="ST01">สมชาย (ผู้จัดการสาขา - PIN: 1234)</option>
-              <option value="ST02">กานดา (แคชเชียร์ - PIN: 2222)</option>
-              <option value="ST03" selected>วิภา (พนักงานเสิร์ฟ - PIN: 3333)</option>
-              <option value="ST04">นนท์ (บาริสต้า/บาร์น้ำ - PIN: 4444)</option>
+              <option value="ST01">สมชาย (ผู้จัดการสาขา)</option>
+              <option value="ST02">กานดา (แคชเชียร์)</option>
+              <option value="ST03" selected>วิภา (พนักงานเสิร์ฟ)</option>
+              <option value="ST04">นนท์ (บาริสต้า/บาร์น้ำ)</option>
             </select>
 
             <div id="staffQuotaBanner" style="margin-top:6px; padding:7px 10px; background:var(--line-green-light); border-radius:8px; font-size:0.76rem; color:var(--line-green-dark); font-weight:700;">
@@ -1326,26 +1365,34 @@
                   </select>
                 </div>
               </div>
+              <div class="leave-date-range">
+                <div><label class="label" for="leaveStartDate">วันที่เริ่มลา</label><input type="date" id="leaveStartDate" class="input" /></div>
+                <div><label class="label" for="leaveEndDate">วันที่สิ้นสุด</label><input type="date" id="leaveEndDate" class="input" /></div>
+              </div>
               <div style="margin-top:6px;">
                 <label class="label" style="margin-top:0;">เหตุผลการลา:</label>
-                <input type="text" id="leaveReasonInput" class="input" value="มีไข้สูง มีใบรับรองแพทย์ รพ.มหาราช" placeholder="ระบุเหตุผลการลา..." />
+                <input type="text" id="leaveReasonInput" class="input" placeholder="ระบุเหตุผลการลา..." />
               </div>
               <div style="margin-top:8px;">
-                <label class="label" style="margin-top:0;">📎 แนบรูปใบรับรองแพทย์ / เอกสารประกอบ (คลิกเพื่ออัปโหลดรูปภาพจริงจากมือถือหรือคอมพิวเตอร์):</label>
+                <label class="label" style="margin-top:0;">ตัวอย่างเอกสารประกอบ (เลือกไฟล์เพื่อดูบนเครื่อง):</label>
                 <label for="leaveAttachmentFileInput" class="file-upload-box" style="display:block; margin-top:4px;">
-                  📷 คลิกที่นี่เพื่อเลือกรูปใบรับรองแพทย์ หรือถ่ายภาพจากกล้อง (<span id="leaveAttachmentFileNameLabel">medical_cert_wipa.jpg</span>)
+                  📷 เลือกรูปใบรับรองแพทย์หรือถ่ายภาพจากกล้อง (<span id="leaveAttachmentFileNameLabel">ยังไม่ได้เลือกไฟล์</span>)
                 </label>
                 <input type="file" id="leaveAttachmentFileInput" accept="image/*,.pdf" style="display:none;" onchange="handleLeaveAttachmentUpload(event)" />
-                <input type="hidden" id="leaveAttachmentInput" value="medical_cert_wipa.jpg" />
+                <input type="hidden" id="leaveAttachmentInput" value="" />
                 <div id="leaveAttachmentPreviewBox" style="display:flex; align-items:center; gap:10px; margin-top:6px; padding:6px 10px; background:#f8fafc; border:1px solid var(--border-color); border-radius:8px;">
                   <img id="leaveAttachmentPreviewImg" src="" alt="Preview" style="display:none; width:54px; height:54px; object-fit:cover; border-radius:6px; border:1px solid #cbd5e1;" />
                   <div style="font-size:0.75rem; color:var(--text-muted);" id="leaveAttachmentPreviewText">
-                    📄 ไฟล์ที่แนบพร้อมส่ง: <strong>medical_cert_wipa.jpg</strong> (คลิกปุ่มด้านบนเพื่อเปลี่ยนเป็นรูปภาพจริงจากเครื่องของคุณได้ทันที)
+                    ยังไม่ได้แนบเอกสาร
                   </div>
                 </div>
+                <div class="form-note">ไฟล์ที่เลือกแสดงตัวอย่างบนเครื่องเท่านั้น ระบบส่งไฟล์จริงยังไม่เปิดใช้งาน</div>
               </div>
               <button class="btn btn-primary btn-block" style="margin-top:8px;" onclick="submitLineLeaveRequest()">
-                📨 ส่งคำขอลาเข้า LINE ผู้จัดการ (สร้าง Flex Message)
+                ส่งคำขอลา
+              </button>
+              <button class="btn btn-outline btn-block" style="margin-top:8px;" onclick="linkLineAccount()">
+                เชื่อมบัญชีพนักงานกับ LINE
               </button>
             </div>
           </div>
@@ -1388,6 +1435,7 @@
                   <th>กะทำงานวันนี้</th>
                   <th>สถานะกะ (`staff_shifts`)</th>
                   <th>สิทธิ์ PIN หน้าเครื่อง POS</th>
+                  <th>ลงเวลา</th>
                 </tr>
               </thead>
               <tbody id="staffShiftRosterBody"></tbody>
@@ -1438,24 +1486,25 @@
          TAB 7: ยกระดับรายงานวิเคราะห์ข้อมูลระดับผู้บริหาร (Executive Analytics & Predictive BI)
          ================================================================= -->
     <section id="view-analytics" class="view-section">
+      <div class="module-intro"><div><h1>รายงาน</h1><p>ภาพรวมยอดขาย ต้นทุน และประสิทธิภาพการบริการ</p></div><span class="module-state">ข้อมูลตัวอย่าง</span></div>
 
       <!-- HEADER BAR: Benchmark Selector & LINE Push Executive Summary -->
       <div class="card" style="background:linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color:#fff; border:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
           <div>
-            <div style="font-size:0.75rem; color:#38bdf8; font-weight:700;">EXECUTIVE BI & PREDICTIVE ANALYTICS DASHBOARD</div>
-            <div style="font-size:1.1rem; font-weight:800;">📊 รายงานวิเคราะห์ข้อมูลเชิงลึกแบบ Real-time (เทียบเป้าหมาย, BCG Matrix, KDS Speed & Food Cost)</div>
+            <div style="font-size:0.75rem; color:#38bdf8; font-weight:700;">ตัวอย่างรูปแบบรายงานผู้บริหาร</div>
+            <div style="font-size:1.1rem; font-weight:800;">ภาพรวมยอดขาย ต้นทุน เมนู และประสิทธิภาพครัว</div>
           </div>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <select id="benchmarkModeSelect" class="input" style="width:auto; background:#334155; color:#fff; border-color:#475569; font-weight:700;" onchange="updateBenchmarkDisplay()">
               <option value="WOW" selected>📅 เทียบวันพุธสัปดาห์ก่อน (WoW Benchmark)</option>
               <option value="DOD">📆 เทียบช่วงเวลาเดียวกันของเมื่อวาน (DoD Benchmark)</option>
             </select>
-            <button class="btn btn-line btn-sm" onclick="sendExecutiveLineReport('HOURLY')">
-              📲 ส่งสรุปยอดชั่วโมงเร่งด่วนเข้า LINE
+            <button class="btn btn-line btn-sm" disabled title="รายงานนี้ยังเป็นข้อมูลตัวอย่าง">
+              ส่งรายงานเข้า LINE (ยังไม่พร้อม)
             </button>
-            <button class="btn btn-warning btn-sm" onclick="sendExecutiveLineReport('EOD')">
-              🌙 ส่งสรุปปิดร้านสิ้นวัน (End-of-Day LINE Push)
+            <button class="btn btn-warning btn-sm" disabled title="รายงานนี้ยังเป็นข้อมูลตัวอย่าง">
+              ส่งสรุปปิดร้าน (ยังไม่พร้อม)
             </button>
           </div>
         </div>
@@ -1465,7 +1514,7 @@
       <div class="grid-3" style="margin-bottom:14px;">
         <div class="stat-card" style="background:#fff; border-left:4px solid var(--line-green);">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <span style="font-size:0.76rem; color:var(--text-muted); font-weight:700;">1. ยอดขายรวม Real-time (เทียบเป้า ฿6,000)</span>
+            <span style="font-size:0.76rem; color:var(--text-muted); font-weight:700;">ยอดขายรวมตัวอย่าง (เป้า ฿6,000)</span>
             <span class="badge badge-occupied" id="benchmarkDiffBadge">+14.2% vs พุธที่แล้ว</span>
           </div>
           <div class="stat-val" style="color:var(--line-green-dark);" id="kpiTotalSales">฿4,850.00</div>
@@ -1479,7 +1528,7 @@
             <span style="font-size:0.76rem; color:var(--text-muted); font-weight:700;">4.1 คุมต้นทุนจริง & ของเสีย (Food Cost & Waste)</span>
             <span class="badge badge-occupied">อยู่ในกรอบเป้า 30-35%</span>
           </div>
-          <div class="stat-val" style="color:var(--danger);" id="kpiTotalCost">฿1,690.00 <small style="font-size:0.82rem;">(32.4%)</small></div>
+          <div class="stat-val" style="color:var(--danger);" id="kpiTotalCost">฿1,690.00 <small style="font-size:0.82rem;">(34.8%)</small></div>
           <div style="font-size:0.74rem; color:var(--text-muted); margin-top:4px;">
             ต้นทุนวัตถุดิบขายจริง: ฿1,555 (29.8%) | <strong>มูลค่าของเสีย/ทิ้ง (Waste): ฿135 (2.6%)</strong>
           </div>
@@ -1502,7 +1551,7 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">🍽️ แยกยอดขายตามช่องทาง (Channel Split: หน้าร้าน vs เดลิเวอรีรายค่าย)</div>
-            <span class="badge badge-occupied">อัปเดต Real-time</span>
+            <span class="badge badge-verify">ข้อมูลตัวอย่าง</span>
           </div>
           <div style="font-size:0.79rem;">
             <div class="bar-row">
@@ -1734,6 +1783,7 @@
 
     </section>
   </main>
+  <div class="mobile-cart-dock"><button type="button" onclick="document.getElementById('customerCartPanel').scrollIntoView({behavior:'smooth',block:'start'})"><span>ดูตะกร้า <strong id="mobileCartCount">0</strong> รายการ</span><strong id="mobileCartTotal">฿0.00</strong></button></div>
 
 
   <!-- MODAL 1: Modifiers, Add-ons (Toppings) & Hold/Fire Course Ordering -->
@@ -1946,30 +1996,60 @@
   <div id="toastContainer"></div>
 
   <script>
+    /* The table sticker's token travels in the link, and a round trip through
+       LINE or Google comes back without it: the provider returns the browser
+       to this page, not to the one the guest scanned. The guest was then told
+       to sign in as staff or scan again, having just done neither wrong. The
+       tab keeps the scan for as long as it is open. */
+    (() => {
+      const query = new URLSearchParams(location.search);
+      const key = `poswaiTableScan:${(query.get('shop') || '').trim().toLowerCase()}`;
+      try {
+        if (query.get('table_token')) {
+          sessionStorage.setItem(key, JSON.stringify({
+            token: query.get('table_token'),
+            table: query.get('table') || '',
+            branch_id: query.get('branch_id') || '1',
+          }));
+          return;
+        }
+        const scanned = JSON.parse(sessionStorage.getItem(key) || 'null');
+        if (!scanned || !scanned.token) return;
+        query.set('table_token', scanned.token);
+        if (scanned.table) query.set('table', scanned.table);
+        if (scanned.branch_id) query.set('branch_id', scanned.branch_id);
+        history.replaceState(history.state, '', `${location.pathname}?${query}`);
+      } catch (_) { /* private browsing: the guest scans the sticker again */ }
+    })();
+  </script>
+
+  <script>
     /* =========================================================================
        1. ENTERPRISE DATA & BOM INVENTORY DEFINITIONS
        ========================================================================= */
     const DEFAULT_MENU = [
-      { id: 101, barcode: "SET001", name: "เซตอิ่มคุ้มเลือกจับคู่ได้ (จานหลัก + น้ำ)", nameEn: "Value Combo Set (Main + Drink)", nameCn: "超值自选套餐 (主食+饮品)", origPrice: 155, price: 129, cost: 35, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "🔥", isComboStep: true, isStar: true, pinned: true, soldOut: false, quota: 30, promoBadge: "เซตสุดคุ้ม -฿26", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING07", qty: 20 }, { ingId: "ING09", qty: 1 }] },
-      { id: 102, barcode: "SET002", name: "ชุดครอบครัว (ต้มยำกุ้ง + ปลากะพง + ข้าว 2)", nameEn: "Family Bundle Set (Tom Yum + Sea Bass)", nameCn: "家庭欢聚套餐 (冬阴功+炸鲈鱼)", origPrice: 460, price: 399, cost: 185, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "👨‍👩‍👧‍👦", isStar: true, pinned: true, soldOut: false, quota: 15, promoBadge: "ลดพิเศษ -฿61", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }, { ingId: "ING02", qty: 400 }] },
-      { id: 1, barcode: "8850001", name: "กะเพราหมูกรอบไข่ดาว", nameEn: "Crispy Pork Basil & Fried Egg", nameCn: "脆皮猪肉打抛饭配煎蛋", price: 65, cost: 22, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍛", isStar: true, pinned: true, soldOut: false, quota: 25, promoBadge: "⭐ ขายดีอันดับ 1", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING03", qty: 1 }] },
-      { id: 2, barcode: "8850002", name: "ข้าวซอยไก่ต้นตำรับ", nameEn: "Chiang Mai Khao Soi Chicken", nameCn: "清迈特色咖喱鸡腿面", price: 75, cost: 28, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍜", isStar: true, pinned: false, soldOut: false, quota: 20, promoBadge: "⭐ แนะนำ", bom: [{ ingId: "ING04", qty: 150 }, { ingId: "ING05", qty: 120 }] },
-      { id: 3, barcode: "8850003", name: "ข้าวผัดปูจานกลาง", nameEn: "Crab Meat Fried Rice", nameCn: "蟹肉炒饭", price: 120, cost: 48, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🦀", isStar: false, pinned: false, soldOut: false, quota: 8, bom: [{ ingId: "ING02", qty: 250 }, { ingId: "ING03", qty: 2 }] },
-      { id: 4, barcode: "8850004", name: "ต้มยำกุ้งน้ำข้นหม้อไฟ", nameEn: "Tom Yum Goong Hot Pot", nameCn: "冬阴功大虾火锅", price: 180, cost: 65, category: "กับข้าว", station: "ครัวร้อน", emoji: "🍲", isStar: true, pinned: false, soldOut: false, quota: 12, promoBadge: "⭐ Star", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }] },
-      { id: 5, barcode: "8850005", name: "ปลากะพงทอดน้ำปลา", nameEn: "Deep-Fried Sea Bass with Fish Sauce", nameCn: "鱼露炸海鲈鱼", origPrice: 280, price: 250, cost: 110, category: "กับข้าว", station: "ครัวร้อน", emoji: "🐟", isStar: true, pinned: false, soldOut: false, quota: 5, promoBadge: "เชียร์ขาย -฿30", bom: [{ ingId: "ING01", qty: 100 }] },
-      { id: 6, barcode: "8850006", name: "ส้มตำไทยไข่เค็ม", nameEn: "Thai Papaya Salad with Salted Egg", nameCn: "泰式咸蛋青木瓜沙拉", price: 60, cost: 20, category: "กับข้าว", station: "ครัวเย็น/ยำ", emoji: "🥗", isStar: false, pinned: false, soldOut: false, quota: 30, bom: [{ ingId: "ING03", qty: 1 }] },
-      { id: 8, barcode: "8850008", name: "ชาไทยเย็นพรีเมียม", nameEn: "Iced Premium Thai Milk Tea", nameCn: "泰式招牌冰奶茶", origPrice: 55, price: 45, cost: 9, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧋", isStar: true, pinned: false, soldOut: false, quota: 50, promoBadge: "Happy Hour -20%", bom: [{ ingId: "ING07", qty: 20 }, { ingId: "ING08", qty: 40 }, { ingId: "ING09", qty: 1 }] },
-      { id: 9, barcode: "8850009", name: "อเมริกาโน่เย็นไม่หวาน", nameEn: "Iced Americano (Unsweetened)", nameCn: "冰美式咖啡 (无糖)", price: 55, cost: 12, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "☕", isStar: false, pinned: false, soldOut: false, quota: 40, promoBadge: "1 แถม 1 (บ่าย)", bom: [{ ingId: "ING09", qty: 1 }] },
-      { id: 10, barcode: "8850010", name: "น้ำเปล่า (ขวด)", nameEn: "Drinking Water (Bottle)", nameCn: "矿泉水 (瓶)", price: 10, cost: 4, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "💧", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 100, bom: [] },
-      { id: 12, barcode: "8850012", name: "น้ำแข็งเปล่า (แก้ว)", nameEn: "Ice Cup", nameCn: "冰块 (杯)", price: 5, cost: 2, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧊", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 200, bom: [{ ingId: "ING09", qty: 1 }] },
-      { id: 11, barcode: "8850011", name: "บัวลอยเผือกมะพร้าวอ่อน", nameEn: "Taro Balls in Coconut Milk", nameCn: "椰奶芋圆甜汤", origPrice: 45, price: 35, cost: 24, category: "ของหวาน", station: "บาร์น้ำ", emoji: "🍨", isStar: false, pinned: false, soldOut: false, quota: 3, promoBadge: "Flash Sale ระบายสต็อก", bom: [{ ingId: "ING05", qty: 80 }] }
+      { id: 101, photo: "/assets/menu/menu-101.webp", barcode: "SET001", name: "เซตอิ่มคุ้มเลือกจับคู่ได้ (จานหลัก + น้ำ)", nameEn: "Value Combo Set (Main + Drink)", nameCn: "超值自选套餐 (主食+饮品)", origPrice: 155, price: 129, cost: 35, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "🔥", isComboStep: true, isStar: true, pinned: true, soldOut: false, quota: 30, promoBadge: "เซตสุดคุ้ม -฿26", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING07", qty: 20 }, { ingId: "ING09", qty: 1 }] },
+      { id: 102, photo: "/assets/menu/menu-102.webp", barcode: "SET002", name: "ชุดครอบครัว (ต้มยำกุ้ง + ปลากะพง + ข้าว 2)", nameEn: "Family Bundle Set (Tom Yum + Sea Bass)", nameCn: "家庭欢聚套餐 (冬阴功+炸鲈鱼)", origPrice: 460, price: 399, cost: 185, category: "ชุดเซต & โปรโมชัน", station: "ครัวร้อน", emoji: "👨‍👩‍👧‍👦", isStar: true, pinned: true, soldOut: false, quota: 15, promoBadge: "ลดพิเศษ -฿61", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }, { ingId: "ING02", qty: 400 }] },
+      { id: 1, photo: "/assets/menu/menu-1.webp", barcode: "8850001", name: "กะเพราหมูกรอบไข่ดาว", nameEn: "Crispy Pork Basil & Fried Egg", nameCn: "脆皮猪肉打抛饭配煎蛋", price: 65, cost: 22, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍛", isStar: true, pinned: true, soldOut: false, quota: 25, promoBadge: "⭐ ขายดีอันดับ 1", bom: [{ ingId: "ING01", qty: 120 }, { ingId: "ING02", qty: 200 }, { ingId: "ING03", qty: 1 }] },
+      { id: 2, photo: "/assets/menu/menu-2.webp", barcode: "8850002", name: "ข้าวซอยไก่ต้นตำรับ", nameEn: "Chiang Mai Khao Soi Chicken", nameCn: "清迈特色咖喱鸡腿面", price: 75, cost: 28, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🍜", isStar: true, pinned: false, soldOut: false, quota: 20, promoBadge: "⭐ แนะนำ", bom: [{ ingId: "ING04", qty: 150 }, { ingId: "ING05", qty: 120 }] },
+      { id: 3, photo: "/assets/menu/menu-3.webp", barcode: "8850003", name: "ข้าวผัดปูจานกลาง", nameEn: "Crab Meat Fried Rice", nameCn: "蟹肉炒饭", price: 120, cost: 48, category: "อาหารจานเดียว", station: "ครัวร้อน", emoji: "🦀", isStar: false, pinned: false, soldOut: false, quota: 8, bom: [{ ingId: "ING02", qty: 250 }, { ingId: "ING03", qty: 2 }] },
+      { id: 4, photo: "/assets/menu/menu-4.webp", barcode: "8850004", name: "ต้มยำกุ้งน้ำข้นหม้อไฟ", nameEn: "Tom Yum Goong Hot Pot", nameCn: "冬阴功大虾火锅", price: 180, cost: 65, category: "กับข้าว", station: "ครัวร้อน", emoji: "🍲", isStar: true, pinned: false, soldOut: false, quota: 12, promoBadge: "⭐ Star", bom: [{ ingId: "ING06", qty: 200 }, { ingId: "ING05", qty: 100 }] },
+      { id: 5, photo: "/assets/menu/menu-5.webp", barcode: "8850005", name: "ปลากะพงทอดน้ำปลา", nameEn: "Deep-Fried Sea Bass with Fish Sauce", nameCn: "鱼露炸海鲈鱼", origPrice: 280, price: 250, cost: 110, category: "กับข้าว", station: "ครัวร้อน", emoji: "🐟", isStar: true, pinned: false, soldOut: false, quota: 5, promoBadge: "เชียร์ขาย -฿30", bom: [{ ingId: "ING01", qty: 100 }] },
+      { id: 6, photo: "/assets/menu/menu-6.webp", barcode: "8850006", name: "ส้มตำไทยไข่เค็ม", nameEn: "Thai Papaya Salad with Salted Egg", nameCn: "泰式咸蛋青木瓜沙拉", price: 60, cost: 20, category: "กับข้าว", station: "ครัวเย็น/ยำ", emoji: "🥗", isStar: false, pinned: false, soldOut: false, quota: 30, bom: [{ ingId: "ING03", qty: 1 }] },
+      { id: 8, photo: "/assets/menu/menu-8.webp", barcode: "8850008", name: "ชาไทยเย็นพรีเมียม", nameEn: "Iced Premium Thai Milk Tea", nameCn: "泰式招牌冰奶茶", origPrice: 55, price: 45, cost: 9, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧋", isStar: true, pinned: false, soldOut: false, quota: 50, promoBadge: "Happy Hour -20%", bom: [{ ingId: "ING07", qty: 20 }, { ingId: "ING08", qty: 40 }, { ingId: "ING09", qty: 1 }] },
+      { id: 9, photo: "/assets/menu/menu-9.webp", barcode: "8850009", name: "อเมริกาโน่เย็นไม่หวาน", nameEn: "Iced Americano (Unsweetened)", nameCn: "冰美式咖啡 (无糖)", price: 55, cost: 12, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "☕", isStar: false, pinned: false, soldOut: false, quota: 40, promoBadge: "1 แถม 1 (บ่าย)", bom: [{ ingId: "ING09", qty: 1 }] },
+      { id: 10, photo: "/assets/menu/menu-10.webp", barcode: "8850010", name: "น้ำเปล่า (ขวด)", nameEn: "Drinking Water (Bottle)", nameCn: "矿泉水 (瓶)", price: 10, cost: 4, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "💧", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 100, bom: [] },
+      { id: 12, photo: "/assets/menu/menu-12.webp", barcode: "8850012", name: "น้ำแข็งเปล่า (แก้ว)", nameEn: "Ice Cup", nameCn: "冰块 (杯)", price: 5, cost: 2, category: "เครื่องดื่ม", station: "บาร์น้ำ", emoji: "🧊", noModifiers: true, isStar: false, pinned: false, soldOut: false, quota: 200, bom: [{ ingId: "ING09", qty: 1 }] },
+      { id: 11, photo: "/assets/menu/menu-11.webp", barcode: "8850011", name: "บัวลอยเผือกมะพร้าวอ่อน", nameEn: "Taro Balls in Coconut Milk", nameCn: "椰奶芋圆甜汤", origPrice: 45, price: 35, cost: 24, category: "ของหวาน", station: "บาร์น้ำ", emoji: "🍨", isStar: false, pinned: false, soldOut: false, quota: 3, promoBadge: "Flash Sale ระบายสต็อก", bom: [{ ingId: "ING05", qty: 80 }] }
     ];
 
     let state = {
       isOnline: true,
+      previewOnly: false,
+      staffLive: false,
       branch: "สาขา 1: เชียงใหม่ (นิมมาน)",
       shopName: "POS WAI - สาขาเชียงใหม่ (นิมมาน)",
-      promptPayId: "0812345678",
+      promptPayId: "",
       currentCategory: "ทั้งหมด",
       customerTable: "1",
       selectedCashierTable: "1",
@@ -2018,10 +2098,10 @@
       ],
       storeMode: "SINGLE",
       staffStats: [
-        { id: "ST01", name: "สมชาย (ผู้จัดการสาขา)", role: "Manager", pin: "1234", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 5, personal: 3, vacation: 6 }, bills: 8, sales: 1450 },
-        { id: "ST02", name: "กานดา (แคชเชียร์)", role: "Cashier", pin: "2222", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 4, personal: 3, vacation: 5 }, bills: 14, sales: 1800 },
-        { id: "ST03", name: "วิภา (พนักงานเสิร์ฟ)", role: "Staff", pin: "3333", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 3, personal: 2, vacation: 5 }, bills: 11, sales: 1600 },
-        { id: "ST04", name: "นนท์ (บาริสต้า/บาร์น้ำ)", role: "Barista", pin: "4444", shift: "กะเช้า (08:00-17:00)", shiftStatus: "scheduled", posLocked: false, quotas: { sick: 3, personal: 3, vacation: 4 }, bills: 6, sales: 950 }
+        { id: "ST01", name: "สมชาย (ผู้จัดการสาขา)", role: "Manager", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 5, personal: 3, vacation: 6 }, bills: 8, sales: 1450 },
+        { id: "ST02", name: "กานดา (แคชเชียร์)", role: "Cashier", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 4, personal: 3, vacation: 5 }, bills: 14, sales: 1800 },
+        { id: "ST03", name: "วิภา (พนักงานเสิร์ฟ)", role: "Staff", shift: "กะเช้า (08:00-17:00)", shiftStatus: "completed", posLocked: false, quotas: { sick: 3, personal: 2, vacation: 5 }, bills: 11, sales: 1600 },
+        { id: "ST04", name: "นนท์ (บาริสต้า/บาร์น้ำ)", role: "Barista", shift: "กะเช้า (08:00-17:00)", shiftStatus: "scheduled", posLocked: false, quotas: { sick: 3, personal: 3, vacation: 4 }, bills: 6, sales: 950 }
       ],
       leaveRequests: [
         {
@@ -2056,7 +2136,7 @@
       deliveryLogs: [
         "🛵 [14:20] GrabFood #GF-882: กะเพราหมูกรอบ x2 (฿169 รวม GP) -> ส่งเข้าครัวและตัดสต็อกแล้ว"
       ],
-      offlineSyncQueue: []
+      offlineSyncQueue: JSON.parse(localStorage.getItem('offlineSyncQueue') || '[]')
     };
 
     /* =========================================================================
@@ -2078,7 +2158,8 @@
     }
 
     function generatePromptPayPayload(targetId, amount) {
-      const cleanId = (targetId || "0812345678").replace(/[^0-9]/g, "");
+      const cleanId = String(targetId || "").replace(/[^0-9]/g, "");
+      if (![10, 13].includes(cleanId.length)) throw new Error("ต้องตั้งค่าเบอร์หรือเลขพร้อมเพย์ของร้านก่อน");
       const subTag = cleanId.length >= 13
         ? fTag("02", cleanId.slice(0, 13))
         : fTag("01", cleanId.startsWith("0") ? "0066" + cleanId.slice(1) : cleanId);
@@ -2089,136 +2170,27 @@
       return payload + crc16CcittFalse(payload);
     }
 
-    const QR_VERSION_CAPACITY = [
-      null,
-      { size: 21, dataBytes: 19, ecBytes: 7, align: [] },
-      { size: 25, dataBytes: 34, ecBytes: 10, align: [6, 18] },
-      { size: 29, dataBytes: 55, ecBytes: 15, align: [6, 22] },
-      { size: 33, dataBytes: 80, ecBytes: 20, align: [6, 26] },
-      { size: 37, dataBytes: 108, ecBytes: 26, align: [6, 30] }
-    ];
-
-    function gfMul(x, y, exp, log) {
-      return (x === 0 || y === 0) ? 0 : exp[(log[x] + log[y]) % 255];
-    }
-
-    function computeReedSolomon(data, ecLen) {
-      const exp = new Array(512), log = new Array(256);
-      let x = 1;
-      for (let i = 0; i < 255; i++) {
-        exp[i] = x; log[x] = i; x <<= 1;
-        if (x & 0x100) x ^= 0x11d;
-      }
-      for (let i = 255; i < 512; i++) exp[i] = exp[i - 255];
-      let gen = [1];
-      for (let i = 0; i < ecLen; i++) {
-        const next = new Array(gen.length + 1).fill(0);
-        for (let j = 0; j < gen.length; j++) {
-          next[j] ^= gen[j];
-          next[j + 1] ^= gfMul(gen[j], exp[i], exp, log);
-        }
-        gen = next;
-      }
-      const msg = data.concat(new Array(ecLen).fill(0));
-      for (let i = 0; i < data.length; i++) {
-        const coef = msg[i];
-        if (coef !== 0) {
-          for (let j = 0; j < gen.length; j++) msg[i + j] ^= gfMul(gen[j], coef, exp, log);
-        }
-      }
-      return msg.slice(data.length);
-    }
-
+    /* The drawing half only. The encoding lives in qr.js, which follows the
+       standard; the one that used to live here produced symbols a camera
+       could find and no reader could decode. */
     function drawQrCodeOnCanvas(canvasId, text) {
       const canvas = document.getElementById(canvasId);
       if (!canvas) return;
+      if (!window.poswaiQr) throw new Error("ยังโหลดตัวสร้าง QR ไม่เสร็จ");
+      const modules = window.poswaiQr.modules(text);
+      const size = modules.length, quiet = 4;
       const ctx = canvas.getContext("2d");
-      const bytes = Array.from(text).map(c => c.charCodeAt(0) & 0xFF);
-      let ver = 5;
-      for (let v = 1; v <= 5; v++) {
-        if (bytes.length + 2 <= QR_VERSION_CAPACITY[v].dataBytes) { ver = v; break; }
-      }
-      const spec = QR_VERSION_CAPACITY[ver], size = spec.size;
-      const bits = [];
-      const pushBits = (val, len) => { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
-      pushBits(4, 4); pushBits(bytes.length, 8);
-      for (const b of bytes) pushBits(b, 8);
-      while (bits.length % 8 !== 0) bits.push(0);
-      const dataCodewords = [];
-      for (let i = 0; i < bits.length; i += 8) {
-        let b = 0;
-        for (let j = 0; j < 8; j++) b = (b << 1) | bits[i + j];
-        dataCodewords.push(b);
-      }
-      let pad = true;
-      while (dataCodewords.length < spec.dataBytes) { dataCodewords.push(pad ? 0xEC : 0x11); pad = !pad; }
-      const allCodewords = dataCodewords.concat(computeReedSolomon(dataCodewords, spec.ecBytes));
-      const matrix = Array.from({ length: size }, () => new Array(size).fill(0));
-      const reserved = Array.from({ length: size }, () => new Array(size).fill(false));
-      const setMod = (r, c, val) => {
-        if (r >= 0 && r < size && c >= 0 && c < size) { matrix[r][c] = val ? 1 : 0; reserved[r][c] = true; }
-      };
-      const placeFinder = (row, col) => {
-        for (let r = -1; r <= 7; r++) {
-          for (let c = -1; c <= 7; c++) {
-            const isBorder = r === -1 || r === 7 || c === -1 || c === 7;
-            const isOuter = r === 0 || r === 6 || c === 0 || c === 6;
-            const isInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-            setMod(row + r, col + c, !isBorder && (isOuter || isInner));
-          }
-        }
-      };
-      placeFinder(0, 0); placeFinder(0, size - 7); placeFinder(size - 7, 0);
-      for (const r of spec.align) {
-        for (const c of spec.align) {
-          if ((r === 6 && c === 6) || (r === 6 && c === size - 7) || (r === size - 7 && c === 6)) continue;
-          for (let dr = -2; dr <= 2; dr++) {
-            for (let dc = -2; dc <= 2; dc++) setMod(r + dr, c + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
-          }
-        }
-      }
-      for (let i = 8; i < size - 8; i++) {
-        if (!reserved[6][i]) setMod(6, i, i % 2 === 0);
-        if (!reserved[i][6]) setMod(i, 6, i % 2 === 0);
-      }
-      for (let i = 0; i < 9; i++) { reserved[8][i] = true; reserved[i][8] = true; }
-      for (let i = 0; i < 8; i++) { reserved[8][size - 1 - i] = true; reserved[size - 1 - i][8] = true; }
-      setMod(size - 8, 8, 1);
-
-      let bitIdx = 0, upward = true;
-      for (let col = size - 1; col >= 1; col -= 2) {
-        if (col === 6) col = 5;
-        for (let cnt = 0; cnt < size; cnt++) {
-          const row = upward ? size - 1 - cnt : cnt;
-          for (let dx = 0; dx < 2; dx++) {
-            const c = col - dx;
-            if (!reserved[row][c]) {
-              let bit = 0;
-              if (bitIdx < allCodewords.length * 8) {
-                bit = (allCodewords[bitIdx >> 3] >> (7 - (bitIdx & 7))) & 1;
-                bitIdx++;
-              }
-              if ((row + c) % 2 === 0) bit ^= 1;
-              matrix[row][c] = bit;
-            }
-          }
-        }
-        upward = !upward;
-      }
-      const fmtBits = 0x77c4;
-      const fmt1 = [[8,0],[8,1],[8,2],[8,3],[8,4],[8,5],[8,7],[8,8],[7,8],[5,8],[4,8],[3,8],[2,8],[1,8],[0,8]];
-      const fmt2 = [[size-1,8],[size-2,8],[size-3,8],[size-4,8],[size-5,8],[size-6,8],[size-7,8],[8,size-8],[8,size-7],[8,size-6],[8,size-5],[8,size-4],[8,size-3],[8,size-2],[8,size-1]];
-      for (let i = 0; i < 15; i++) {
-        const b = (fmtBits >> i) & 1;
-        matrix[fmt1[i][0]][fmt1[i][1]] = b;
-        matrix[fmt2[i][0]][fmt2[i][1]] = b;
-      }
-      const quiet = 3, scale = canvas.width / (size + quiet * 2);
-      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      /* Whole pixels per module, so no reader has to guess at a half-dark
+         edge, and the symbol is centred in whatever box it was given. */
+      const scale = Math.max(1, Math.floor(canvas.width / (size + quiet * 2)));
+      const drawn = size * scale;
+      const margin = Math.floor((canvas.width - drawn) / 2);
       ctx.fillStyle = "#00264d";
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
-          if (matrix[r][c]) ctx.fillRect(Math.floor((c + quiet) * scale), Math.floor((r + quiet) * scale), Math.ceil(scale), Math.ceil(scale));
+          if (modules[r][c]) ctx.fillRect(margin + c * scale, margin + r * scale, scale, scale);
         }
       }
     }
@@ -2227,11 +2199,24 @@
        3. CORE WORKFLOWS: BOM DEDUCTION, ORDERS, SHIFT, SPLIT BILL, AUDIT
        ========================================================================= */
     function switchTab(tabId, btnEl) {
+      if (window.poswaiAuth && !window.poswaiAuth.canAccessTab(tabId)) return;
       document.querySelectorAll(".view-section").forEach(s => s.classList.remove("active"));
       document.getElementById("view-" + tabId).classList.add("active");
-      document.querySelectorAll(".role-tab").forEach(b => b.classList.remove("active"));
-      if (btnEl) btnEl.classList.add("active");
+      document.querySelectorAll(".role-tab").forEach(b => { b.classList.remove("active"); b.removeAttribute("aria-current"); });
+      if (btnEl) { btnEl.classList.add("active"); btnEl.setAttribute("aria-current", "page"); }
+      document.body.dataset.activeTab = tabId;
+      const nav = document.querySelector(".role-tabs-wrap");
+      nav.classList.remove("mobile-open");
+      nav.querySelector(".mobile-more").setAttribute("aria-expanded", "false");
+      nav.querySelector(".mobile-more span").textContent = ["crm", "staff", "analytics"].includes(tabId) ? btnEl.querySelector("span:not(.tab-badge)").textContent : "เพิ่มเติม";
+      window.scrollTo({ top: 0, behavior: "auto" });
       renderAll();
+    }
+
+    function toggleMobileNavigation() {
+      const nav = document.querySelector(".role-tabs-wrap");
+      const open = nav.classList.toggle("mobile-open");
+      nav.querySelector(".mobile-more").setAttribute("aria-expanded", String(open));
     }
 
     function switchBranch() {
@@ -2242,37 +2227,251 @@
       renderAll();
     }
 
+    function saveLocal(key, value) {
+      try { localStorage.setItem(key, value); return true; }
+      catch (_) {
+        // Full: drop the app's cached answers, which can be fetched again, and retry.
+        window.POSWAI_APP?.forgetCache?.();
+        try { localStorage.setItem(key, value); return true; }
+        catch (__) { showToast("⚠️ พื้นที่ในเครื่องเต็ม รายการที่ค้างส่งอาจหายถ้าปิดแอป ต่อเน็ตเพื่อส่งให้เร็วที่สุด"); return false; }
+      }
+    }
+
+    /* The shop a queued event belongs to. A device can be switched to another
+       shop before its queue is sent; an event must never land in the wrong one. */
+    function currentShopSlug() {
+      return window.POSWAI_APP?.shop || window.poswaiAuth?.shop?.slug
+        || new URLSearchParams(location.search).get("shop") || "";
+    }
+    const isThisShop = event => !event.shop || event.shop === currentShopSlug();
+
+    function persistSyncQueue() {
+      saveLocal("offlineSyncQueue", JSON.stringify(state.offlineSyncQueue));
+      const count = document.getElementById("syncCount");
+      if (count) count.textContent = state.offlineSyncQueue.length;
+    }
+
+    let lineLiffId = "";
+    let liffReady;
+    async function getLineIdToken() {
+      if (!lineLiffId) throw new Error("ยังไม่ได้ตั้งค่า LINE LIFF สำหรับร้านนี้");
+      if (!liffReady) {
+        liffReady = new Promise((resolve, reject) => {
+          if (window.liff) { resolve(); return; }
+          const script = document.createElement("script");
+          script.src = "https://static.line-scdn.net/liff/edge/2/sdk.js";
+          script.onload = resolve;
+          script.onerror = () => reject(new Error("โหลด LINE LIFF ไม่สำเร็จ"));
+          document.head.appendChild(script);
+        }).then(() => window.liff.init({ liffId: lineLiffId }));
+      }
+      try { await liffReady; }
+      catch (error) { liffReady = undefined; throw error; }
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login({ redirectUri: location.href });
+        throw new Error("กำลังเข้าสู่ระบบ LINE กรุณาลองยื่นใบลาอีกครั้ง");
+      }
+      const token = window.liff.getIDToken();
+      if (!token) throw new Error("ไม่ได้รับข้อมูลยืนยันตัวตนจาก LINE");
+      return token;
+    }
+
+    async function linkLineAccount() {
+      try {
+        const lineToken = await getLineIdToken();
+        const response = await fetch("/api/line-liff/link", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ line_id_token: lineToken })
+        });
+        if (!response.ok) throw new Error((await response.json()).detail || `HTTP ${response.status}`);
+        showToast("เชื่อมบัญชี LINE กับพนักงานที่เข้าสู่ระบบแล้ว");
+        // หน้ารายชื่อพนักงานถือสำเนาเดิมอยู่ ไม่บอกมันก็ยังขึ้นว่า "ยังไม่ผูก LINE" ต่อไป
+        window.dispatchEvent(new Event('poswai:staff-refresh'));
+      } catch (error) { showToast(`เชื่อม LINE ไม่สำเร็จ: ${error.message}`); }
+    }
+
+    async function apiMutation(path, payload) {
+      if (state.previewOnly && !(state.staffLive && ["/api/attendance", "/api/line-liff/leave-requests", "/api/line-webhook/approve-leave"].includes(path)))
+        throw new Error("โหมดตัวอย่างยังไม่เปิดให้บันทึกข้อมูล");
+      /* A bill closed in cash, or by a transfer a member of staff has seen land,
+         needs nothing from the server but a record of it — so when the shop's
+         internet drops it is kept here and sent later, like an order. The
+         server keys it by event id, so sending it twice closes it once.
+         Everything else under /api/payments/ (machine-checked slips, refunds)
+         has to ask the server at the moment it happens. */
+      const queueablePayment = path === "/api/payments/close";
+      if (path.startsWith("/api/payments/") && !queueablePayment && (!navigator.onLine || !state.isOnline)) {
+        throw new Error("รายการนี้ต้องเชื่อมต่อเซิร์ฟเวอร์ กรุณาลองเมื่อออนไลน์");
+      }
+      // A LINE identity token expires and must never be persisted in localStorage.
+      const queuedPayload = path === "/api/line-liff/leave-requests" ? { ...payload, line_id_token: undefined } : payload;
+      const at = new Date().toISOString();
+      /* Queued sales tell the server they were made offline, when, and — for a
+         close — who took the money: by the time the queue is sent someone else
+         may be signed in, and the menu or the stock may have moved on. */
+      const offlinePayload = path === "/api/orders" ? { ...queuedPayload, offline_at: at }
+        : queueablePayment ? { ...queuedPayload, offline_at: at, taken_by: window.poswaiAuth?.current?.staff_id }
+        : queuedPayload;
+      // When it happened, so a bill rung up offline shows its real time until it syncs.
+      const event = { path, payload: offlinePayload, id: payload.event_id || crypto.randomUUID(), at, shop: currentShopSlug() };
+      const queue = () => { state.offlineSyncQueue.push(event); persistSyncQueue(); return { queued: true }; };
+      if (!navigator.onLine || !state.isOnline) return queue();
+      /* Something of this shop is still waiting to be sent: this goes behind
+         it, so a close can never reach the server before its own order. */
+      if (state.offlineSyncQueue.some(isThisShop)) {
+        const queued = queue();
+        flushOfflineSyncQueue();
+        return queued;
+      }
+      try {
+        const response = await fetch(path, {
+          method: "POST", headers: mutationHeaders(path),
+          body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error((await response.json()).detail || `HTTP ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        if (path.startsWith("/api/payments/") && !queueablePayment) throw error;
+        // Only transport failures belong in the offline queue; server rejection needs correction.
+        // error.offline: the app's own fetch says the line is down (in Thai, so the text alone cannot tell).
+        if (navigator.onLine && !error?.offline && !/Failed to fetch|NetworkError|Load failed/i.test(String(error))) throw error;
+        return queue();
+      }
+    }
+
+    function mutationHeaders(path) {
+      const headers = { "Content-Type": "application/json" };
+      if (path === "/api/orders" || path === "/api/service-calls") {
+        const tableToken = new URLSearchParams(location.search).get("table_token");
+        if (tableToken) headers["X-Table-Token"] = tableToken;
+      }
+      return headers;
+    }
+
+    /* What the server turned down after the fact — an order changed on another
+       device, a bill that was already closed — is set aside here with its reason
+       for someone to look at, instead of blocking every sale queued behind it. */
+    function setAsideRejected(event, reason) {
+      let rejected = [];
+      try { rejected = JSON.parse(localStorage.getItem("offlineSyncRejected") || "[]"); } catch (_) {}
+      // Never trimmed: each one may be money in the drawer with no record yet.
+      rejected.push({ ...event, reason, rejected_at: new Date().toISOString() });
+      return saveLocal("offlineSyncRejected", JSON.stringify(rejected));
+    }
+
+    let flushing = false;
+    async function flushOfflineSyncQueue() {
+      if (state.previewOnly || !navigator.onLine || !state.isOnline || flushing) return;
+      flushing = true;
+      try { await flushQueued(); } finally { flushing = false; }
+    }
+
+    async function flushQueued() {
+      const closed = [];
+      for (;;) {
+        // Only this shop's events; another shop's wait until that shop is open again.
+        const index = state.offlineSyncQueue.findIndex(isThisShop);
+        if (index < 0) break;
+        const event = state.offlineSyncQueue[index];
+        try {
+          const payload = event.path === "/api/line-liff/leave-requests"
+            ? { ...event.payload, line_id_token: await getLineIdToken() } : event.payload;
+          const response = await fetch(event.path, {
+            method: "POST", headers: mutationHeaders(event.path),
+            body: JSON.stringify(payload)
+          });
+          if (!response.ok) {
+            const detail = await response.json().then(body => body.detail).catch(() => "");
+            /* 4xx other than "who are you" is the server saying no to this one
+               event; nothing about it will change by sending it again. */
+            /* 401 who-are-you, 402 the service fee is due, 403 the person signed
+               in now may not send it: all of these change once someone fixes
+               them, so the queue waits. 408/429: try later. */
+            if (response.status >= 400 && response.status < 500 && ![401, 402, 403, 408, 429].includes(response.status)) {
+              const reason = detail || `HTTP ${response.status}`;
+              if (!setAsideRejected(event, reason)) break;
+              state.offlineSyncQueue.splice(index, 1);
+              // A refused order takes its own queued closes with it, rather than
+              // sending them on to a certain "order not found".
+              if (event.path === "/api/orders") {
+                const own = state.offlineSyncQueue.filter(other => other.payload?.order_no === event.payload.order_no);
+                for (const other of own) setAsideRejected(other, `ออเดอร์ของบิลนี้ถูกปฏิเสธ: ${reason}`);
+                state.offlineSyncQueue = state.offlineSyncQueue.filter(other => !own.includes(other));
+              }
+              persistSyncQueue();
+              showToast(`⚠️ รายการที่ส่งตอนเน็ตหลุดถูกปฏิเสธ: ${reason} (ดูได้ที่แถบสถานะ)`);
+              continue;
+            }
+            throw new Error(detail || `HTTP ${response.status}`);
+          }
+          if (event.path === "/api/line-liff/leave-requests") {
+            const result = await response.json();
+            const leave = state.leaveRequests.find(item => item.id === event.payload.client_leave_id);
+            if (leave) leave.serverLeaveId = result.leave_id;
+          }
+          state.offlineSyncQueue.splice(index, 1);
+          persistSyncQueue();
+          if (event.path === "/api/payments/close") closed.push(event.payload.order_no);
+        } catch (error) {
+          showToast(`⚠️ ซิงก์รายการค้างส่งไม่สำเร็จ: ${error.message}`);
+          break;
+        }
+      }
+      if (closed.length) {
+        /* Those bills are paid on the server now. The app's remembered list of
+           open bills still has them, and a refresh that started before this one
+           landed may too: say so, then look again. */
+        window.POSWAI_APP?.dropClosedOrders?.(closed);
+        rememberClosedHere(closed);
+        if (window.poswaiLiveData) window.poswaiLiveData.refresh().catch(() => {});
+      }
+    }
+
+    /* The one way back into the queue from outside this script (the app's
+       "send again" on a refused item): the live queue is held here in memory
+       and written over storage, so anything that edited storage directly
+       would be lost on the next write. */
+    window.requeueOfflineEvent = event => {
+      state.offlineSyncQueue.push(event);
+      persistSyncQueue();
+      flushOfflineSyncQueue();
+    };
+
+    /* Bills this device closed recently, kept for a while after they are sent
+       so a stale answer cannot show one as open again. */
+    function rememberClosedHere(orderNos) {
+      let recent = [];
+      try { recent = JSON.parse(localStorage.getItem("offlineClosedHere") || "[]"); } catch (_) {}
+      const until = Date.now() + 15 * 60 * 1000;
+      recent = recent.filter(item => item.until > Date.now() && !orderNos.includes(item.order_no))
+        .concat(orderNos.map(order_no => ({ order_no, until })));
+      saveLocal("offlineClosedHere", JSON.stringify(recent));
+    }
+
     function toggleNetworkMode() {
       state.isOnline = !state.isOnline;
-      const btn = document.getElementById("netToggleBtn");
-      const dot = document.getElementById("netStatusDot");
-      const txt = document.getElementById("netStatusText");
-      const banner = document.getElementById("offlineBanner");
-
-      if (state.isOnline) {
-        btn.className = "net-toggle-btn online";
-        dot.textContent = "🟢";
-        txt.textContent = "ออนไลน์ (LINE & Cloud)";
-        banner.classList.remove("active");
-        const synced = state.offlineSyncQueue.length;
-        state.offlineSyncQueue = [];
-        addAuditLog(`🔄 อินเทอร์เน็ตกลับมาทำงาน ซิงก์ข้อมูลค้างส่ง ${synced} รายการขึ้น Cloud & LINE`);
-        showToast(`✅ ออนไลน์แล้ว! ซิงก์ข้อมูล ${synced} รายการขึ้นระบบ Cloud สำเร็จ`);
-      } else {
-        btn.className = "net-toggle-btn offline";
-        dot.textContent = "🔴";
-        txt.textContent = "เน็ตหลุด! (Offline Mode)";
-        banner.classList.add("active");
-        addAuditLog(`⚡ สัญญาณเน็ตหลุด ระบบสลับเข้าโหมด Offline LAN อัตโนมัติ`);
-        showToast("⚡ เข้าสู่โหมดเน็ตหลุด: ยังขาย ตัดสต็อก พิมพ์ใบเสร็จ และสร้าง QR ได้ตามปกติ!");
-      }
+      document.getElementById("netToggleBtn").className = `net-toggle-btn ${state.isOnline ? "online" : "offline"}`;
+      document.getElementById("netStatusDot").textContent = state.isOnline ? "🟢" : "🔴";
+      document.getElementById("netStatusText").textContent = state.isOnline ? "ออนไลน์" : "ออฟไลน์";
+      document.getElementById("offlineBanner").classList.toggle("active", !state.isOnline);
+      if (state.isOnline) flushOfflineSyncQueue();
       renderAll();
     }
 
     function addAuditLog(msg) {
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
       state.auditLogs.unshift(`[${now}] ${msg}`);
-      if (!state.isOnline) state.offlineSyncQueue.push(msg);
+    }
+
+    window.addEventListener("online", flushOfflineSyncQueue);
+    /* Shop Wi-Fi whose line out died and came back never says "online" again:
+       the phone thought it was connected all along. Whatever is still waiting
+       is tried again every half minute, so it does not wait for the next sale. */
+    setInterval(() => {
+      if (state.offlineSyncQueue.length && navigator.onLine && state.isOnline) flushOfflineSyncQueue();
+    }, 30000);
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => navigator.serviceWorker.register("/service-worker.js"));
     }
 
     function deductBomInventory(orderItems) {
@@ -2293,8 +2492,8 @@
       state.queueCounter += 1;
       const qCode = "Q-0" + state.queueCounter;
       document.getElementById("queueStatusBadge").textContent = "คิวหน้าร้านปัจจุบัน: " + qCode;
-      addAuditLog(`🎫 ออกบัตรคิวอัจฉริยะผ่าน LINE OA หมายเลข ${qCode}`);
-      showToast(`🎫 ออกบัตรคิว ${qCode} ส่งเข้า LINE ลูกค้าเรียบร้อย!`);
+      addAuditLog(`🎫 จำลองบัตรคิวหน้าร้าน ${qCode}`);
+      showToast(`ตัวอย่างบัตรคิว ${qCode} — ยังไม่ได้ส่งเข้า LINE`);
     }
 
     /* Customer Ordering & Promo Codes */
@@ -2306,6 +2505,11 @@
     }
 
     function onCustomerTableChange() {
+      if (state.cart.length && document.getElementById("customerTableSelect").value !== state.customerTable) {
+        document.getElementById("customerTableSelect").value = state.customerTable;
+        showToast("กรุณาส่งหรือล้างตะกร้าก่อนเปลี่ยนโต๊ะ");
+        return;
+      }
       state.customerTable = document.getElementById("customerTableSelect").value;
       renderAll();
     }
@@ -2354,15 +2558,15 @@
 
         // Tab 1: Customer Ordering & Quick Edit & Combos
         ["POS WAI - สาขาเชียงใหม่ (นิมมาน)", "POS WAI Smart Restaurant (Chiang Mai)"],
-        ["🎫 รับบัตรคิว LINE", "🎫 Get LINE Queue"],
+        ["ทดลองรับบัตรคิว", "Try queue ticket"],
         ["🔔 บริการด่วนผ่าน QR โต๊ะ (แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟ):", "🔔 Instant Table Service via QR (Alerts Cashier & Staff Smartwatch):"],
         ["🧊 ขอน้ำแข็งเพิ่ม", "🧊 Refill Ice/Water"],
         ["🥣 ขอน้ำซุป/จานชาม", "🥣 Soup / Utensils"],
         ["🙋‍♂️ เรียกพนักงาน", "🙋‍♂️ Call Staff"],
         ["🧾 เรียกเช็กบิล", "🧾 Request Bill"],
-        ["🍽️ เลือกเมนูอาหาร & ชุดเซตสุดคุ้ม (แตะเมนูเพื่อเลือกความเผ็ด/ท็อปปิ้ง/แยกคอร์ส)", "🍽️ Select Menu & Value Sets (Tap to customize spice, toppings & course)"],
-        ["ระบบตัดสต็อกวัตถุดิบ (BOM) ตามเมนูและท็อปปิ้งที่เลือกจริง พร้อมแยกปรินต์ตามสเตชันครัวอัตโนมัติ", "Real-time BOM stock deduction & automatic kitchen station routing"],
-        ["⚙️ จัดการเมนู / ของหมด (Manager PIN)", "⚙️ Quick Menu / 86 List (Manager PIN)"],
+        ["เมนูอาหาร", "Menu"],
+        ["เลือกเมนูและตัวเลือกก่อนเพิ่มลงตะกร้า", "Choose a dish and options before adding to cart"],
+        ["⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)", "⚙️ Manage menu / sold out (demo)"],
         ["✅ ปิดโหมดจัดการเมนู (บันทึกแล้ว)", "✅ Exit Quick Edit Mode (Saved)"],
         ["🔥 ชุดเซต & โปรโมชัน", "🔥 Value Sets & Promos"],
         ["⭐ เมนูแนะนำ/ขายดี", "⭐ Recommended / Best Sellers"],
@@ -2372,7 +2576,7 @@
         ["กับข้าว", "Main Courses"],
         ["เครื่องดื่ม", "Beverages"],
         ["ของหวาน", "Desserts"],
-        ["🔓 โหมดจัดการเมนูด่วนหน้าร้าน (Quick Edit & 86 List - สิทธิ์ผู้จัดการ PIN: 1234)", "🔓 Manager Quick Menu Edit & 86 List Mode (PIN: 1234)"],
+        ["โหมดจัดการเมนูด่วนหน้าร้าน (ตัวอย่างสิทธิ์ผู้จัดการ)", "Manager Quick Menu Edit & Sold Out Mode (Demo)"],
         ["แตะปุ่มบนการ์ดเมนูด้านล่างเพื่อปิด \"ของหมด\" / แก้ราคา / ปักหมุด ได้ทันที", "Tap any menu card below to toggle Sold Out, adjust price, or pin to top"],
         ["เพิ่มเมนูใหม่ด่วน (ชื่อเมนู):", "Quick Add Menu Name:"],
         ["หมวดหมู่ / สเตชันครัว:", "Category / Kitchen Station:"],
@@ -2543,15 +2747,15 @@
 
         // Tab 1: Customer Ordering & Quick Edit & Combos
         ["POS WAI - สาขาเชียงใหม่ (นิมมาน)", "POS WAI 智慧餐饮系统 (清迈店)"],
-        ["🎫 รับบัตรคิว LINE", "🎫 LINE 排号取号"],
+        ["ทดลองรับบัตรคิว", "体验排队取号"],
         ["🔔 บริการด่วนผ่าน QR โต๊ะ (แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟ):", "🔔 餐桌扫码快捷服务 (实时推送至收银台与服务员智能手表):"],
         ["🧊 ขอน้ำแข็งเพิ่ม", "🧊 加冰块/加水"],
         ["🥣 ขอน้ำซุป/จานชาม", "🥣 加汤/要餐具"],
         ["🙋‍♂️ เรียกพนักงาน", "🙋‍♂️ 呼叫服务员"],
         ["🧾 เรียกเช็กบิล", "🧾 呼叫买单"],
-        ["🍽️ เลือกเมนูอาหาร & ชุดเซตสุดคุ้ม (แตะเมนูเพื่อเลือกความเผ็ด/ท็อปปิ้ง/แยกคอร์ส)", "🍽️ 选择菜品与超值套餐 (点击菜品可选辣度/甜度/加料/叫起上菜)"],
-        ["ระบบตัดสต็อกวัตถุดิบ (BOM) ตามเมนูและท็อปปิ้งที่เลือกจริง พร้อมแยกปรินต์ตามสเตชันครัวอัตโนมัติ", "系统根据所选菜品与加料自动扣减BOM原材料，并按后厨档口自动分单打印"],
-        ["⚙️ จัดการเมนู / ของหมด (Manager PIN)", "⚙️ 菜品快编 / 沽清管理 (店长PIN)"],
+        ["เมนูอาหาร", "菜单"],
+        ["เลือกเมนูและตัวเลือกก่อนเพิ่มลงตะกร้า", "选择菜品和选项后加入购物车"],
+        ["⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)", "⚙️ 管理菜单 / 沽清（演示）"],
         ["✅ ปิดโหมดจัดการเมนู (บันทึกแล้ว)", "✅ 退出菜品管理模式 (已保存)"],
         ["🔥 ชุดเซต & โปรโมชัน", "🔥 超值套餐与促销"],
         ["⭐ เมนูแนะนำ/ขายดี", "⭐ 招牌必点/热销"],
@@ -2561,7 +2765,7 @@
         ["กับข้าว", "精选主菜"],
         ["เครื่องดื่ม", "特色饮品"],
         ["ของหวาน", "泰式甜品"],
-        ["🔓 โหมดจัดการเมนูด่วนหน้าร้าน (Quick Edit & 86 List - สิทธิ์ผู้จัดการ PIN: 1234)", "🔓 前台菜品快捷管理与沽清模式 (店长权限 PIN: 1234)"],
+        ["โหมดจัดการเมนูด่วนหน้าร้าน (ตัวอย่างสิทธิ์ผู้จัดการ)", "前台菜品快捷管理与沽清模式（演示）"],
         ["แตะปุ่มบนการ์ดเมนูด้านล่างเพื่อปิด \"ของหมด\" / แก้ราคา / ปักหมุด ได้ทันที", "点击下方菜品卡片即可一键设置“售罄”、临时改价或置顶菜品"],
         ["เพิ่มเมนูใหม่ด่วน (ชื่อเมนู):", "快速新增菜品名称:"],
         ["หมวดหมู่ / สเตชันครัว:", "菜品分类 / 出餐档口:"],
@@ -2777,13 +2981,13 @@
       ["TH", "EN", "CN"].forEach(l => {
         const b = document.getElementById("langBtn" + l);
         if (b) {
-          b.style.background = l === lang ? "#fff" : "transparent";
-          b.style.color = l === lang ? "#0f172a" : "#fff";
+          b.style.background = l === lang ? "#FFC928" : "transparent";
+          b.style.color = "#141B24";
         }
         const tb = document.getElementById("topLangBtn" + l);
         if (tb) {
-          tb.style.background = l === lang ? "#06C755" : "transparent";
-          tb.style.color = l === lang ? "#fff" : "#cbd5e1";
+          tb.style.background = l === lang ? "#FFC928" : "transparent";
+          tb.style.color = l === lang ? "#141B24" : "#596573";
         }
       });
       renderAll();
@@ -2797,8 +3001,8 @@
 
     function sendTableServiceCall(callType) {
       const tStr = state.customerTable;
-      addAuditLog(`🔔 [Service Call โต๊ะ ${tStr}] ลูกค้ากดปุ่ม "${callType}" ผ่าน QR -> แจ้งเตือนเข้าแท็บเล็ตแคชเชียร์ & Smartwatch พนักงานเสิร์ฟแล้ว`);
-      showToast(`🔔 ส่งแจ้งเตือน "${callType}" จากโต๊ะ ${tStr} ไปยังพนักงานเสิร์ฟแล้ว!`);
+      addAuditLog(`🔔 [ตัวอย่าง Service Call โต๊ะ ${tStr}] ${callType}`);
+      showToast(`ตัวอย่างคำขอ "${callType}" — ยังไม่ได้แจ้งพนักงานจริง`);
     }
 
     function toggleManagerQuickEditMode() {
@@ -2809,11 +3013,12 @@
         panel.style.display = "block";
         btn.className = "btn btn-sm btn-primary"; btn.style.color = "#fff";
         btn.textContent = "✅ ปิดโหมดจัดการเมนู (บันทึกแล้ว)";
-        showToast("🔓 เปิดโหมดจัดการเมนูด่วน (สิทธิ์ผู้จัดการ PIN: 1234) กดสลับของหมด/แก้ราคาบนการ์ดได้เลย!");
+        showToast("เปิดโหมดจัดการเมนูตัวอย่างแล้ว");
+        panel.scrollIntoView({ behavior: "smooth", block: "start" });
       } else {
         panel.style.display = "none";
         btn.className = "btn btn-sm btn-outline"; btn.style.color = "var(--info)";
-        btn.textContent = "⚙️ จัดการเมนู / ของหมด (Manager PIN)";
+        btn.textContent = "⚙️ จัดการเมนู / ของหมด (ตัวอย่าง)";
       }
       renderCustomerMenu();
     }
@@ -3008,7 +3213,7 @@
                 : `<div class="menu-emoji">${m.emoji}</div>`
               }
               ${isOut ? `<div class="sold-out-overlay">❌ สินค้าหมด (Sold Out)</div>` : ""}
-              <div class="menu-name">${m.pinned ? '📌 ' : ''}${displayName}</div>
+              <div class="menu-name">${m.pinned ? '📌 ' : ''}${escapeUi(displayName)}</div>
               <div class="menu-sub">
                 สเตชัน: <strong>${m.station || 'ครัวร้อน'}</strong> | โควตาเหลือ: <strong>${m.quota ?? 20} ที่</strong>
               </div>
@@ -3044,6 +3249,14 @@
           </div>
         `;
       }).join("");
+      if (!list.length && state.productionMode) {
+        grid.innerHTML = `<div class="card" style="grid-column:1/-1; text-align:center; padding:32px 20px; color:var(--text-muted);">
+          <div style="font-size:2rem; margin-bottom:8px;" aria-hidden="true">🍽️</div>
+          <strong style="display:block; color:var(--text-primary); margin-bottom:6px;">${q ? 'ไม่พบเมนูที่ค้นหา' : 'ยังไม่มีเมนูของสาขานี้'}</strong>
+          <span>${q ? 'ลองค้นหาด้วยชื่ออื่น' : 'เพิ่มเมนูแรกของร้าน แล้วลูกค้าจะสั่งได้ทันที'}</span>
+          ${q ? '' : '<div style="margin-top:14px;"><button class="btn btn-primary" type="button" onclick="goAddMenu()">เพิ่มเมนูแรกของร้าน</button></div>'}
+        </div>`;
+      }
 
       const rulesBox = document.getElementById("activePromoRulesList");
       if (rulesBox) {
@@ -3204,9 +3417,14 @@
     function confirmAddWithModifiers() {
       const menu = DEFAULT_MENU.find(m => m.id === state.pendingModMenuId);
       if (!menu) return;
+      if (typeof menu.quota === "number" && state.cart.filter(i => i.id === menu.id).reduce((n, i) => n + i.qty, 0) >= menu.quota) {
+        showToast("เมนูนี้ครบจำนวนที่เหลือแล้ว");
+        return;
+      }
       ensureMenuCustomOptions(menu);
       let extraPrice = 0;
       const addons = [state.selectedModLevel];
+      const pickedAddonNames = [];
       const extraBom = [];
 
       document.querySelectorAll("#modDynamicAddonsContainer .dyn-addon-cb").forEach(cb => {
@@ -3215,6 +3433,7 @@
           const ad = menu.customAddons[idx];
           if (ad) {
             extraPrice += Number(ad.price || 0);
+            pickedAddonNames.push(ad.name);
             addons.push(ad.name.replace(/^\+\s*/, "+").replace(/^-\s*/, "-"));
             if (ad.ingId && ad.ingId !== "NONE" && ad.qty > 0) {
               extraBom.push({ ingId: ad.ingId, qty: ad.qty });
@@ -3224,13 +3443,11 @@
       });
 
       const courseMode = document.getElementById("modCourseSelect").value; // FIRE or HOLD
-      if (typeof menu.quota === "number" && menu.quota > 0) {
-        menu.quota -= 1;
-        if (menu.quota === 0) menu.soldOut = true;
-      }
-
       state.cart.push({
         id: menu.id,
+        // Live mode bills by the server's own item id, so a line built here
+        // has to carry it too, exactly as a plain add-to-cart line does.
+        serverId: menu.serverId,
         name: `${menu.name} (${addons.join(", ")})`,
         baseCategory: menu.category,
         station: menu.station || "ครัวร้อน",
@@ -3238,7 +3455,11 @@
         price: menu.price + extraPrice,
         cost: menu.cost,
         qty: 1,
-        extraBom
+        extraBom,
+        // The server prices toppings from its own list, so send what was
+        // ticked rather than relying on the display name above.
+        chosenAddons: pickedAddonNames,
+        chosenLevel: state.selectedModLevel
       });
 
       closeModifierModal();
@@ -3278,13 +3499,13 @@
     function addToCart(menuId) {
       const menu = DEFAULT_MENU.find(m => m.id === menuId);
       if (!menu) return;
-      if (typeof menu.quota === "number" && menu.quota > 0) {
-        menu.quota -= 1;
-        if (menu.quota === 0) menu.soldOut = true;
+      if (typeof menu.quota === "number" && state.cart.filter(i => i.id === menu.id).reduce((n, i) => n + i.qty, 0) >= menu.quota) {
+        showToast("เมนูนี้ครบจำนวนที่เหลือแล้ว");
+        return;
       }
       const ex = state.cart.find(c => c.id === menuId && !c.courseMode);
       if (ex) ex.qty += 1;
-      else state.cart.push({ id: menu.id, name: menu.name, baseCategory: menu.category, station: menu.station || "ครัวร้อน", courseMode: "FIRE", price: menu.price, cost: menu.cost, qty: 1 });
+      else state.cart.push({ id: menu.id, serverId: menu.serverId, name: menu.name, baseCategory: menu.category, station: menu.station || "ครัวร้อน", courseMode: "FIRE", price: menu.price, cost: menu.cost, qty: 1 });
       renderCustomerMenu();
       renderCart();
     }
@@ -3295,6 +3516,7 @@
     }
 
     function getCartDiscount(subtotal) {
+      if (state.productionMode) return 0;
       let autoDiscount = 0;
       const autoReasons = [];
 
@@ -3352,6 +3574,8 @@
 
       document.getElementById("cartCountLabel").textContent = state.cart.reduce((s, i) => s + i.qty, 0);
       document.getElementById("cartTotalLabel").textContent = `฿${net.toFixed(2)}` + (discount > 0 ? ` (ลดรวม -฿${discount})` : "");
+      document.getElementById("mobileCartCount").textContent = state.cart.reduce((s, i) => s + i.qty, 0);
+      document.getElementById("mobileCartTotal").textContent = `฿${net.toFixed(2)}`;
 
       if (state.cart.length === 0) {
         container.innerHTML = `<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:8px 0;">ยังไม่ได้เลือกรายการอาหาร</p>`;
@@ -3360,7 +3584,7 @@
       container.innerHTML = state.cart.map(i => `
         <div style="display:flex; justify-content:space-between; font-size:0.8rem; padding:5px 0; border-bottom:1px dashed var(--border-color);">
           <div>
-            <span>${(() => { const m = DEFAULT_MENU.find(x => x.id === i.id); if (!m) return i.name; return state.lang === "EN" ? (m.nameEn || i.name) : state.lang === "CN" ? (m.nameCn || i.name) : i.name; })()} <strong>x${i.qty}</strong></span>
+            <span>${escapeUi((() => { const m = DEFAULT_MENU.find(x => x.id === i.id); if (!m) return i.name; return state.lang === "EN" ? (m.nameEn || i.name) : state.lang === "CN" ? (m.nameCn || i.name) : i.name; })())} <strong>x${i.qty}</strong></span>
             <div style="font-size:0.7rem; color:var(--text-muted);">
               [${i.station || 'ครัวร้อน'}] • ${i.courseMode === 'HOLD' ? '<span style="color:#b45309; font-weight:700;">⏸️ พักไว้ก่อน (Hold)</span>' : '<span style="color:#15803d;">🔥 ทำทันที (Fire)</span>'}
             </div>
@@ -3370,19 +3594,49 @@
       `).join("");
     }
 
-    function submitOrderFromCustomer() {
+    /* The order number is a uuid so two tills never collide. Nobody can read
+       one out across a room, so screens show its last few characters. */
+    function shortOrderNo(orderNo) {
+      const tail = String(orderNo).replace(/[^0-9a-zA-Z]/g, "").slice(-5).toUpperCase();
+      return tail ? `#${tail}` : String(orderNo);
+    }
+    window.shortOrderNo = shortOrderNo;
+
+    async function submitOrderFromCustomer() {
       if (state.cart.length === 0) {
         showToast("⚠️ กรุณาเลือกเมนูอาหารก่อนส่งเข้าครัวครับ");
+        return;
+      }
+      if (state.cart.some(i => { const m = DEFAULT_MENU.find(x => x.id === i.id); return m && typeof m.quota === "number" && state.cart.filter(x => x.id === i.id).reduce((n, x) => n + x.qty, 0) > m.quota; })) {
+        showToast("มีเมนูเกินจำนวนที่เหลือ กรุณาตรวจตะกร้าอีกครั้ง");
         return;
       }
       const table = state.customerTable;
       const subtotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
       const discount = getCartDiscount(subtotal);
       const note = document.getElementById("orderNoteInput").value.trim() || "-";
-      const orderId = "ORD-" + Math.floor(1000 + Math.random() * 9000);
+      const orderId = "ORD-" + crypto.randomUUID();
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
-      // Deduct BOM Stock automatically
+      const apiItems = state.cart.map(i => ({
+        id: state.productionMode ? i.serverId : i.id, name: i.name, price: i.price, qty: i.qty,
+        course_mode: i.courseMode || "FIRE", bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || []),
+        addons: i.chosenAddons || [], level: i.chosenLevel || ""
+      }));
+      try {
+        await apiMutation("/api/orders", {
+          event_id: crypto.randomUUID(), order_no: orderId, branch_id: state.productionMode ? (window.poswaiAuth?.branchId || 1) : 1,
+          table_no: table, total_amount: subtotal - discount, items: apiItems,
+          note: note === "-" ? "" : note
+        });
+      } catch (error) { showToast(`⚠️ ส่งออเดอร์ไม่สำเร็จ: ${error.message}`); return; }
+      if (state.productionMode) {
+        state.cart = [];
+        document.getElementById("orderNoteInput").value = "";
+        if (window.poswaiLiveData) await window.poswaiLiveData.refresh();
+        showToast(`ส่งออเดอร์ ${shortOrderNo(orderId)} เข้าครัวแล้ว`);
+        return;
+      }
       deductBomInventory(state.cart);
 
       // Award CRM points if phone entered
@@ -3405,12 +3659,19 @@
         source: `LINE LIFF (โต๊ะ ${table})`
       };
       state.orders.unshift(newOrder);
+      state.cart.forEach(i => {
+        const menu = DEFAULT_MENU.find(m => m.id === i.id);
+        if (menu && typeof menu.quota === "number") {
+          menu.quota = Math.max(0, menu.quota - i.qty);
+          menu.soldOut = menu.quota === 0;
+        }
+      });
       state.cart = [];
       document.getElementById("orderNoteInput").value = "";
 
       addAuditLog(`🔔 ออเดอร์ใหม่ #${orderId} โต๊ะ ${table} ยอดสุทธิ ฿${(subtotal - discount).toFixed(2)} (ตัดสต็อก BOM & สะสมแต้ม +${earnedPts} คะแนน)`);
       renderAll();
-      showToast(`🚀 ส่งออเดอร์ #${orderId} เข้าครัว + ตัดสต็อกวัตถุดิบ BOM เรียบร้อย!`);
+      showToast(`🚀 ส่งออเดอร์ ${shortOrderNo(orderId)} เข้าครัว + ตัดสต็อกวัตถุดิบ BOM เรียบร้อย!`);
     }
 
     function getTableOrders(tStr) {
@@ -3437,8 +3698,8 @@
       const tStr = state.customerTable;
       document.getElementById("activeBillTableTitle").textContent = "โต๊ะ " + tStr;
       const orders = getTableOrders(tStr);
-      const sub = getTableSubtotal(tStr);
-      document.getElementById("activeTableGrandTotal").textContent = "฿" + sub.toFixed(2);
+      const total = getTableGrandTotalWithTax(tStr).grand;
+      document.getElementById("activeTableGrandTotal").textContent = "฿" + total.toFixed(2);
       const listEl = document.getElementById("customerActiveOrdersList");
       const checkoutSec = document.getElementById("customerCheckoutSection");
 
@@ -3451,20 +3712,21 @@
       listEl.innerHTML = orders.map(o => `
         <div style="padding:6px 8px; background:#f8fafc; border-radius:8px; margin-bottom:5px; border:1px solid var(--border-color);">
           <div style="display:flex; justify-content:space-between;">
-            <strong>#${o.orderId} (${o.source})</strong>
+            <strong>${shortOrderNo(o.orderId)} (${o.source})</strong>
             <span class="badge ${o.status === 'ready' ? 'badge-occupied' : 'badge-cooking'}">${o.status === 'ready' ? 'เสิร์ฟแล้ว' : 'กำลังปรุง'}</span>
           </div>
-          ${o.items.map(i => `<div>• ${i.name} x${i.qty} (฿${i.price * i.qty})</div>`).join("")}
+          ${o.items.map(i => `<div>• ${escapeUi(i.name)} x${i.qty} (฿${i.price * i.qty})</div>`).join("")}
           ${o.discount > 0 ? `<div style="color:var(--danger); font-size:0.75rem;">ส่วนลดโปรโมชัน: -฿${o.discount}</div>` : ""}
         </div>
       `).join("");
     }
 
     function toggleCustomerPromptPay() {
+      if (!state.promptPayId) { showToast("ยังไม่ได้ตั้งค่าบัญชีพร้อมเพย์ของร้าน"); return; }
       const modal = document.getElementById("customerQrModal");
       modal.style.display = modal.style.display === "none" ? "block" : "none";
       if (modal.style.display === "block") {
-        const total = getTableSubtotal(state.customerTable);
+        const total = getTableGrandTotalWithTax(state.customerTable).grand;
         const payload = generatePromptPayPayload(state.promptPayId, total);
         drawQrCodeOnCanvas("qrCanvas", payload);
         document.getElementById("qrAmountText").textContent = "฿" + total.toFixed(2);
@@ -3485,68 +3747,132 @@
     /* =========================================================================
        4. KITCHEN DISPLAY SYSTEM (KDS)
        ========================================================================= */
-    function fireHeldCourseOrder(orderId) {
-      const ord = state.orders.find(o => o.orderId === orderId);
-      if (!ord) return;
-      ord.items.forEach(i => { i.courseMode = "FIRE"; });
-      ord.status = "cooking";
-      addAuditLog(`🔥 [Course Fire] สั่งปล่อยคิวทำอาหารคอร์สที่พักไว้ของออเดอร์ #${orderId} เข้าเตาครัวทันที`);
+    const KDS_STATIONS = ["ครัวร้อน", "ครัวเย็น/ยำ", "บาร์น้ำ"];
+    const KDS_STATION_NAMES = { "ครัวร้อน": "ครัวร้อน", "ครัวเย็น/ยำ": "ครัวเย็น", "บาร์น้ำ": "บาร์น้ำ" };
+    function escapeUi(value) {
+      return String(value ?? "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+    }
+    function itemMatchesStation(item, station) {
+      return (item.station || "ครัวร้อน").includes(station);
+    }
+    function stationTicketReady(order, station) {
+      const items = order.items.filter(item => itemMatchesStation(item, station));
+      return items.length > 0 && (order.status === "ready" || items.every(item => (item.kdsReadyStations || []).includes(station)));
+    }
+    function refreshKdsOrderStatus(order) {
+      order.status = order.items.every(item => KDS_STATIONS.filter(station => itemMatchesStation(item, station))
+        .every(station => (item.kdsReadyStations || []).includes(station))) ? "ready" : "cooking";
+    }
+    function renderLiveKitchenView() {
+      const container = document.getElementById("kdsContainer");
+      const filter = document.getElementById("kdsStationFilter").value;
+      const tickets = window.poswaiKdsTickets || [];
+      const stations = filter === "ALL" ? KDS_STATIONS : [filter];
+      const pendingCount = tickets.filter(ticket => ticket.status !== "ready").length;
+      const badge = document.getElementById("kitchenBadge");
+      badge.style.display = pendingCount ? "inline-block" : "none";
+      badge.textContent = pendingCount;
+      container.innerHTML = stations.map(station => {
+        const lane = tickets.filter(ticket => ticket.station === station);
+        const pending = lane.filter(ticket => ticket.status !== "ready").length;
+        return `<section class="kds-lane" aria-label="${escapeUi(KDS_STATION_NAMES[station])}">
+          <header class="kds-lane-header"><div><span class="kds-lane-dot"></span><strong>${escapeUi(KDS_STATION_NAMES[station])}</strong></div><span>${pending} รอทำ</span></header>
+          <div class="kds-lane-body">${lane.length ? lane.map(ticket => {
+            const ready = ticket.status === "ready";
+            const held = ticket.status === "held";
+            const time = ticket.created_at ? new Date(ticket.created_at.replace(" ", "T") + "Z").toLocaleTimeString("th-TH", {hour:"2-digit",minute:"2-digit"}) : "";
+            return `<article class="kds-ticket ${ready ? "is-ready" : held ? "is-held" : "is-cooking"}">
+              <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(ticket.table_no)}</strong><span class="badge ${ready ? "badge-occupied" : held ? "badge-purple" : "badge-verify"}">${ready ? "พร้อมเสิร์ฟ" : held ? "พักคอร์ส" : "กำลังทำ"}</span></div>
+              <div class="kds-ticket-meta">#${escapeUi(ticket.order_no)} · ${escapeUi(time)}</div>
+              <div class="kds-ticket-items">${ticket.items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}${item.options ? `<small class="kds-options">${escapeUi(item.options)}</small>` : ""}</span>${held && item.course_mode === "HOLD" ? "<em>พักไว้</em>" : ""}</div>`).join("")}</div>
+              ${ticket.note ? `<div class="kds-note">📝 ${escapeUi(ticket.note)}</div>` : ""}
+              ${!ready ? `<div class="kds-ticket-actions">${held ? `<button class="btn btn-sm btn-purple" data-kds-action="fire" data-kds-order="${escapeUi(ticket.order_no)}" data-kds-station="${escapeUi(station)}">เริ่มทำคอร์ส</button>` : ""}<button class="btn btn-sm btn-line" ${held ? "disabled" : ""} data-kds-action="ready" data-kds-order="${escapeUi(ticket.order_no)}" data-kds-station="${escapeUi(station)}">พร้อมเสิร์ฟ</button></div>` : ""}
+            </article>`;
+          }).join("") : `<div class="kds-empty">ยังไม่มีรายการในสเตชันนี้</div>`}</div>
+        </section>`;
+      }).join("");
+    }
+    document.getElementById("kdsContainer").addEventListener("click", event => {
+      const button = event.target.closest("[data-kds-action]");
+      if (!button) return;
+      if (button.dataset.kdsAction === "fire") fireHeldCourseOrder(button.dataset.kdsOrder, button.dataset.kdsStation);
+      else setOrderReady(button.dataset.kdsOrder, button.dataset.kdsStation);
+    });
+    async function fireHeldCourseOrder(orderId, station) {
+      if (state.productionMode) {
+        try {
+          const result = await apiMutation(`/api/kds/${encodeURIComponent(orderId)}/${encodeURIComponent(station)}/fire`, {});
+          if (result.queued) {
+            const ticket = (window.poswaiKdsTickets || []).find(t => t.order_no === orderId && t.station === station);
+            if (ticket) ticket.status = "queued";
+            renderKitchenView(); showToast("บันทึกไว้แล้ว รอซิงก์เมื่อออนไลน์");
+          } else { await window.poswaiLiveData?.refresh(); showToast("เริ่มทำคอร์สแล้ว"); }
+        } catch (error) { showToast(`เริ่มทำคอร์สไม่สำเร็จ: ${error.message}`); }
+        return;
+      }
+      const order = state.orders.find(o => o.orderId === orderId);
+      if (!order) return;
+      order.items.filter(item => itemMatchesStation(item, station) && item.courseMode === "HOLD")
+        .forEach(item => { item.courseMode = "FIRE"; });
+      addAuditLog(`🔥 เริ่มทำคอร์สที่พักไว้ #${orderId} ที่${KDS_STATION_NAMES[station]}`);
       renderAll();
-      showToast(`🔥 สั่งทำคอร์สอาหารของ #${orderId} ทันที!`);
+      showToast(`เริ่มทำคอร์ส #${orderId} ที่${KDS_STATION_NAMES[station]}`);
     }
 
     function renderKitchenView() {
+      if (state.productionMode) { renderLiveKitchenView(); return; }
       const container = document.getElementById("kdsContainer");
-      const activeCount = state.orders.filter(o => o.status !== "ready").length;
+      const filter = document.getElementById("kdsStationFilter").value;
+      const stations = filter === "ALL" ? KDS_STATIONS : [filter];
+      const activeCount = state.orders.reduce((count, order) => count + KDS_STATIONS.filter(station =>
+        order.items.some(item => itemMatchesStation(item, station)) && !stationTicketReady(order, station)).length, 0);
       const badge = document.getElementById("kitchenBadge");
-      badge.style.display = activeCount > 0 ? "inline-block" : "none";
+      badge.style.display = activeCount ? "inline-block" : "none";
       badge.textContent = activeCount;
 
-      const stationFilter = document.getElementById("kdsStationFilter") ? document.getElementById("kdsStationFilter").value : "ALL";
-      const filteredOrders = state.orders.filter(o => {
-        if (stationFilter === "ALL") return true;
-        return o.items.some(i => (i.station || "ครัวร้อน").includes(stationFilter));
-      });
-
-      if (filteredOrders.length === 0) {
-        container.innerHTML = `<p style="color:var(--text-muted);">ไม่มีออเดอร์ในสเตชันนี้</p>`;
-        return;
-      }
-      container.innerHTML = filteredOrders.map(o => {
-        const hasHold = o.items.some(i => i.courseMode === "HOLD");
-        return `
-          <div class="card" style="margin-bottom:0; border-left:5px solid ${o.status === 'ready' ? 'var(--line-green)' : (hasHold ? 'var(--purple)' : 'var(--warning)')};">
-            <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
-              <strong>โต๊ะ/ช่องทาง: ${o.table} (#${o.orderId})</strong>
-              <span class="badge ${o.status === 'ready' ? 'badge-occupied' : (hasHold ? 'badge-purple' : 'badge-verify')}">
-                ${hasHold ? '⏸️ พักรอเสิร์ฟ (Hold Course)' : o.status}
-              </span>
-            </div>
-            <div style="font-size:0.74rem; color:var(--text-muted); margin-bottom:6px;">เวลา: ${o.time} | ${o.source}</div>
-            <div style="font-size:0.82rem; margin-bottom:8px;">
-              ${o.items.map(i => `
-                <div style="margin-bottom:3px;">
-                  <strong>[x${i.qty}]</strong> ${i.name}
-                  <span class="badge badge-empty">${i.station || 'ครัวร้อน'}</span>
-                  ${i.courseMode === 'HOLD' ? '<span class="badge badge-purple">⏸️ Hold</span>' : ''}
-                </div>
-              `).join("")}
-              ${o.note && o.note !== "-" ? `<div style="color:var(--danger); font-size:0.75rem;">📌 หมายเหตุ: ${o.note}</div>` : ""}
-            </div>
-            <div style="display:flex; gap:6px;">
-              ${hasHold ? `<button class="btn btn-sm btn-purple" style="flex:1;" onclick="fireHeldCourseOrder('${o.orderId}')">🔥 สั่งทำคอร์สนี้ทันที (Fire)</button>` : ""}
-              <button class="btn btn-sm btn-line" style="flex:1;" onclick="setOrderReady('${o.orderId}')">✅ ปรุงเสร็จ/เสิร์ฟ</button>
-            </div>
-          </div>
-        `;
-      }).join("");
+      container.innerHTML = stations.map(station => {
+        const tickets = state.orders.map(order => ({ order, items: order.items.filter(item => itemMatchesStation(item, station)) }))
+          .filter(ticket => ticket.items.length);
+        const pending = tickets.filter(ticket => !stationTicketReady(ticket.order, station)).length;
+        return `<section class="kds-lane" aria-label="${KDS_STATION_NAMES[station]}">
+          <header class="kds-lane-header"><div><span class="kds-lane-dot"></span><strong>${KDS_STATION_NAMES[station]}</strong></div><span>${pending} รอทำ</span></header>
+          <div class="kds-lane-body">${tickets.length ? tickets.map(({ order, items }) => {
+            const ready = stationTicketReady(order, station);
+            const held = !ready && items.some(item => item.courseMode === "HOLD");
+            return `<article class="kds-ticket ${ready ? 'is-ready' : held ? 'is-held' : 'is-cooking'}">
+              <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(order.table)}</strong><span class="badge ${ready ? 'badge-occupied' : held ? 'badge-purple' : 'badge-verify'}">${ready ? 'พร้อมเสิร์ฟ' : held ? 'พักคอร์ส' : 'กำลังทำ'}</span></div>
+              <div class="kds-ticket-meta">${escapeUi(shortOrderNo(order.orderId))} · ${escapeUi(order.time)} · ${escapeUi(order.source)}</div>
+              <div class="kds-ticket-items">${items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}</span>${item.courseMode === 'HOLD' && !ready ? '<em>พักไว้</em>' : ''}</div>`).join('')}</div>
+              ${order.note && order.note !== '-' ? `<div class="kds-ticket-note">หมายเหตุ: ${escapeUi(order.note)}</div>` : ''}
+              ${!ready ? `<div class="kds-ticket-actions">${held ? `<button class="btn btn-sm btn-purple" onclick="fireHeldCourseOrder('${order.orderId}','${station}')">เริ่มทำคอร์ส</button>` : ''}<button class="btn btn-sm btn-line" ${held ? 'disabled title="เริ่มทำคอร์สที่พักไว้ก่อน"' : ''} onclick="setOrderReady('${order.orderId}','${station}')">พร้อมเสิร์ฟ</button></div>` : ''}
+            </article>`;
+          }).join('') : '<div class="kds-empty">ยังไม่มีรายการในสเตชันนี้</div>'}</div>
+        </section>`;
+      }).join('');
     }
 
-    function setOrderReady(orderId) {
-      const ord = state.orders.find(o => o.orderId === orderId);
-      if (ord) ord.status = "ready";
+    async function setOrderReady(orderId, station) {
+      if (state.productionMode) {
+        try {
+          const result = await apiMutation(`/api/kds/${encodeURIComponent(orderId)}/${encodeURIComponent(station)}/ready`, {});
+          if (result.queued) {
+            const ticket = (window.poswaiKdsTickets || []).find(t => t.order_no === orderId && t.station === station);
+            if (ticket) ticket.status = "ready";
+            renderKitchenView(); showToast("บันทึกไว้แล้ว รอซิงก์เมื่อออนไลน์");
+          } else { await window.poswaiLiveData?.refresh(); showToast("พร้อมเสิร์ฟแล้ว"); }
+        } catch (error) { showToast(`อัปเดตจอครัวไม่สำเร็จ: ${error.message}`); }
+        return;
+      }
+      const order = state.orders.find(o => o.orderId === orderId);
+      if (!order) return;
+      const items = order.items.filter(item => itemMatchesStation(item, station));
+      if (items.some(item => item.courseMode === "HOLD")) { showToast("กรุณาเริ่มทำคอร์สที่พักไว้ก่อน"); return; }
+      items.forEach(item => {
+        item.kdsReadyStations = [...new Set([...(item.kdsReadyStations || []), station])];
+      });
+      refreshKdsOrderStatus(order);
       renderAll();
-      showToast(`✅ ออเดอร์ #${orderId} พร้อมเสิร์ฟแล้ว`);
+      showToast(`${KDS_STATION_NAMES[station]}: ${shortOrderNo(orderId)} พร้อมเสิร์ฟแล้ว`);
     }
 
     /* =========================================================================
@@ -3576,7 +3902,15 @@
 
         let badge = `<span class="badge badge-empty">ว่าง</span>`;
         if (hasSlip) badge = `<span class="badge badge-verify">รอตรวจสลิป</span>`;
-        else if (sub > 0) badge = `<span class="badge badge-occupied">ทานอยู่</span>`;
+        else if (sub > 0) {
+          /* โต๊ะที่มียอดค้างเคยขึ้นว่า "ทานอยู่" เสมอ แม้ครัวยังไม่ได้เริ่มทํา
+             สองจอจึงขัดกันเอง ใช้คําเดียวกับจอครัว คนหน้าร้านกับครัวจะได้คุยเรื่องเดียวกัน */
+          const cook = (window.poswaiTableKitchen || {})[tStr];
+          badge = cook === "cooking" ? `<span class="badge badge-verify">กําลังทํา</span>`
+                : cook === "held" ? `<span class="badge badge-purple">พักไว้</span>`
+                : cook === "ready" ? `<span class="badge badge-occupied">พร้อมเสิร์ฟ</span>`
+                : `<span class="badge badge-occupied">ทานอยู่</span>`;
+        }
         else if (reserved) badge = `<span class="badge badge-purple">จองแล้ว</span>`;
 
         html += `
@@ -3640,8 +3974,10 @@
     }
 
     function scanBarcodeItem() {
-      const code = document.getElementById("barcodeInput").value.trim() || "8850001";
-      const menu = DEFAULT_MENU.find(m => m.barcode === code || m.name.includes(code)) || DEFAULT_MENU[0];
+      const code = document.getElementById("barcodeInput").value.trim();
+      if (!code) { showToast("กรุณากรอกรหัสบาร์โค้ดก่อน"); return; }
+      const menu = DEFAULT_MENU.find(m => m.barcode === code || m.name.includes(code));
+      if (!menu) { showToast(`ไม่พบสินค้าในรหัส ${code}`); return; }
       const tStr = state.selectedCashierTable;
       const ordId = "BAR-" + Math.floor(1000 + Math.random() * 9000);
       const itemObj = [{ id: menu.id, name: menu.name, price: menu.price, cost: menu.cost, qty: 1 }];
@@ -3659,7 +3995,7 @@
       document.getElementById("barcodeInput").value = "";
       addAuditLog(`📷 สแกนบาร์โค้ด ${menu.barcode} (${menu.name}) เข้าโต๊ะ ${tStr}`);
       renderAll();
-      showToast(`📷 สแกนบาร์โค้ด "${menu.name}" เข้าโต๊ะ ${tStr} สำเร็จ!`);
+      showToast(`ตัวอย่าง: เพิ่ม "${menu.name}" เข้าโต๊ะ ${tStr} ในเครื่องนี้แล้ว`);
     }
 
     function cashierAddQuickItem() {
@@ -3700,7 +4036,7 @@
         detailsEl.innerHTML = `
           ${orders.map(o => o.items.map(i => `
             <div style="display:flex; justify-content:space-between; padding:2px 0;">
-              <span>• ${i.name} x${i.qty}</span>
+              <span>• ${escapeUi(i.name)} x${i.qty}</span>
               <span>฿${(i.price * i.qty).toFixed(2)}</span>
             </div>
           `).join("")).join("")}
@@ -3735,7 +4071,7 @@
       // Simulate Manager PIN verification (1234)
       state.orders = state.orders.filter(o => o.table !== tStr);
       delete state.slips[tStr];
-      addAuditLog(`🚨 [SECURITY VOID] ยกเลิกบิลโต๊ะ ${tStr} โดยใช้รหัส PIN ผู้จัดการ (สมชาย PIN: 1234)`);
+      addAuditLog(`🚨 [SECURITY VOID] ยกเลิกบิลโต๊ะ ${tStr} ในโหมดตัวอย่าง`);
       renderAll();
       showToast(`🔒 อนุมัติยกเลิกบิลโต๊ะ ${tStr} ด้วยรหัส PIN ผู้จัดการ (บันทึกเข้า Audit Log แล้ว)`);
     }
@@ -3776,6 +4112,7 @@
     }
 
     function showCashierPromptPayModal() {
+      if (!state.promptPayId) { showToast("ยังไม่ได้ตั้งค่าบัญชีพร้อมเพย์ของร้าน"); return; }
       const tStr = state.selectedCashierTable;
       const calc = getTableGrandTotalWithTax(tStr);
       if (calc.grand <= 0) {
@@ -3790,19 +4127,70 @@
       printReceiptForTable(tStr, "ใบแจ้งหนี้พร้อม QR ชำระเงิน", false);
     }
 
-    function confirmPaymentAndPrint(method) {
+    /* Closing a bill on a transfer nobody machine-checked. The question is
+       deliberately about the shop's own bank app, not about the picture the
+       customer is holding: a screenshot proves nothing. */
+    function confirmBankTransferSeen() {
+      const table = state.selectedCashierTable;
+      const total = getTableGrandTotalWithTax(table).grand;
+      if (!(total > 0)) { showToast("โต๊ะนี้ไม่มียอดค้างชำระ"); return; }
+      const ok = confirm(
+        `ปิดบิลโต๊ะ ${table} ยอด ฿${total.toFixed(2)} เป็นการโอนพร้อมเพย์
+
+` +
+        `เปิดแอปธนาคารของร้านแล้วเห็นเงินเข้าครบยอดนี้จริงหรือยัง
+` +
+        `อย่าดูจากรูปสลิปในมือถือลูกค้าอย่างเดียว รูปปลอมได้
+
+` +
+        `กดตกลงเมื่อเห็นเงินเข้าบัญชีร้านแล้วเท่านั้น`);
+      if (!ok) return;
+      confirmPaymentAndPrint("พร้อมเพย์ (ยืนยันโดยพนักงาน)");
+    }
+
+    async function confirmPaymentAndPrint(method) {
       const tStr = state.selectedCashierTable;
       const calc = getTableGrandTotalWithTax(tStr);
       if (calc.grand <= 0) {
         showToast("⚠️ โต๊ะนี้ไม่มียอดค้างชำระ");
         return;
       }
+      const orders = getTableOrders(tStr);
+      if (method.includes("QR")) {
+        showToast("⚠️ ยังไม่มีระบบตรวจสลิปจริง กรุณาตรวจยืนยันกับธนาคารก่อนปิดบิล");
+        return;
+      }
+      /* Cash, and a transfer a member of staff has confirmed seeing arrive.
+         Everything else still has no provider behind it, and the server
+         refuses those too. */
+      if (!["เงินสด (Cash)", "พร้อมเพย์ (ยืนยันโดยพนักงาน)"].includes(method)) {
+        showToast("ช่องทางนี้ยังไม่ได้เชื่อมผู้ให้บริการรับชำระเงินจริง");
+        return;
+      }
+      if (calc.sc > 0 || calc.vat > 0) {
+        showToast("⚠️ ยังไม่รองรับการปิดบิลที่บวก VAT หรือค่าบริการ กรุณาปิดรายการนี้และตรวจยอดก่อน");
+        return;
+      }
+      try {
+        for (const order of orders) {
+          const orderAmount = Math.max(0, order.items.reduce((sum, item) => sum + item.price * item.qty, 0) - (order.discount || 0));
+          await apiMutation("/api/payments/close", {
+            event_id: `close-${order.orderId}-${crypto.randomUUID()}`, order_no: order.orderId,
+            amount: Number(orderAmount.toFixed(2)), method
+          });
+        }
+      } catch (error) {
+        if (state.productionMode && window.poswaiLiveData) await window.poswaiLiveData.refresh().catch(() => {});
+        showToast(`⚠️ ปิดบิลไม่สำเร็จ: ${error.message}`); return;
+      }
       printReceiptForTable(tStr, `ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ (${method})`, false);
 
       if (method.includes("เงินสด")) state.shift.cashSales += calc.grand;
       state.shift.totalSalesToday += calc.grand;
-      state.staffStats[1].bills += 1;
-      state.staffStats[1].sales += calc.grand;
+      if (state.staffStats[1]) {
+        state.staffStats[1].bills += 1;
+        state.staffStats[1].sales += calc.grand;
+      }
 
       state.orders = state.orders.filter(o => o.table !== tStr);
       delete state.slips[tStr];
@@ -3810,6 +4198,7 @@
 
       addAuditLog(`💰 ปิดบิลโต๊ะ ${tStr} ยอดสุทธิ ฿${calc.grand.toFixed(2)} ชำระโดย ${method}`);
       renderAll();
+      if (state.productionMode && window.poswaiLiveData) await window.poswaiLiveData.refresh().catch(() => {});
       showToast(`🎉 ปิดบิลโต๊ะ ${tStr} (฿${calc.grand.toFixed(2)}) เรียบร้อย!`);
     }
 
@@ -4031,6 +4420,7 @@
       if (!container) return;
       const selectedMenuId = Number(document.getElementById("bomMenuSelect").value || 1);
       const menu = DEFAULT_MENU.find(m => m.id === selectedMenuId) || DEFAULT_MENU[0];
+      if (!menu) { container.textContent = "ยังไม่มีเมนูในสาขานี้"; return; }
 
       const allMenusHtml = DEFAULT_MENU.slice(0, 5).map(m => {
         const isCurrent = m.id === menu.id;
@@ -4086,35 +4476,48 @@
       }
     }
 
-    function saveDeliveryWebhookConfig() {
-      const token = document.getElementById("deliveryApiKeyInput").value.trim() || "WONGNAI_LIVE_TOKEN_9981";
-      addAuditLog(`🔗 บันทึกคีย์เชื่อมต่อ Delivery Partner Webhook (${token.slice(0, 12)}...)`);
-      showToast("🔗 บันทึก Partner API Token สำหรับเชื่อม Grab / LINE MAN จริงเรียบร้อย!");
-    }
-
     /* Staff Leave Request via LINE LIFF + Manager Flex Approval + Auto-Absence + Pooled Commission Divisor (Question 5) */
     function onStaffSelectChange() {
       const staffId = document.getElementById("staffSelect").value;
       const st = state.staffStats.find(s => s.id === staffId);
       if (!st) return;
-      document.getElementById("staffQuotaBanner").textContent =
-        `📊 โควตาวันลาคงเหลือของ ${st.name}: ลาป่วยเหลือ ${st.quotas.sick} วัน | ลากิจเหลือ ${st.quotas.personal} วัน | พักร้อนเหลือ ${st.quotas.vacation} วัน`;
+      document.getElementById("staffQuotaBanner").textContent = st.quotas
+        ? `โควตาวันลาคงเหลือของ ${st.name}: ลาป่วย ${st.quotas.sick} วัน · ลากิจ ${st.quotas.personal} วัน · พักร้อน ${st.quotas.vacation} วัน`
+        : "ยังไม่ได้กำหนดโควตาวันลาในระบบ";
     }
 
-    function submitLineLeaveRequest() {
+    async function submitLineLeaveRequest() {
       const staffId = document.getElementById("staffSelect").value;
       const st = state.staffStats.find(s => s.id === staffId);
       if (!st) return;
       const leaveType = document.getElementById("leaveTypeSelect").value;
       const leaveTypeLabel = document.getElementById("leaveTypeSelect").options[document.getElementById("leaveTypeSelect").selectedIndex].text;
       const duration = document.getElementById("leaveDurationSelect").value;
-      const reason = document.getElementById("leaveReasonInput").value.trim() || "ธุระจำเป็น";
+      const reason = document.getElementById("leaveReasonInput").value.trim();
       const attachment = document.getElementById("leaveAttachmentInput").value.trim() || "-";
+      const startDate = document.getElementById("leaveStartDate").value;
+      const endDate = document.getElementById("leaveEndDate").value;
+      if (!startDate || !endDate || endDate < startDate) { showToast("กรุณาระบุช่วงวันลาให้ถูกต้อง"); return; }
+      if (!reason) { showToast("กรุณาระบุเหตุผลการลา"); return; }
+      if (attachment !== "-") { showToast("การส่งไฟล์แนบยังไม่เปิดใช้งาน กรุณาส่งคำขอโดยไม่แนบไฟล์ก่อน"); return; }
       const lvId = "LV-" + Math.floor(100 + Math.random() * 900);
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
+      let result;
+      try {
+        const lineToken = navigator.onLine && state.isOnline ? await getLineIdToken() : undefined;
+        result = await apiMutation("/api/line-liff/leave-requests", {
+          event_id: crypto.randomUUID(), client_leave_id: lvId,
+          staff_id: Number(st.id.replace("ST", "")), leave_type: leaveType,
+          start_date: startDate, end_date: endDate, reason,
+          attachment_url: attachment === "-" ? null : attachment,
+          line_id_token: lineToken
+        });
+      } catch (error) { showToast(`⚠️ ยื่นใบลาไม่สำเร็จ: ${error.message}`); return; }
+      const serverLeaveId = result.leave_id || null;
       state.leaveRequests.unshift({
         id: lvId,
+        serverLeaveId,
         staffId: st.id,
         staffName: st.name,
         leaveType,
@@ -4126,36 +4529,47 @@
         createdAt: now
       });
 
-      addAuditLog(`📨 [LINE LIFF Leave] ${st.name} ยื่นใบลา #${lvId} (${leaveTypeLabel} - ${duration}) สถานะ Pending ส่ง Flex Message หาผู้จัดการแล้ว`);
+      addAuditLog(`📨 [LINE LIFF Leave] ${st.name} ยื่นใบลา #${lvId} (${leaveTypeLabel} - ${duration}) สถานะ Pending`);
       renderAll();
-      showToast(`📨 ส่งใบลา #${lvId} ของ ${st.name} เข้า LINE ผู้จัดการเรียบร้อย! กดปุ่ม [อนุมัติ] ด้านล่างได้เลย`);
+      window.dispatchEvent(new Event("poswai:staff-refresh"));
+      showToast(`📨 บันทึกใบลา #${lvId} ของ ${st.name} แล้ว`);
     }
 
-    function reviewLeaveRequest(lvId, decision) {
+    async function reviewLeaveRequest(lvId, decision) {
       const req = state.leaveRequests.find(r => r.id === lvId);
       if (!req) return;
+      if (!req.serverLeaveId) {
+        showToast("⚠️ ใบลานี้ยังไม่ซิงก์กับเซิร์ฟเวอร์ กรุณารอเชื่อมต่อก่อนอนุมัติ");
+        return;
+      }
+      try {
+        await apiMutation("/api/line-webhook/approve-leave", {
+          leave_id: req.serverLeaveId, decision
+        });
+      } catch (error) { showToast(`⚠️ อนุมัติไม่สำเร็จ: ${error.message}`); return; }
       req.status = decision; // 'approved' or 'rejected'
       const st = state.staffStats.find(s => s.id === req.staffId);
 
       if (decision === "approved" && st) {
         st.shiftStatus = "on_leave";
         st.posLocked = true;
-        if (req.leaveType === "sick" && st.quotas.sick > 0) st.quotas.sick -= 1;
-        if (req.leaveType === "personal" && st.quotas.personal > 0) st.quotas.personal -= 1;
-        if (req.leaveType === "vacation" && st.quotas.vacation > 0) st.quotas.vacation -= 1;
+        if (st.quotas && req.leaveType === "sick" && st.quotas.sick > 0) st.quotas.sick -= 1;
+        if (st.quotas && req.leaveType === "personal" && st.quotas.personal > 0) st.quotas.personal -= 1;
+        if (st.quotas && req.leaveType === "vacation" && st.quotas.vacation > 0) st.quotas.vacation -= 1;
 
-        addAuditLog(`✅ [Manager Approve #${lvId}] อนุมัติใบลาของ ${st.name} -> 1) อัปเดตกะเป็น on_leave 2) ล็อกรหัส PIN (${st.pin}) หน้าเครื่อง POS ชั่วคราว 3) ตัดชื่อออกจากตัวหารคอมมิชชันวันนี้`);
+        addAuditLog(`✅ [Manager Approve #${lvId}] อนุมัติใบลาของ ${st.name} -> อัปเดตกะเป็น on_leave ล็อก PIN และตัดชื่อออกจากตัวหารคอมมิชชัน`);
         showToast(`✅ อนุมัติใบลาของ ${st.name} แล้ว: ล็อก PIN เครื่อง POS และปรับตัวหารค่าคอมมิชชันอัตโนมัติ!`);
       } else {
         if (st) {
           st.shiftStatus = "completed";
           st.posLocked = false;
         }
-        addAuditLog(`❌ [Manager Reject #${lvId}] ปฏิเสธคำขอลาของ ${req.staffName} แจ้งผลกลับทาง LINE แล้ว`);
-        showToast(`❌ ปฏิเสธคำขอลา #${lvId} และส่งข้อความแจ้งพนักงานทาง LINE แล้ว`);
+        addAuditLog(`❌ [Manager Reject #${lvId}] ปฏิเสธคำขอลาของ ${req.staffName}`);
+        showToast(`❌ ปฏิเสธคำขอลา #${lvId} แล้ว`);
       }
       onStaffSelectChange();
       renderAll();
+      window.dispatchEvent(new Event("poswai:staff-refresh"));
     }
 
     function triggerAutoAbsenceDetection() {
@@ -4171,12 +4585,27 @@
     function testPosPinLoginModal() {
       const lockedStaff = state.staffStats.filter(s => s.posLocked);
       if (lockedStaff.length > 0) {
-        const names = lockedStaff.map(s => `${s.name} (PIN: ${s.pin})`).join(", ");
+        const names = lockedStaff.map(s => s.name).join(", ");
         addAuditLog(`🔒 [POS Security Block] ป้องกันการสวมสิทธิ์: บล็อกการล็อกอิน POS ของ ${names} เนื่องจากอยู่ในสถานะลา/ขาดงาน`);
         showToast(`🔒 ระบบบล็อกรหัส PIN ของ ${names} สำเร็จ! (ไม่อนุญาตให้เพื่อนสวมสิทธิ์เปิดบิลแทนคนลา/ขาดงาน)`);
       } else {
         showToast(`✅ พนักงานทุกคนมาทำงานปกติ รหัส PIN สามารถล็อกอินเปิดบิลหน้าเครื่อง POS ได้ตามสิทธิ์`);
       }
+    }
+
+    /* A staff code reads as a code, not a row number: 1 becomes 001. The
+       stored id is still the number, and typing either form signs the same
+       person in, so no shop has to re-learn the codes it already uses. */
+    function staffCode(value) {
+      const number = Number(value);
+      return Number.isInteger(number) && number >= 0 && number < 1000
+        ? String(number).padStart(3, "0")
+        : String(value ?? "");
+    }
+    window.staffCode = staffCode;
+
+    function safeStaffText(value) {
+      return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
     }
 
     function renderStaffAndAnalyticsView() {
@@ -4193,13 +4622,13 @@
           return `
             <div style="border:2px solid ${req.status === 'pending' ? 'var(--line-green)' : 'var(--border-color)'}; border-radius:12px; padding:10px 12px; background:#fff;">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <strong style="font-size:0.84rem; color:var(--line-green-dark);">💬 LINE Flex Message: คำขอลา #${req.id}</strong>
+                <strong style="font-size:0.84rem; color:var(--line-green-dark);">คำขอลา #${safeStaffText(req.id)}</strong>
                 ${badgeHtml}
               </div>
               <div style="font-size:0.79rem; color:var(--text-main);">
-                <div>• <strong>พนักงาน:</strong> ${req.staffName} | <strong>ประเภท:</strong> ${req.leaveTypeLabel}</div>
-                <div>• <strong>ช่วงเวลาที่ลา:</strong> ${req.duration}</div>
-                <div>• <strong>เหตุผล:</strong> ${req.reason} | <strong>หลักฐานแนบ:</strong> <code>${req.attachment}</code></div>
+                <div>• <strong>พนักงาน:</strong> ${safeStaffText(req.staffName)} | <strong>ประเภท:</strong> ${safeStaffText(req.leaveTypeLabel)}</div>
+                <div>• <strong>ช่วงเวลาที่ลา:</strong> ${safeStaffText(req.duration)}</div>
+                <div>• <strong>เหตุผล:</strong> ${safeStaffText(req.reason)} | <strong>หลักฐานแนบ:</strong> <code>${safeStaffText(req.attachment)}</code></div>
               </div>
               ${req.status === "pending" ? `
                 <div style="display:flex; gap:8px; margin-top:8px;">
@@ -4222,21 +4651,53 @@
       const rosterBody = document.getElementById("staffShiftRosterBody");
       if (rosterBody) {
         rosterBody.innerHTML = state.staffStats.map(s => {
-          let statusBadge = `<span class="badge badge-occupied">🟢 มาทำงานจริง (completed)</span>`;
+          let statusBadge = `<span class="badge badge-occupied">🟢 เข้างานแล้ว (clocked_in)</span>`;
           if (s.shiftStatus === "scheduled") statusBadge = `<span class="badge badge-cooking">🕒 รอลงเวลาเข้ากะ (scheduled)</span>`;
+          if (s.shiftStatus === "clocked_out") statusBadge = `<span class="badge">ออกงานแล้ว (clocked_out)</span>`;
           if (s.shiftStatus === "on_leave") statusBadge = `<span class="badge badge-verify">🟡 ลาได้รับอนุมัติ (on_leave)</span>`;
           if (s.shiftStatus === "absent") statusBadge = `<span class="badge badge-danger">🔴 ขาดงานอัตโนมัติ (absent)</span>`;
+          if (s.shiftStatus === "day_off") statusBadge = `<span class="badge">🏖️ วันหยุด (day_off)</span>`;
+          if (s.shiftStatus === "suspended") statusBadge = `<span class="badge badge-danger">⛔ ผู้จัดการระงับสิทธิ์ (suspended)</span>`;
 
           const pinBadge = s.posLocked
-            ? `<span class="badge badge-danger">🔒 ระงับรหัส PIN (${s.pin}) ชั่วคราว</span>`
-            : `<span class="badge badge-occupied">🔓 ใช้งาน POS ได้ปกติ (PIN: ${s.pin})</span>`;
+            ? `<span class="badge badge-danger">🔒 ระงับสิทธิ์ POS ชั่วคราว</span>`
+            : `<span class="badge badge-occupied">🔓 ใช้งาน POS ได้</span>`;
+
+          const actor = window.poswaiAuth?.current;
+          const targetId = Number(String(s.id).replace("ST", ""));
+          const canRecord = state.staffLiveOverview && actor && !s.posLocked &&
+            (actor.staff_id === targetId || actor.role === "owner" ||
+              (actor.role === "manager" && !["owner", "manager"].includes(s.role)));
+          const nextAction = s.shiftStatus === "clocked_in" ? "clock_out" :
+            ["scheduled", "clocked_out"].includes(s.shiftStatus) ? "clock_in" : "";
+          const actionLabel = nextAction === "clock_out" ? "ออกงาน" : actor?.staff_id === targetId ? "เข้างาน" : "รับเข้างาน";
+          const actionButton = canRecord && nextAction
+            ? `<button type="button" class="staff-roster-action" onclick="recordAttendanceFor(${targetId}, '${nextAction}')">${actionLabel}</button>`
+            : "—";
+
+          // A manager sets the shift and the POS access of their own team from this row.
+          const canManageRow = state.staffLiveOverview && actor && actor.staff_id !== targetId &&
+            ["manager", "owner"].includes(actor.role) && s.role !== "owner" &&
+            !(actor.role === "manager" && ["owner", "manager"].includes(s.role));
+          const templates = state.shiftTemplates || [];
+          const shiftFixed = ["on_leave", "absent"].includes(s.shiftStatus);
+          const shiftCell = canManageRow && templates.length && !shiftFixed
+            ? `<select class="staff-roster-select" aria-label="กะของ ${safeStaffText(s.name)}" onchange="poswaiAssignShift(${targetId}, this.value)">
+                <option value=""${s.shiftTemplateId ? "" : " selected"}>วันหยุด</option>
+                ${templates.map(t => `<option value="${t.id}"${s.shiftTemplateId === t.id ? " selected" : ""}>${safeStaffText(t.name)} ${safeStaffText(t.start_time)}–${safeStaffText(t.end_time)}</option>`).join("")}
+              </select>`
+            : safeStaffText(s.shift);
+          const pinCell = canManageRow && s.shiftStatus !== "on_leave"
+            ? `<button type="button" class="staff-pos-toggle ${s.posLocked ? "is-locked" : "is-open"}" onclick="poswaiTogglePosAccess(${targetId}, ${!s.posLocked})">${s.posLocked ? "🔒 ระงับอยู่ · กดคืนสิทธิ์" : "🔓 ใช้งานได้ · กดระงับ"}</button>`
+            : pinBadge;
 
           return `
             <tr>
-              <td><strong>${s.name}</strong><br/><small style="color:var(--text-muted);">${s.role}</small></td>
-              <td>${s.shift}</td>
+              <td><strong>${safeStaffText(s.name)}</strong><br/><small style="color:var(--text-muted);">รหัส ${staffCode(targetId)} · ${safeStaffText(s.role)}</small></td>
+              <td>${shiftCell}</td>
               <td>${statusBadge}</td>
-              <td>${pinBadge}</td>
+              <td>${pinCell}</td>
+              <td>${actionButton}</td>
             </tr>
           `;
         }).join("");
@@ -4244,14 +4705,16 @@
 
       // 3. Render Commission Engine (Pooled Equal with Active Worker Divisor vs Individual)
       const ruleMode = document.getElementById("commissionRuleSelect") ? document.getElementById("commissionRuleSelect").value : "POOLED";
-      const totalStoreSales = state.shift.totalSalesToday;
+      const totalStoreSales = state.staffLiveOverview ? 0 : state.shift.totalSalesToday;
       const totalCommissionPool = totalStoreSales * 0.03; // 3% Pool
       const divisor = Math.max(1, activeWorkers.length);
       const equalShare = totalCommissionPool / divisor;
 
       const formulaBox = document.getElementById("commissionPoolFormulaBox");
       if (formulaBox) {
-        if (ruleMode === "POOLED") {
+        if (state.staffLiveOverview) {
+          formulaBox.textContent = "แสดงคอมมิชชันที่บันทึกจริงวันนี้ ส่วนแบ่งตามกติกาที่ตั้งไว้ในระบบ";
+        } else if (ruleMode === "POOLED") {
           formulaBox.innerHTML = `
             🧮 <strong>สูตรคำนวณกองกลางวันนี้ (Pooled Equal Sharing 3%):</strong><br/>
             ยอดขายรวมทั้งร้าน <strong>฿${totalStoreSales.toLocaleString()}</strong> × 3% = กองกลาง <strong>฿${totalCommissionPool.toFixed(2)}</strong>
@@ -4270,16 +4733,16 @@
       if (commBody) {
         commBody.innerHTML = state.staffStats.map(s => {
           const isEligible = s.shiftStatus !== "on_leave" && s.shiftStatus !== "absent";
-          const commAmount = !isEligible
+          const commAmount = state.staffLiveOverview ? Number(s.commissionToday || 0) : !isEligible
             ? 0
             : (ruleMode === "POOLED" ? equalShare : s.sales * 0.03);
 
           return `
             <tr style="${!isEligible ? 'opacity:0.55; background:#fef2f2;' : ''}">
-              <td><strong>${s.name}</strong></td>
+              <td><strong>${safeStaffText(s.name)}</strong></td>
               <td>${isEligible ? '✅ มาปฏิบัติงานจริง' : (s.shiftStatus === 'on_leave' ? '🟡 ลางาน (on_leave)' : '🔴 ขาดงาน (absent)')}</td>
               <td>${isEligible ? `<span class="badge badge-occupied">ได้สิทธิ์ (ตัวหาร 1/${divisor})</span>` : `<span class="badge badge-danger">ตัดออกจากการหารยอด</span>`}</td>
-              <td>${ruleMode === "POOLED" ? `กองกลาง ฿${totalStoreSales.toLocaleString()}` : `฿${s.sales.toLocaleString()} (${s.bills} บิล)`}</td>
+              <td>${state.staffLiveOverview ? "บันทึกในระบบ" : ruleMode === "POOLED" ? `กองกลาง ฿${totalStoreSales.toLocaleString()}` : `฿${s.sales.toLocaleString()} (${s.bills} บิล)`}</td>
               <td style="font-weight:800; color:${isEligible ? 'var(--line-green-dark)' : 'var(--danger)'};">
                 ฿${commAmount.toFixed(2)}
               </td>
@@ -4289,7 +4752,7 @@
       }
 
       document.getElementById("securityAuditLogContainer").innerHTML = state.auditLogs.map(a => `
-        <div style="padding:6px 8px; border-bottom:1px solid var(--border-color);">${a}</div>
+        <div style="padding:6px 8px; border-bottom:1px solid var(--border-color);">${safeStaffText(a)}</div>
       `).join("");
 
       const netProfit = state.shift.totalSalesToday - state.shift.totalCostToday;
@@ -4298,17 +4761,32 @@
       document.getElementById("kpiNetProfit").textContent = `฿${netProfit.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`;
     }
 
-    function recordAttendance(action) {
+    async function recordAttendance(action) {
       const staffId = document.getElementById("staffSelect").value;
       const st = state.staffStats.find(s => s.id === staffId);
       if (!st) return;
-      if (action.includes("เข้างาน")) {
-        st.shiftStatus = "completed";
-        st.posLocked = false;
+      await recordAttendanceFor(Number(st.id.replace("ST", "")), action.includes("เข้างาน") ? "clock_in" : "clock_out");
+    }
+
+    async function recordAttendanceFor(staffId, action) {
+      const st = state.staffStats.find(s => Number(s.id.replace("ST", "")) === staffId);
+      if (!st) return;
+      try {
+        await apiMutation("/api/attendance", {
+          event_id: crypto.randomUUID(), staff_id: staffId, action
+        });
+      } catch (error) {
+        const message = error.message.includes('already clocked in') ? 'พนักงานคนนี้เข้างานแล้ว' :
+          error.message.includes('No open attendance') ? 'พนักงานคนนี้ยังไม่ได้เข้างาน' : error.message;
+        showToast(`⚠️ ลงเวลาไม่สำเร็จ: ${message}`);
+        window.dispatchEvent(new Event("poswai:staff-refresh"));
+        return;
       }
-      addAuditLog(`⏰ พนักงาน "${st.name}" กด ${action} ผ่าน LINE LIFF (ตรวจสอบพิกัด GPS ภายในรัศมี 50 เมตร)`);
-      renderAll();
-      showToast(`⏰ บันทึก ${action} ของ ${st.name} เรียบร้อย!`);
+      st.shiftStatus = action === "clock_in" ? "clocked_in" : "clocked_out";
+      addAuditLog(`⏰ บันทึก${action === "clock_in" ? "เข้างาน" : "ออกงาน"}ให้ "${st.name}"`);
+      window.dispatchEvent(new Event("poswai:staff-refresh"));
+      renderStaffAndAnalyticsView();
+      showToast(`บันทึก${action === "clock_in" ? "เข้างาน" : "ออกงาน"}ของ ${st.name} เรียบร้อย`);
     }
 
     /* =========================================================================
@@ -4384,7 +4862,7 @@
       const cost = state.shift.totalCostToday;
       const profit = sales - cost;
       const title = reportType === "HOURLY" ? "สรุปยอดขายชั่วโมงเร่งด่วน (Hourly Rush Alert)" : "สรุปปิดร้านประจำวัน (End-of-Day Executive Summary)";
-      addAuditLog(`📲 [LINE Push Alert] ส่ง "${title}" เข้า LINE ผู้บริหาร (ยอดขาย ฿${sales.toFixed(2)}, กำไรสุทธิ ฿${profit.toFixed(2)}, Food Cost 32.4%)`);
+      addAuditLog(`📲 [LINE Push Alert] ส่ง "${title}" เข้า LINE ผู้บริหาร (ยอดขาย ฿${sales.toFixed(2)}, กำไรสุทธิ ฿${profit.toFixed(2)}, Food Cost 34.8%)`);
       showToast(`📲 ส่งการ์ด "${title}" เข้า LINE ของเจ้าของร้านเรียบร้อย!`);
     }
 
@@ -4488,6 +4966,8 @@
       const wrap = document.getElementById("editMenuImgPreviewWrap");
       if (state.tempEditPhotoUrl) {
         wrap.innerHTML = `<img src="${state.tempEditPhotoUrl}" style="width:100%; height:100%; object-fit:cover;" />`;
+      } else if (m?.photo) {
+        wrap.innerHTML = `<img src="${m.photo}" alt="" style="width:100%; height:100%; object-fit:cover;" />`;
       } else {
         wrap.innerHTML = m ? m.emoji : "🍽️";
       }
@@ -4633,7 +5113,64 @@
       showToast("🎬 สาธิต: สั่งอาหาร + ใช้คูปอง Happy Hour + ตัดสต็อก BOM + สะสมแต้มสมาชิกเรียบร้อย!");
     }
 
+    const serviceActions = document.getElementById("serviceActions");
+    let compactService = window.matchMedia("(max-width: 768px)").matches;
+    serviceActions.open = !compactService;
+    window.addEventListener("resize", () => {
+      const compact = window.matchMedia("(max-width: 768px)").matches;
+      if (compact !== compactService) { compactService = compact; serviceActions.open = !compact; }
+    });
+
+    fetch("/api/config").then(r => r.json()).then(config => {
+      if (config.promptpay_id) state.promptPayId = config.promptpay_id;
+      lineLiffId = config.line_liff_id || "";
+      state.staffLive = !!config.staff_live;
+      if (config.preview_only) {
+        state.previewOnly = true;
+        const notice = document.createElement("div");
+        notice.className = "preview-notice";
+        notice.append(config.shop?.is_demo
+          ? "ร้านตัวอย่าง — ลองกดได้ทุกปุ่ม ข้อมูลเป็นตัวอย่าง ไม่มีการบันทึกจริง"
+          : "ตัวอย่าง POS WAI — การขาย การชำระเงิน และการแก้ข้อมูลบนเซิร์ฟเวอร์ยังปิดอยู่");
+        if (config.shop?.is_demo) {
+          const leave = document.createElement("button");
+          leave.type = "button";
+          leave.className = "preview-notice-exit";
+          leave.textContent = "ออกจากร้านตัวอย่าง";
+          leave.onclick = () => { location.href = "/"; };
+          notice.append(leave);
+        }
+        document.querySelector(".sim-topbar").prepend(notice);
+      }
+      if (!config.preview_only) flushOfflineSyncQueue();
+      window.dispatchEvent(new Event("poswai:config-ready"));
+    }).catch(() => {});
     renderAll();
   </script>
+  <script src="/workspace.js?v=46"></script>
+  <script src="/sales-redesign.js?v=49"></script>
+  <script src="/ops-redesign.js?v=19"></script>
+  <script src="/people-redesign.js?v=38"></script>
+  <script src="/staff-admin.js?v=65"></script>
+  <script src="/staff-dossier.js?v=59"></script>
+  <script src="/reports-restore.js?v=19"></script>
+  <script src="/reports-live.js?v=31"></script>
+  <script src="/guest-ui.js?v=2"></script>
+  <script src="/offline-review.js?v=2"></script>
+  <script src="/service-call.js?v=77"></script>
+  <script src="/guest-order-alert.js?v=2"></script>
+  <script src="/auth-ui.js?v=95"></script>
+  <script src="/landing.js?v=44"></script>
+  <script src="/payment-ui.js?v=21"></script>
+  <script src="/billing-ui.js?v=50"></script>
+  <script src="/qr.js?v=72"></script>
+  <script src="/live-data.js?v=79"></script>
+  <script src="/tables-ui.js?v=85"></script>
+  <script src="/print-agent-ui.js?v=91"></script>
+  <script src="/print-direct.js?v=92"></script>
+  <script src="/inventory-live.js?v=25"></script>
+  <link rel="stylesheet" href="/commerce-ui.css?v=30">
+  <script src="/commerce-ui.js?v=32"></script>
+  <script src="/cashier-void.js?v=72"></script>
 </body>
 </html>
