@@ -15,10 +15,17 @@
   const refresh = async () => {
     if (!enabled) return;
     let menu;
-    try { menu = await request(`/api/menu?branch_id=${branch()}`); }
-    catch (error) {
-      // Offline with nothing remembered: keep the menu already on screen.
-      if (catalog) menu = {items: catalog}; else throw error;
+    /* ขอฉบับร่างมาด้วย ไม่งั้นเมนูที่ยังไม่เปิดขาย (เช่นที่ดึงมาจากส่งไว) จะไม่โผล่
+       ที่ไหนเลย กลายเป็นทางตัน: สั่งก็ไม่ได้ เปิดขายก็ไม่ได้
+       เส้นนี้เปิดให้เฉพาะผู้จัดการ/เจ้าของ ตำแหน่งอื่นถอยไปใช้รายการที่เปิดขายตามเดิม
+       หน้าลูกค้ากรองด้วย active อยู่แล้ว ฉบับร่างจึงไม่หลุดไปให้สั่ง */
+    try { menu = await request(`/api/menu?branch_id=${branch()}&include_inactive=true`); }
+    catch (forbidden) {
+      try { menu = await request(`/api/menu?branch_id=${branch()}`); }
+      catch (error) {
+        // Offline with nothing remembered: keep the menu already on screen.
+        if (catalog) menu = {items: catalog}; else throw error;
+      }
     }
     catalog = menu.items;
     DEFAULT_MENU.splice(0, DEFAULT_MENU.length, ...menu.items.map((item, index) => ({
@@ -680,6 +687,11 @@
       cell.className = 'live-status-cell';
       cell.append(statusSwitch(item, 'พร้อมขาย', 'หมดชั่วคราว', !item.sold_out,
                                on => ({sold_out: !on})));
+      /* จานที่ยังเป็นฉบับร่างสั่งไม่ได้ และไม่มีที่ไหนให้เปิดขายได้เลย จึงให้สวิตช์นี้
+         เฉพาะตอนที่ยังเป็นฉบับร่าง ไม่ได้เพิ่มสวิตช์ซ้ำซ้อนให้ทุกจานตามเหตุผลข้างบน */
+      if (item.active === false) {
+        cell.append(statusSwitch(item, 'เปิดขาย', 'ฉบับร่าง', false, on => ({active: on})));
+      }
       state_cell.append(cell);
       const acts = document.createElement('td');
       const actions = document.createElement('div');
