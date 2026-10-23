@@ -9,6 +9,7 @@ import time
 import unittest
 from contextlib import closing
 from pathlib import Path
+import unittest.mock
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -153,6 +154,48 @@ class CommerceTest(unittest.TestCase):
         self.assertEqual(self.client.put("/api/menu/songwai-480", json={
             "name": draft["name"], "price": 50, "bom": [], "active": True}).status_code, 409)
         self.assertEqual(self.client.get("/api/menu").json()["items"][0]["id"], "beef")
+
+    def test_imported_drafts_carry_the_songwai_photo_over(self):
+        """เมนูไม่มีรูปทำให้จอครัวอ่านยาก ทั้งที่รูปชุดเดียวกันมีอยู่แล้วในส่งไว"""
+        self._login()
+        png = (b"\x89PNG\r\n\x1a\n" + b"0" * 64, "image/png")
+        payload = [
+            {"id": 480, "name": "เนื้อวัวผัดขึ้นฉ่าย", "price": 50, "restaurant_id": 37,
+             "image_url": "/uploads/media_480.png"},
+            {"id": 481, "name": "เนื้อวัวผัดผักกาดดอง", "price": 50, "restaurant_id": 37,
+             "image_url": None},                      # ส่งไวเองก็ไม่มีรูปทุกจาน
+            {"id": 482, "name": "เนื้อวัวผัดหน่อไม้", "price": 50, "restaurant_id": 37,
+             "image_url": "../../etc/passwd"},        # ที่อยู่มาจาก API ภายนอก เชื่อไม่ได้
+        ]
+
+        def fake_get(url, *args, **kwargs):
+            response = unittest.mock.Mock()
+            response.status_code = 200
+            response.raise_for_status.return_value = None
+            if url.endswith("/menus"):
+                response.json.return_value = payload
+            else:
+                response.content, response.headers = png[0], {"content-type": png[1]}
+            return response
+
+        with patch.object(server.httpx, "get", side_effect=fake_get) as get:
+            result = self.client.post("/api/integrations/songwai/import-drafts").json()
+            # ดึงรูปจากโดเมนส่งไวเท่านั้น และไม่แตะที่อยู่ที่ไต่ออกนอกโฟลเดอร์
+            fetched = [call.args[0] for call in get.call_args_list if not call.args[0].endswith("/menus")]
+            self.assertEqual(fetched, ["https://songwai.online/uploads/media_480.png"])
+        self.assertEqual((result["imported"], result["photos"]), (3, 1))
+
+        items = {item["id"]: item for item in self.client.get("/api/menu?include_inactive=true").json()["items"]}
+        self.assertTrue(items["songwai-480"]["photo"].startswith("/menu-photos/"))
+        self.assertFalse(items["songwai-481"]["photo"])
+        self.assertFalse(items["songwai-482"]["photo"])
+        self.assertFalse(items["songwai-480"]["active"])   # รูปไม่ได้ทำให้จานเปิดขายเอง
+
+        # กดซ้ำ: ไม่สร้างเมนูใหม่ และไม่ทับรูปที่มีอยู่แล้ว
+        with patch.object(server.httpx, "get", side_effect=fake_get) as again:
+            second = self.client.post("/api/integrations/songwai/import-drafts").json()
+            self.assertEqual([c.args[0] for c in again.call_args_list if not c.args[0].endswith("/menus")], [])
+        self.assertEqual((second["imported"], second["photos"]), (0, 0))
 
     def test_manual_partner_order_is_labeled_idempotent_and_uses_stock(self):
         payload = {"branch_id": 1, "channel": "GrabFood", "external_order_id": "GF-123",

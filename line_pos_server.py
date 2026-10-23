@@ -2045,9 +2045,50 @@ def get_songwai_catalog(request: Request, branch_id: int = 1):
         raise HTTPException(502, "Invalid Songwai menu response")
     return {"restaurant_id": restaurant_id, "items": [
         {"id": item.get("id"), "name": item.get("name") or item.get("name_th") or "",
-         "price": item.get("price")}
+         "price": item.get("price"), "image": item.get("image_url")}
         for item in items if isinstance(item, dict) and item.get("restaurant_id") == restaurant_id
     ]}
+
+
+SONGWAI_ORIGIN = "https://songwai.online"
+
+
+def _copy_songwai_photos(branch_id: int, wanted: list[tuple[str, str]]) -> int:
+    """นำรูปเมนูจากส่งไวมาเก็บเป็นรูปของร้านนี้ คืนจำนวนรูปที่สำเร็จ
+
+    เมนูไม่มีรูปทำให้จอครัวกับหน้าสั่งอ่านยาก และร้านต้องมานั่งอัปโหลดเองทีละจาน
+    ทั้งที่รูปชุดเดียวกันมีอยู่แล้วในส่งไว
+
+    ดึงจากโดเมนส่งไวเท่านั้นและรับเฉพาะที่อยู่ใต้ /uploads/ — ที่อยู่รูปมาจากคำตอบ
+    ของ API ภายนอก จะเชื่อว่าเป็นลิงก์ที่ปลอดภัยไม่ได้ ตรวจชนิดไฟล์จากไบต์จริงและ
+    จำกัดขนาดเท่ากับที่ร้านอัปโหลดเองได้
+    รูปไหนโหลดไม่ได้ก็ข้ามไป ไม่ทำให้การนำเข้าเมนูล้มทั้งชุด ร้านอัปโหลดเองทีหลังได้
+    """
+    shop = CURRENT_SHOP.get()
+    directory = _photo_dir(shop)
+    saved = 0
+    for pos_id, url in wanted:
+        if not isinstance(url, str) or not url.startswith("/uploads/") or ".." in url:
+            continue
+        try:
+            response = httpx.get(SONGWAI_ORIGIN + url, timeout=8)
+            response.raise_for_status()
+            data = response.content
+            if not data or len(data) > MENU_PHOTO_MAX_BYTES:
+                continue
+            extension = _photo_kind(data, response.headers.get("content-type", ""))
+            directory.mkdir(parents=True, exist_ok=True)
+            name = _photo_name(pos_id, extension)
+            pending = directory / (name + ".part")
+            pending.write_bytes(data)
+            pending.replace(directory / name)
+            with closing(connect_db()) as conn, conn:
+                conn.execute("UPDATE menu_catalog SET photo=? WHERE branch_id=? AND item_id=?",
+                             (f"/menu-photos/{shop}/{name}", branch_id, pos_id))
+            saved += 1
+        except (httpx.HTTPError, HTTPException, OSError, sqlite3.Error):
+            continue
+    return saved
 
 
 @app.post("/api/integrations/songwai/import-drafts")
@@ -2059,6 +2100,7 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
     if restaurant_id < 1 or not catalog["items"]:
         raise HTTPException(409, "Link the Songwai restaurant first")
     imported = 0
+    wanted_photos: list[tuple[str, str]] = []
     with closing(connect_db()) as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         for item in catalog["items"]:
@@ -2066,8 +2108,12 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
             if isinstance(menu_id, bool) or not isinstance(menu_id, int) or menu_id < 1:
                 raise HTTPException(502, "Invalid Songwai menu ID")
             pos_id = f"songwai-{menu_id}"
-            existing = conn.execute("SELECT 1 FROM menu_catalog WHERE branch_id=? AND item_id=?",
+            existing = conn.execute("SELECT photo FROM menu_catalog WHERE branch_id=? AND item_id=?",
                                     (branch_id, pos_id)).fetchone()
+            # รูปเติมให้เฉพาะจานที่ยังไม่มีรูป — กดซ้ำจึงเติมของที่นำเข้าไปก่อนหน้านี้ได้
+            # และไม่ทับรูปที่ร้านอัปโหลดเอง
+            if item.get("image") and not (existing and existing[0]):
+                wanted_photos.append((pos_id, item["image"]))
             if not existing:
                 try:
                     upsert_menu_item(conn, branch_id, pos_id, item["name"], item["price"], [], False)
@@ -2077,7 +2123,9 @@ def import_songwai_drafts(request: Request, branch_id: int = 1):
             conn.execute("""INSERT INTO songwai_menu_map(branch_id,restaurant_id,songwai_menu_id,pos_item_id)
                 VALUES(?,?,?,?) ON CONFLICT(branch_id,restaurant_id,songwai_menu_id) DO NOTHING""",
                 (branch_id, restaurant_id, menu_id, pos_id))
-    return {"restaurant_id": restaurant_id, "imported": imported,
+    # นอกทรานแซกชัน: โหลดรูปทีละใบใช้เวลาเป็นวินาที ถือล็อกไว้ระหว่างนั้นคือทั้งร้านค้าง
+    photos = _copy_songwai_photos(branch_id, wanted_photos)
+    return {"restaurant_id": restaurant_id, "imported": imported, "photos": photos,
             "total": len(catalog["items"]), "status": "drafts_inactive"}
 
 
