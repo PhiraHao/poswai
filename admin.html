@@ -27,6 +27,8 @@
   .row>div{flex:1 1 180px}
   .row>div.tight{flex:0 0 auto}
   table{width:100%;border-collapse:collapse;font-size:.92rem}
+  .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tscroll table{min-width:560px}
   th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
   th{background:#f7f9fc;font-size:.85rem;position:sticky;top:0}
   .tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.78rem;font-weight:700;white-space:nowrap}
@@ -143,10 +145,12 @@
     <div class="tight"><label class="checkline"><input id="showClosed" type="checkbox"> แสดงร้านที่ปิดถาวร</label></div>
     <div class="tight"><button id="refreshButton" class="ghost" type="button">โหลดใหม่</button></div>
   </div>
-  <table>
-    <thead><tr><th>ร้าน</th><th>เจ้าของ / เบอร์</th><th>สถานะ</th><th>ใช้ได้ถึง</th><th>รับเงินแล้ว</th><th></th></tr></thead>
-    <tbody id="shopRows"></tbody>
-  </table>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>ร้าน</th><th>เจ้าของ / เบอร์</th><th>สถานะ</th><th>ใช้ได้ถึง</th><th>รับเงินแล้ว</th><th></th></tr></thead>
+      <tbody id="shopRows"></tbody>
+    </table>
+  </div>
   <p class="msg" id="listMessage"></p>
 </div>
 
@@ -170,7 +174,7 @@
     <div class="card">
       <h3>รายได้รายเดือน</h3>
       <p class="muted">เฉพาะเงินที่รับจริง ไม่นับวันที่แถมฟรี</p>
-      <table id="revenueTable"><tbody></tbody></table>
+      <div class="tscroll"><table id="revenueTable"><tbody></tbody></table></div>
     </div>
   </div>
 </div>
