@@ -28,7 +28,7 @@
   .row>div.tight{flex:0 0 auto}
   table{width:100%;border-collapse:collapse;font-size:.92rem}
   .tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .tscroll table{min-width:560px}
+  .tscroll.wide table{min-width:560px}
   th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
   th{background:#f7f9fc;font-size:.85rem;position:sticky;top:0}
   .tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.78rem;font-weight:700;white-space:nowrap}
@@ -46,7 +46,7 @@
   .detail{background:#fbfcfe}
   .detail .box{display:grid;gap:14px;padding:4px 2px 10px}
   .cards{display:flex;flex-wrap:wrap;gap:12px}
-  .card{flex:1 1 260px;border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
+  .card{flex:1 1 260px;min-width:0;border:1px solid var(--line);border-radius:12px;padding:12px;background:#fff}
   .card h3{margin:0 0 8px;font-size:.95rem}
   .card .grid{display:grid;gap:7px}
   .paylist{margin:0;padding:0;list-style:none;display:grid;gap:7px;font-size:.86rem}
@@ -145,7 +145,7 @@
     <div class="tight"><label class="checkline"><input id="showClosed" type="checkbox"> แสดงร้านที่ปิดถาวร</label></div>
     <div class="tight"><button id="refreshButton" class="ghost" type="button">โหลดใหม่</button></div>
   </div>
-  <div class="tscroll">
+  <div class="tscroll wide">
     <table>
       <thead><tr><th>ร้าน</th><th>เจ้าของ / เบอร์</th><th>สถานะ</th><th>ใช้ได้ถึง</th><th>รับเงินแล้ว</th><th></th></tr></thead>
       <tbody id="shopRows"></tbody>
