@@ -1,9 +1,9 @@
 #view-crm.commerce-ready > :not(.module-intro):not(.commerce-shell) { display:none!important }
-.commerce-shell { display:grid; gap:18px; color:#17212b }
+.commerce-shell { display:grid; grid-template-columns:minmax(0,1fr); gap:18px; color:#17212b }
 .commerce-tabs { display:flex; gap:6px; padding:5px; background:#f2f4f7; border-radius:14px; width:max-content; max-width:100%; overflow:auto }
 .commerce-tabs button { border:0; border-radius:10px; background:transparent; color:#596579; padding:10px 15px; font:inherit; font-weight:700; white-space:nowrap; cursor:pointer }
 .commerce-tabs button[aria-selected="true"] { background:#fff; color:#17212b; box-shadow:0 2px 8px #11182712 }
-.commerce-pane { display:grid; gap:16px }
+.commerce-pane { display:grid; grid-template-columns:minmax(0,1fr); gap:16px }
 .commerce-pane[hidden] { display:none }
 .commerce-card { background:#fff; border:1px solid #e3e8ee; border-radius:18px; padding:20px; box-shadow:0 8px 26px #17212b0a }
 .commerce-card h2,.commerce-card h3 { margin:0 0 10px; font-size:1.06rem }
