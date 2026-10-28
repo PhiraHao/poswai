@@ -3782,7 +3782,7 @@
             const held = ticket.status === "held";
             const time = ticket.created_at ? new Date(ticket.created_at.replace(" ", "T") + "Z").toLocaleTimeString("th-TH", {hour:"2-digit",minute:"2-digit"}) : "";
             return `<article class="kds-ticket ${ready ? "is-ready" : held ? "is-held" : "is-cooking"}">
-              <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(ticket.table_no)}</strong><span class="badge ${ready ? "badge-occupied" : held ? "badge-purple" : "badge-verify"}">${ready ? "พร้อมเสิร์ฟ" : held ? "พักคอร์ส" : "กำลังทำ"}</span></div>
+              <div class="kds-ticket-head">${ticket.queue_no ? `<b class="kds-queue">คิว ${ticket.queue_no}</b>` : ""}<strong>โต๊ะ ${escapeUi(ticket.table_no)}</strong><span class="badge ${ready ? "badge-occupied" : held ? "badge-purple" : "badge-verify"}">${ready ? "พร้อมเสิร์ฟ" : held ? "พักคอร์ส" : "กำลังทำ"}</span></div>
               <div class="kds-ticket-meta">#${escapeUi(ticket.order_no)} · ${escapeUi(time)}</div>
               <div class="kds-ticket-items">${ticket.items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}${item.options ? `<small class="kds-options">${escapeUi(item.options)}</small>` : ""}</span>${held && item.course_mode === "HOLD" ? "<em>พักไว้</em>" : ""}</div>`).join("")}</div>
               ${ticket.note ? `<div class="kds-note">📝 ${escapeUi(ticket.note)}</div>` : ""}
@@ -3840,7 +3840,7 @@
             const ready = stationTicketReady(order, station);
             const held = !ready && items.some(item => item.courseMode === "HOLD");
             return `<article class="kds-ticket ${ready ? 'is-ready' : held ? 'is-held' : 'is-cooking'}">
-              <div class="kds-ticket-head"><strong>โต๊ะ ${escapeUi(order.table)}</strong><span class="badge ${ready ? 'badge-occupied' : held ? 'badge-purple' : 'badge-verify'}">${ready ? 'พร้อมเสิร์ฟ' : held ? 'พักคอร์ส' : 'กำลังทำ'}</span></div>
+              <div class="kds-ticket-head">${order.queueNo ? `<b class="kds-queue">คิว ${order.queueNo}</b>` : ''}<strong>โต๊ะ ${escapeUi(order.table)}</strong><span class="badge ${ready ? 'badge-occupied' : held ? 'badge-purple' : 'badge-verify'}">${ready ? 'พร้อมเสิร์ฟ' : held ? 'พักคอร์ส' : 'กำลังทำ'}</span></div>
               <div class="kds-ticket-meta">${escapeUi(shortOrderNo(order.orderId))} · ${escapeUi(order.time)} · ${escapeUi(order.source)}</div>
               <div class="kds-ticket-items">${items.map(item => `<div><strong>${Number(item.qty) || 1}×</strong><span>${escapeUi(item.name)}</span>${item.courseMode === 'HOLD' && !ready ? '<em>พักไว้</em>' : ''}</div>`).join('')}</div>
               ${order.note && order.note !== '-' ? `<div class="kds-ticket-note">หมายเหตุ: ${escapeUi(order.note)}</div>` : ''}
@@ -3851,6 +3851,13 @@
       }).join('');
     }
 
+    /* เพจเจอร์เรียกคิว: จานสั่นที่ร้านมีกี่ใบ เลขคิววนตามนั้น
+       คิว 1-16 กดตรงตัว คิว 17 กลับไปจานที่ 1 เพราะถึงตอนนั้นคิว 1 รับของไปนานแล้ว
+       ร้านไหนซื้อมากกว่านี้ แก้เลขเดียวตรงนี้พอ */
+    const PAGER_COUNT = 16;
+    const pagerNumber = (queueNo) => (queueNo ? ((queueNo - 1) % PAGER_COUNT) + 1 : 0);
+    const pagerLabel = (queueNo) => String(pagerNumber(queueNo)).padStart(2, "0");
+
     async function setOrderReady(orderId, station) {
       if (state.productionMode) {
         try {
@@ -3859,7 +3866,11 @@
             const ticket = (window.poswaiKdsTickets || []).find(t => t.order_no === orderId && t.station === station);
             if (ticket) ticket.status = "ready";
             renderKitchenView(); showToast("บันทึกไว้แล้ว รอซิงก์เมื่อออนไลน์");
-          } else { await window.poswaiLiveData?.refresh(); showToast("พร้อมเสิร์ฟแล้ว"); }
+          } else {
+            const queued = (window.poswaiKdsTickets || []).find(t => t.order_no === orderId && t.station === station)?.queue_no;
+            await window.poswaiLiveData?.refresh();
+            showToast(queued ? `คิว ${queued} พร้อมแล้ว — กดเพจเจอร์ ${pagerLabel(queued)}` : "พร้อมเสิร์ฟแล้ว");
+          }
         } catch (error) { showToast(`อัปเดตจอครัวไม่สำเร็จ: ${error.message}`); }
         return;
       }
@@ -3872,7 +3883,9 @@
       });
       refreshKdsOrderStatus(order);
       renderAll();
-      showToast(`${KDS_STATION_NAMES[station]}: ${shortOrderNo(orderId)} พร้อมเสิร์ฟแล้ว`);
+      showToast(order.queueNo
+        ? `คิว ${order.queueNo} พร้อมแล้ว — กดเพจเจอร์ ${pagerLabel(order.queueNo)}`
+        : `${KDS_STATION_NAMES[station]}: ${shortOrderNo(orderId)} พร้อมเสิร์ฟแล้ว`);
     }
 
     /* =========================================================================
@@ -4219,6 +4232,9 @@
         `   ${docTitle}`,
         line,
         `โต๊ะ: ${tStr} | วันที่: ${new Date().toLocaleString("th-TH")}`,
+        /* เลขคิวตัวใหญ่สุดบนใบ: คาเฟ่เรียกด้วยเลขนี้ ไม่ได้เรียกด้วยเลขบิล
+           บิลที่รวมหลายออเดอร์เอาคิวแรกสุด ซึ่งเป็นคิวที่ลูกค้าได้ตอนสั่ง */
+        ...(orders.find(o => o.queueNo) ? [line, `   *** คิวที่ ${orders.find(o => o.queueNo).queueNo} ***`, line] : []),
         ...(isFullTax ? [`ลูกค้า/เลขผู้เสียภาษี: ${custTaxInfo}`, line] : []),
         ...orders.flatMap(o => o.items.map(i => `${i.name.slice(0,18).padEnd(18," ")} x${i.qty}  ฿${(i.price*i.qty).toFixed(2)}`)),
         line,
@@ -5164,7 +5180,7 @@
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=79"></script>
+  <script src="/live-data.js?v=80"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=92"></script>

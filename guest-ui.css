@@ -173,3 +173,8 @@ html.gui-on .tbl-bar, html.gui-on .tbl-bill-open, html.gui-on .tbl-sheet:not([hi
 }
 @keyframes gui-ready-in { from { transform: scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .gui-ready-card { animation: none; } }
+
+.gui-queue {
+  padding: 3px 10px; border-radius: 999px; background: #141b24; color: #ffc928;
+  font-size: .8rem; font-weight: 800; letter-spacing: .02em;
+}

@@ -474,6 +474,14 @@ def init_db() -> None:
     # แบบหลังต้องมีคนไปบอก ไม่งั้นอาหารขึ้นจอครัวเฉย ๆ โดยที่หน้าร้านไม่รู้เรื่อง
     if "ordered_by" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
         cur.execute("ALTER TABLE order_events ADD COLUMN ordered_by TEXT NOT NULL DEFAULT 'staff'")
+    # เลขคิวที่ลูกค้าถือไปนั่งรอ และพนักงานกดเรียกตอนของเสร็จ
+    # ไล่ 1, 2, 3 ไปทั้งวัน แล้วขึ้นวันใหม่เริ่มหนึ่งใหม่ บิลเก่าก่อนมีคอลัมน์นี้เป็น 0
+    if "queue_no" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
+        cur.execute("ALTER TABLE order_events ADD COLUMN queue_no INTEGER NOT NULL DEFAULT 0")
+    # สมาชิกที่สั่งบิลนี้ ถ้าเข้าสู่ระบบลูกค้าไว้ — ใช้ส่งไลน์บอกว่าของพร้อมแล้ว
+    # ลูกค้าขาจรที่สแกน QR เฉย ๆ ไม่มีใครให้ส่งถึง จึงเป็น NULL ตามปกติ
+    if "customer_id" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
+        cur.execute("ALTER TABLE order_events ADD COLUMN customer_id INTEGER")
     cur.execute("""CREATE TABLE IF NOT EXISTS kds_station_tickets (
         order_no TEXT NOT NULL REFERENCES order_events(order_no),
         station TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('held','queued','ready')),
@@ -2610,8 +2618,16 @@ def create_order(req: OrderCreate, request: Request):
         except CatalogError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
         note = " ".join(str(req.note or "").split())[:200]
-        cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount, note) VALUES (?,?,?,?,?,?)",
-                    (req.event_id, req.order_no, req.branch_id, req.table_no, quote["total_amount"], note))
+        # เลขคิวของวันนี้ นับต่อจากบิลล่าสุดของสาขานี้
+        # วันเทียบแบบ UTC ตรง ๆ ได้ เพราะร้านไทยเปิด 7 โมงถึงเที่ยงคืนกว่า ๆ
+        # ซึ่งอยู่ในวัน UTC เดียวกันทั้งช่วง เลขจึงไม่เด้งกลับกลางวันทำการ
+        queue_no = cur.execute(
+            "SELECT COALESCE(MAX(queue_no),0)+1 FROM order_events"
+            " WHERE branch_id=? AND date(created_at)=date('now')", (req.branch_id,)).fetchone()[0]
+        cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount, note, queue_no, customer_id)"
+                    " VALUES (?,?,?,?,?,?,?,?)",
+                    (req.event_id, req.order_no, req.branch_id, req.table_no, quote["total_amount"], note,
+                     queue_no, _member_if_signed_in(request)))
         for item in quote["items"]:
             options = ", ".join(part for part in [item.get("level", ""), *item.get("addons", [])] if part)
             cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -2642,7 +2658,8 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
         require_table_or_staff(request, branch_id, table_no)
     else:
         require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
-    query = "SELECT order_no,table_no,total_amount,status,created_at,note FROM order_events WHERE branch_id=? AND status='open'"
+    query = ("SELECT order_no,table_no,total_amount,status,created_at,note,queue_no"
+             " FROM order_events WHERE branch_id=? AND status='open'")
     params: list = [branch_id]
     if table_no:
         query += " AND table_no=?"
@@ -2666,6 +2683,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
                 kitchen = "cooking"
             orders.append({"order_no": row[0], "table_no": row[1], "total_amount": row[2],
                            "status": row[3], "created_at": row[4], "kitchen": kitchen, "note": row[5],
+                           "queue_no": row[6],
                            "items": [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3],
                                       "bom": json.loads(item[4]), "station": item[5],
                                       "courseMode": item[6], "options": item[7]} for item in items]})
@@ -2751,7 +2769,7 @@ def list_kds_tickets(request: Request, branch_id: int = 1):
     require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
     with closing(connect_db()) as conn:
         rows = conn.execute(
-            "SELECT k.order_no,k.station,k.status,k.created_at,k.fired_at,k.ready_at,oe.table_no,oe.note "
+            "SELECT k.order_no,k.station,k.status,k.created_at,k.fired_at,k.ready_at,oe.table_no,oe.note,oe.queue_no "
             "FROM kds_station_tickets k JOIN order_events oe ON oe.order_no=k.order_no "
             "WHERE oe.branch_id=? AND (k.status!='ready' OR k.created_at>=datetime('now','-1 day')) "
             "ORDER BY k.created_at DESC LIMIT 300", (branch_id,),
@@ -2764,7 +2782,7 @@ def list_kds_tickets(request: Request, branch_id: int = 1):
             ).fetchall()
             tickets.append({"order_no": row[0], "station": row[1], "status": row[2],
                             "created_at": row[3], "fired_at": row[4], "ready_at": row[5],
-                            "table_no": row[6], "note": row[7],
+                            "table_no": row[6], "note": row[7], "queue_no": row[8],
                             "items": [{"name": item[0], "qty": item[1], "course_mode": item[2],
                                        "options": item[3]} for item in items]})
     return {"branch_id": branch_id, "tickets": tickets}
@@ -2795,7 +2813,34 @@ def _advance_kds_ticket(request: Request, order_no: str, station: str, action: s
             conn.execute("UPDATE kds_station_tickets SET status='ready',ready_at=CURRENT_TIMESTAMP "
                          "WHERE order_no=? AND station=?", (order_no, station))
             status = "ready"
+            _notify_member_ready(conn, order_no)
     return {"order_no": order_no, "station": station, "status": status}
+
+
+def _notify_member_ready(conn: sqlite3.Connection, order_no: str) -> int:
+    """บอกลูกค้าทางไลน์ว่าของพร้อมแล้ว เมื่อทุกสเตชันของบิลนี้เสร็จครบ
+
+    คาเฟ่ลูกค้าเดินไปนั่งมุมไหนก็ได้ หน้าจอในมือเตือนได้เฉพาะตอนเปิดค้างไว้
+    ไลน์จึงเป็นทางเดียวที่ถึงคนที่เก็บมือถือเข้ากระเป๋าไปแล้ว ส่งได้เฉพาะ
+    สมาชิกที่ผูกไลน์ไว้ ลูกค้าขาจรไม่มีใครให้ส่งถึง ซึ่งเพจเจอร์รับช่วงต่อ
+    คิวอยู่ในทรานแซกชันเดียวกับการกดพร้อมเสิร์ฟ ไลน์ล่มก็ไม่มีข้อความหาย
+    """
+    pending = conn.execute("SELECT COUNT(*) FROM kds_station_tickets WHERE order_no=? AND status!='ready'",
+                           (order_no,)).fetchone()[0]
+    if pending:
+        return 0
+    row = conn.execute(
+        "SELECT oe.branch_id,oe.queue_no,c.line_user_id FROM order_events oe "
+        "JOIN crm_customers c ON c.id=oe.customer_id "
+        "WHERE oe.order_no=? AND c.line_user_id IS NOT NULL AND c.line_user_id<>''",
+        (order_no,)).fetchone()
+    if not row:
+        return 0
+    branch_id, queue_no, line_user_id = row[0], row[1], row[2]
+    called = f"คิวที่ {queue_no}" if queue_no else f"บิล {order_no}"
+    enqueue_line_notification(conn, f"ready:{order_no}", line_user_id, branch_id,
+                              {"type": "text", "text": f"✅ {called} พร้อมแล้ว รับได้ที่เคาน์เตอร์เลยครับ"})
+    return 1
 
 
 @app.post("/api/kds/{order_no}/{station}/fire")
@@ -4974,6 +5019,15 @@ def _mint_member_token(member_id: int) -> str:
                          sort_keys=True, separators=(",", ":")).encode()
     encoded = base64.urlsafe_b64encode(payload).rstrip(b"=").decode()
     return encoded + "." + _member_signature(payload)
+
+
+def _member_if_signed_in(request: Request) -> Optional[int]:
+    """The member on this phone, or None. Never raises: a stale card must not
+    stop the order — it only means nothing to send a LINE message to."""
+    try:
+        return _signed_in_member(request)
+    except HTTPException:
+        return None
 
 
 def _signed_in_member(request: Request) -> int:

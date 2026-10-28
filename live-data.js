@@ -78,6 +78,9 @@
     state.orders = orders.map(order => ({
       orderId: order.order_no, table: order.table_no, items: order.items,
       discount: 0, note: order.note || '-',
+      /* The number the guest carries to a seat and the counter presses on the
+         pager keypad. A bill made before the server kept one shows nothing. */
+      queueNo: Number(order.queue_no) || 0,
       // A guest cannot read the kitchen screen; the order says what it is doing.
       status: order.kitchen === 'ready' ? 'ready' : ['cooking', 'held'].includes(order.kitchen) ? 'cooking' : 'pending',
       time: new Date(order.created_at + 'Z').toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}),

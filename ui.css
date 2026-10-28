@@ -222,6 +222,8 @@ button { touch-action: manipulation; }
 .kds-ticket.is-held { border-left-color: #8b69bd; }
 .kds-ticket.is-ready { border-left-color: #38a46d; }
 .kds-ticket-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: .88rem; }
+/* เลขคิวมาก่อนโต๊ะ เพราะร้านเรียกด้วยเลขนี้ และเป็นเลขเดียวกับที่กดเพจเจอร์ */
+.kds-queue { margin-right: auto; padding: 3px 10px; border-radius: 999px; background: #141b24; color: #ffc928; font-size: .78rem; font-weight: 800; }
 .kds-ticket-meta { margin-top: 3px; color: var(--text-muted); font-size: .71rem; }
 .kds-ticket-items { display: grid; gap: 5px; margin-top: 12px; padding: 9px 0; border-top: 1px solid #edf1ee; border-bottom: 1px solid #edf1ee; }
 .kds-ticket-items > div { display: flex; gap: 8px; font-size: .81rem; }

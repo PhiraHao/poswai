@@ -126,20 +126,22 @@
     }));
   };
   const billOf = (order) => (window.shortOrderNo ? window.shortOrderNo(order.orderId) : order.orderId);
+  /* The counter calls the queue number, not the bill number. */
+  const calledAs = (order) => (order.queueNo ? `คิวที่ ${order.queueNo}` : `บิล ${billOf(order)}`);
   const announce = (order) => {
     chime();
     try { navigator.vibrate?.([400, 180, 400, 180, 600]); } catch (_) { /* a phone that cannot buzz still chimes */ }
     if (window.Notification && Notification.permission === 'granted') {
       try {
         new Notification('อาหารพร้อมแล้ว', {
-          body: `บิล ${billOf(order)} · รับได้ที่เคาน์เตอร์`,
+          body: `${calledAs(order)} · รับได้ที่เคาน์เตอร์`,
           icon: '/assets/brand-icon.webp', tag: String(order.orderId), renotify: true});
       } catch (_) { /* notifications are a nicety, the card is the promise */ }
     }
     const card = slot('ready');
     card.innerHTML = `<div class="gui-ready-card">${icon('bell')}
       <strong>อาหารพร้อมแล้ว</strong>
-      <small>บิล ${esc(billOf(order))} · รับได้ที่เคาน์เตอร์</small>
+      <small>${esc(calledAs(order))} · รับได้ที่เคาน์เตอร์</small>
       <button type="button" data-act="seen">รับทราบ</button></div>`;
     card.hidden = false;
   };
@@ -167,7 +169,7 @@
       ${mine.length ? `<div class="gui-orders">${mine.map((o) => {
         const stage = STAGE[o.status] ?? 0;
         return `<article class="gui-card">
-          <div class="gui-ohead"><strong>${esc(window.shortOrderNo ? window.shortOrderNo(o.orderId) : o.orderId)}</strong><span>${esc(o.time || '')}</span></div>
+          <div class="gui-ohead">${o.queueNo ? `<b class="gui-queue">คิว ${o.queueNo}</b>` : ''}<strong>${esc(billOf(o))}</strong><span>${esc(o.time || '')}</span></div>
           <ul class="gui-items">${(o.items || []).map((i) => `<li><span>${esc(i.name)}${i.options ? `<small>${esc(i.options)}</small>` : ''}</span><b>×${Number(i.qty) || 1}</b></li>`).join('')}</ul>
           <div class="gui-steps" data-stage="${stage}">${['ส่งแล้ว', 'กำลังทำ', 'กำลังมาเสิร์ฟ'].map((l, i) => `<span class="${i < stage ? 'done' : i === stage ? 'now' : ''}"><i></i>${l}</span>`).join('')}</div>
         </article>`;
