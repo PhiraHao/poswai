@@ -1,0 +1,30 @@
+/* One row: the call button, then the categories scrolling beside it.
+   The pill strip carries its own bottom padding for the scrollbar, which
+   lifted its pills off the button's centre line; it is removed here so the
+   two sit on exactly the same line. */
+/* Aligned by their top edges, not their centres: the pill strip reserves
+   space under itself for a scrollbar, so centring the two boxes pushed the
+   button visibly below the pills. Tops line up; the 2px is the strip's own
+   top padding, matched here. */
+.menu-filter-row { display:flex; align-items:flex-start; gap:8px; margin:0 0 10px; }
+.menu-filter-row .cat-pills { flex:1; min-width:0; margin:0; }
+.menu-filter-row .service-call-primary { margin-top:2px; }
+/* Solid, not an outline like the pills: a guest should find it at a glance.
+   Same padding, radius and type size as a pill, so the row reads as one. */
+.service-call-primary { flex:none; margin:0; border-color:#c0372b; background:#c0372b; color:#fff; font-weight:800; }
+.service-call-primary:hover,.service-call-primary:focus-visible { background:#a52f24; outline:2px solid #141b24; outline-offset:2px; }
+.service-inbox { margin:0 0 18px; padding:17px 20px; border:1px solid #e8ebef; border-radius:15px; background:#fff; }
+.service-inbox-heading { display:flex; justify-content:space-between; align-items:center; padding-bottom:11px; border-bottom:1px solid #eef0f2; color:#202a35; font-size:15px; }
+.service-inbox-empty { margin:14px 0 0; color:#7b8794; font-size:12px; }
+.service-inbox-empty { display:flex;align-items:center;gap:10px; }
+.service-inbox-empty img { width:38px;height:38px;object-fit:contain;filter:drop-shadow(0 3px 4px #b3832425); }
+.service-request { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 0; border-bottom:1px solid #eef0f2; }
+.service-request:last-child { border-bottom:0; padding-bottom:0; }
+.service-request strong { display:block; font-size:13px; color:#202a35; }
+.service-request small { display:block; margin-top:3px; font-size:11px; color:#7a8591; }
+.service-request button { flex:none; border:0; border-radius:9px; background:#ffcc2e; color:#202a35; padding:9px 13px; font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; }
+.service-request button:disabled { opacity:.55; cursor:wait; }
+.service-inbox-new { border-color:#edba15; box-shadow:0 0 0 3px #ffcc2e33; }
+.service-nav-badge { margin-left:auto; min-width:17px; height:17px; padding:0 4px; border-radius:20px; background:#dc3545; color:#fff; font-size:10px; font-weight:700; line-height:17px; text-align:center; }
+.service-nav-badge[hidden] { display:none!important; }
+@media(max-width:760px) { .service-inbox { padding:15px; } .service-request { align-items:flex-start; } .service-request button { padding:8px 10px; } }

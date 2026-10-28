@@ -1,0 +1,180 @@
+/* The guest's screen after scanning a table QR (guest-ui.js). Same dress as
+   the POS WAI app: white cards on a cool grey page, one amber, dark ink. */
+html.gui-on {
+  --g-ink: #172322; --g-muted: #7c858e; --g-amber: #ffca45; --g-amber-deep: #e3ad25;
+  --g-line: #e9edf0; --g-page: #f6f7f9; --g-red: #e0463a; --g-green: #2f8a5f;
+  --g-shadow: 0 2px 10px rgba(23, 35, 34, .05);
+  --g-safe-b: env(safe-area-inset-bottom, 0px); --g-safe-t: env(safe-area-inset-top, 0px);
+}
+#guestUi { display: none; }
+html.gui-on #guestUi { display: block; }
+html.gui-on body > .sim-topbar, html.gui-on body > .role-tabs-wrap, html.gui-on body > #offlineBanner,
+html.gui-on body > .mobile-cart-dock, html.gui-on body > main.container,
+html.gui-on .poswai-landing { display: none !important; }
+html.gui-on body { background: var(--g-page) !important; padding: 0 !important; font-family: 'Noto Sans Thai', system-ui, sans-serif; color: var(--g-ink); }
+html.gui-on.gui-sheet-open body { overflow: hidden; }
+
+#guestUi, #guestUi * { box-sizing: border-box; }
+:where(#guestUi) :where(button) { border: 0; background: none; cursor: pointer; padding: 0; margin: 0; font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+:where(#guestUi) :where(input) { font: inherit; color: inherit; }
+#guestUi button:disabled { opacity: .5; cursor: not-allowed; }
+#guestUi :focus-visible { outline: 3px solid #a77b00; outline-offset: 2px; }
+#guestUi h1, #guestUi h2, #guestUi p { margin: 0; }
+.gui-i { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.gui-i-xs { width: 16px; height: 16px; stroke-width: 2.1; }
+.gui-grow { flex: 1; min-width: 0; }
+
+.gui-top { position: sticky; top: 0; z-index: 40; display: flex; align-items: center; gap: 10px; padding: calc(var(--g-safe-t) + 10px) 16px 10px; background: #fff; border-bottom: 1px solid var(--g-line); }
+.gui-logo { width: 40px; height: 40px; object-fit: contain; flex: none; }
+.gui-where { flex: 1; min-width: 0; }
+.gui-where strong { display: block; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gui-where small { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 2px 8px; border-radius: 8px; background: #fff3cc; color: #6b4c00; font-size: 12px; font-weight: 700; }
+.gui-call { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: 12px !important; background: #fde9e7 !important; color: #b8322a !important; font-size: 13px; font-weight: 700; }
+.gui-call .gui-i { width: 20px; height: 20px; }
+
+.gui-main { padding: 14px 16px calc(var(--g-safe-b) + 100px); min-height: 70vh; }
+#guestUi.gui-has-cart .gui-main { padding-bottom: calc(var(--g-safe-b) + 170px); }
+.gui-h1 { font-size: 26px; font-weight: 700; letter-spacing: -.3px; margin: 2px 0 12px !important; }
+
+.gui-search { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 14px; margin-bottom: 12px; background: #fff; border: 1px solid var(--g-line); border-radius: 13px; color: #8b949b; }
+.gui-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: none; font-size: 15px; }
+.gui-chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-bottom: 14px; }
+.gui-chips::-webkit-scrollbar { display: none; }
+.gui-chips button { flex: none; height: 36px; padding: 0 16px; border-radius: 18px !important; background: #eef1f3 !important; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.gui-chips button.on { background: var(--g-amber) !important; font-weight: 700; box-shadow: 0 2px 0 var(--g-amber-deep); }
+
+.gui-products { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (min-width: 640px) { .gui-products { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.gui-product { display: flex; flex-direction: column; text-align: left; background: #fff !important; border: 1px solid var(--g-line) !important; border-radius: 16px !important; overflow: hidden; box-shadow: var(--g-shadow); }
+.gui-product.out { opacity: .55; }
+.gui-shot { position: relative; display: block; aspect-ratio: 1.28; background: #f1f3f5; }
+.gui-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.gui-shot em { position: absolute; left: 8px; top: 8px; background: rgba(23, 35, 34, .82); color: #fff; font-style: normal; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 7px; }
+.gui-count { position: absolute; right: 8px; top: 8px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px; background: var(--g-ink); color: #ffd463; font-size: 12px; display: grid; place-items: center; }
+.gui-pbody { display: block; padding: 9px 10px 10px; }
+.gui-pbody strong { display: block; font-size: 14px; font-weight: 700; line-height: 1.35; }
+.gui-pbody small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12px; color: var(--g-muted); margin-top: 2px; }
+.gui-prow { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+.gui-prow b { font-size: 16px; }
+.gui-plus { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--g-amber); box-shadow: 0 2px 0 var(--g-amber-deep); }
+.gui-plus .gui-i { width: 18px; height: 18px; stroke-width: 2.4; }
+
+.gui-cartbar { position: fixed; z-index: 45; left: 12px; right: 12px; bottom: calc(var(--g-safe-b) + 82px); }
+.gui-cartbar[hidden] { display: none; }
+.gui-cartbar-in { width: 100%; display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 14px; text-align: left; background: #fff4d0 !important; border: 1px solid #f6d77a !important; border-radius: 16px !important; box-shadow: 0 6px 20px rgba(80, 62, 10, .14); }
+.gui-cartbar-in b { display: block; font-size: 15px; }
+.gui-cartbar-in small { display: block; font-size: 12px; color: #6f6754; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gui-cartbar-in > strong { font-size: 16px; white-space: nowrap; }
+
+.gui-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 46px; padding: 0 16px; border-radius: 12px !important; background: #fff !important; border: 1px solid var(--g-line) !important; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.gui-btn.primary { background: linear-gradient(180deg, #ffd65c, #ffc63a) !important; border-color: #f2bb2e !important; box-shadow: 0 2px 0 var(--g-amber-deep); }
+.gui-btn.sm { min-height: 40px; padding: 0 14px; }
+.gui-btn.wide { width: 100%; min-height: 50px; font-size: 16px; }
+
+.gui-card { background: #fff; border: 1px solid var(--g-line); border-radius: 18px; padding: 14px 16px; box-shadow: var(--g-shadow); }
+.gui-orders { display: grid; gap: 12px; margin-bottom: 12px; }
+.gui-ohead { display: flex; justify-content: space-between; font-weight: 700; }
+.gui-ohead span { color: var(--g-muted); font-weight: 500; font-size: 13px; }
+.gui-items { list-style: none; margin: 8px 0 0; padding: 0; }
+.gui-items li { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; font-size: 14px; }
+.gui-items small { display: block; font-size: 12px; color: #b07400; font-weight: 600; }
+.gui-steps { display: flex; justify-content: space-between; position: relative; margin: 14px 4px 4px; }
+.gui-steps::before { content: ''; position: absolute; left: 12%; right: 12%; top: 8px; height: 2px; background: #e3e7ea; }
+.gui-steps[data-stage="1"]::after, .gui-steps[data-stage="2"]::after { content: ''; position: absolute; left: 12%; top: 8px; height: 2px; width: 38%; background: var(--g-amber); }
+.gui-steps[data-stage="2"]::after { width: 76%; }
+.gui-steps span { position: relative; z-index: 1; width: 33%; display: flex; flex-direction: column; align-items: center; gap: 5px; font-size: 12px; color: #97a1a6; }
+.gui-steps span i { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2px solid #ccd3d7; }
+.gui-steps span.done i { background: var(--g-amber); border-color: var(--g-amber); }
+.gui-steps span.now i { border-color: var(--g-amber); box-shadow: inset 0 0 0 4px var(--g-amber), 0 0 0 4px #fff1c4; }
+.gui-steps span.done, .gui-steps span.now { color: #4c5556; font-weight: 600; }
+.gui-bill { margin-bottom: 12px; }
+.gui-sum { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 0 12px; font-weight: 600; }
+.gui-sum strong { font-size: 24px; }
+.gui-actions, .gui-quick { display: flex; gap: 8px; }
+.gui-actions > *, .gui-quick > * { flex: 1; }
+.gui-hint { display: block; margin-top: 8px; font-size: 12px; color: var(--g-muted); text-align: center; }
+
+.gui-member { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; background: linear-gradient(120deg, #fff, #fff6d8); }
+.gui-mascot { width: 84px; height: 84px; object-fit: contain; flex: none; }
+.gui-member strong { display: block; font-size: 17px; }
+.gui-member small { display: block; font-size: 13px; color: var(--g-muted); margin-top: 2px; }
+.gui-points { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 3px 10px; border-radius: 10px; background: var(--g-amber); font-weight: 700; font-size: 14px; }
+.gui-menu { display: grid; gap: 8px; }
+.gui-row { width: 100%; display: flex; align-items: center; gap: 14px; padding: 12px 14px; min-height: 64px; text-align: left; background: #fff !important; border: 1px solid var(--g-line) !important; border-radius: 16px !important; }
+.gui-row strong { display: block; font-size: 15px; }
+.gui-row small { display: block; font-size: 12px; color: var(--g-muted); }
+.gui-foot { margin-top: 16px !important; text-align: center; font-size: 12px; color: var(--g-muted); }
+
+.gui-empty { text-align: center; padding: 24px 16px; color: var(--g-muted); display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.gui-empty img { width: 110px; height: 110px; object-fit: contain; }
+.gui-empty strong { color: #3f4b4c; font-size: 15px; }
+
+.gui-nav { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; display: flex; gap: 4px; padding: 6px 10px calc(6px + var(--g-safe-b)); background: #fff; border-top: 1px solid var(--g-line); box-shadow: 0 -4px 18px rgba(23, 35, 34, .05); }
+.gui-nav button { flex: 1; min-height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 14px !important; color: #6f7a80; font-size: 12px; font-weight: 500; }
+.gui-nav button.on { background: linear-gradient(160deg, #ffde70, #ffc73b) !important; color: var(--g-ink); font-weight: 700; box-shadow: 0 2px 0 var(--g-amber-deep); }
+
+.gui-scrim { position: fixed; inset: 0; z-index: 70; background: rgba(18, 32, 31, .42); }
+.gui-scrim[hidden], .gui-sheet[hidden] { display: none; }
+.gui-sheet { position: fixed; z-index: 71; left: 0; right: 0; bottom: 0; max-height: 88vh; overflow-y: auto; background: #fff; border-radius: 24px 24px 0 0; padding: 6px 16px calc(var(--g-safe-b) + 18px); box-shadow: 0 -10px 40px rgba(0, 0, 0, .18); }
+.gui-grabber { width: 40px; height: 4px; border-radius: 2px; background: #d9dee2; margin: 4px auto 6px; }
+.gui-sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.gui-sheet-head h2 { font-size: 18px; }
+.gui-x { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px !important; }
+.gui-line { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--g-line); }
+.gui-line b { display: block; font-size: 15px; }
+.gui-line small { display: block; font-size: 12px; color: var(--g-muted); }
+.gui-qty { display: flex; align-items: center; gap: 4px; }
+.gui-qty button { width: 40px; height: 40px; border-radius: 11px !important; background: #f1f3f5 !important; display: grid; place-items: center; }
+.gui-qty b { min-width: 24px; text-align: center; }
+.gui-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+.gui-field input { height: 46px; border: 1px solid #dfe5e9; border-radius: 12px; padding: 0 12px; font-size: 16px; }
+.gui-qr { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0 14px; text-align: center; }
+.gui-qr canvas { width: 236px; height: 236px; image-rendering: pixelated; }
+.gui-qr strong { font-size: 26px; }
+.gui-qr small { font-size: 13px; color: var(--g-muted); }
+
+/* The page's own option sheet (spice level, toppings) rises from the bottom. */
+html.gui-on #modifierModalBackdrop.active { align-items: flex-end !important; padding: 0 !important; z-index: 90; }
+html.gui-on #modifierModalBackdrop.active > * { width: 100% !important; max-width: none !important; border-radius: 24px 24px 0 0 !important; margin: 0 !important; padding-bottom: calc(var(--g-safe-b) + 16px) !important; }
+html.gui-on #toastContainer { position: fixed !important; top: calc(var(--g-safe-t) + 70px) !important; bottom: auto !important; left: 12px !important; right: 12px !important; transform: none !important; z-index: 95 !important; display: flex; justify-content: center; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) { .gui-sheet { animation: gui-up .18s ease-out; } }
+@keyframes gui-up { from { transform: translateY(24px); opacity: .6; } }
+
+/* The older guest bar, bill button and bill sheet from tables-ui give way to this screen. */
+html.gui-on .tbl-bar, html.gui-on .tbl-bill-open, html.gui-on .tbl-sheet:not([hidden]) { display: none !important; }
+
+.gui-row { color: inherit; text-decoration: none; }
+
+/* ---- the pager: ready for collection ---------------------------------- */
+.gui-notify {
+  display: flex; align-items: center; gap: 12px; width: 100%; margin: 0 0 14px;
+  padding: 14px 16px; border: 1px solid #ffd766; border-radius: 16px;
+  background: #fff8e3; color: #141b24; text-align: left; cursor: pointer;
+}
+.gui-notify span { display: grid; gap: 2px; }
+.gui-notify small { color: #6b7280; }
+.gui-notify .gui-i { flex: none; }
+
+.gui-ready {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center;
+  padding: 24px; background: #141b2499; backdrop-filter: blur(2px);
+}
+.gui-ready-card {
+  display: grid; justify-items: center; gap: 8px; max-width: 340px; width: 100%;
+  padding: 30px 24px; border-radius: 22px; background: #fff; text-align: center;
+  box-shadow: 0 20px 50px #0b121c40; animation: gui-ready-in .25s ease-out;
+}
+.gui-ready-card .gui-i { width: 46px; height: 46px; color: #ffb703; }
+.gui-ready-card strong { font-size: 1.35rem; }
+.gui-ready-card small { color: #6b7280; }
+.gui-ready-card button {
+  margin-top: 10px; padding: 13px 30px; border: 0; border-radius: 12px;
+  background: #ffc928; color: #141b24; font-weight: 700; font-size: 1rem; cursor: pointer;
+}
+@keyframes gui-ready-in { from { transform: scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .gui-ready-card { animation: none; } }
+
+.gui-queue {
+  padding: 3px 10px; border-radius: 999px; background: #141b24; color: #ffc928;
+  font-size: .8rem; font-weight: 800; letter-spacing: .02em;
+}
