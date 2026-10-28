@@ -58,6 +58,7 @@
     <main class="gui-main" data-slot="main"></main>
     <div class="gui-cartbar" data-slot="cartbar" hidden></div>
     <nav class="gui-nav" aria-label="เมนูหลัก" data-slot="nav"></nav>
+    <div class="gui-ready" data-slot="ready" hidden></div>
     <div class="gui-scrim" data-slot="scrim" hidden></div>
     <section class="gui-sheet" data-slot="sheet" role="dialog" aria-modal="true" hidden></section>`;
   const slot = (n) => root.querySelector(`[data-slot="${n}"]`);
@@ -92,13 +93,77 @@
       }).join('')}</div>` : empty(menu().length ? 'ไม่พบเมนู' : 'กำลังโหลดเมนู…', menu().length ? 'ลองค้นด้วยคำอื่น' : 'รอสักครู่')}`;
   };
 
+  /* ----------------------------------------------------------- the pager
+     A café takes the order at the counter and the guest sits where they like,
+     so this phone is the pager. When the kitchen marks the drink ready it has
+     to reach someone who has already put the phone away: a chime loud enough
+     for a noisy room, a buzz, the system's own notification, and a card that
+     stays up until it is tapped. */
+  const alerted = new Set();
+  let watching = false;      // the first look only learns; it never announces
+  let audio = null;
+  const openAudio = () => {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!audio && Ctx) { try { audio = new Ctx(); } catch (_) { return null; } }
+    if (audio && audio.state === 'suspended') audio.resume().catch(() => {});
+    return audio;
+  };
+  const chime = () => {
+    const ctx = openAudio();
+    if (!ctx) return;
+    // Two notes, three times: one short beep is lost in a busy shop.
+    [0, 0.5, 1].forEach((at) => [880, 1320].forEach((hz, step) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const from = ctx.currentTime + at + step * 0.18;
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.0001, from);
+      gain.gain.exponentialRampToValueAtTime(0.35, from + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, from + 0.16);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(from);
+      osc.stop(from + 0.2);
+    }));
+  };
+  const billOf = (order) => (window.shortOrderNo ? window.shortOrderNo(order.orderId) : order.orderId);
+  const announce = (order) => {
+    chime();
+    try { navigator.vibrate?.([400, 180, 400, 180, 600]); } catch (_) { /* a phone that cannot buzz still chimes */ }
+    if (window.Notification && Notification.permission === 'granted') {
+      try {
+        new Notification('อาหารพร้อมแล้ว', {
+          body: `บิล ${billOf(order)} · รับได้ที่เคาน์เตอร์`,
+          icon: '/assets/brand-icon.webp', tag: String(order.orderId), renotify: true});
+      } catch (_) { /* notifications are a nicety, the card is the promise */ }
+    }
+    const card = slot('ready');
+    card.innerHTML = `<div class="gui-ready-card">${icon('bell')}
+      <strong>อาหารพร้อมแล้ว</strong>
+      <small>บิล ${esc(billOf(order))} · รับได้ที่เคาน์เตอร์</small>
+      <button type="button" data-act="seen">รับทราบ</button></div>`;
+    card.hidden = false;
+  };
+  /* Only this table's orders, and only the step into "ready". An order that
+     goes back to cooking can announce itself again later. */
+  const watchReady = () => {
+    for (const order of pos().orders.filter((o) => String(o.table) === table())) {
+      const key = String(order.orderId);
+      if (order.status === 'ready') {
+        if (!alerted.has(key)) { alerted.add(key); if (watching) announce(order); }
+      } else alerted.delete(key);
+    }
+    watching = true;
+  };
+
   // ---------------------------------------------------------------- orders
   const STAGE = {pending: 0, cooking: 1, ready: 2};
   const ordersView = () => {
     const mine = pos().orders.filter((o) => String(o.table) === table());
     const total = typeof getTableGrandTotalWithTax === 'function' ? getTableGrandTotalWithTax(table()).grand : 0;
     const pp = pos().promptPayId;
+    const askable = mine.length && window.Notification && Notification.permission === 'default';
     return `<h1 class="gui-h1">ออเดอร์ของฉัน</h1>
+      ${askable ? `<button type="button" class="gui-notify" data-act="notify">${icon('bell')}<span><strong>เตือนฉันเมื่ออาหารพร้อม</strong><small>เปิดไว้แล้วเดินไปนั่งตรงไหนก็ได้</small></span></button>` : ''}
       ${mine.length ? `<div class="gui-orders">${mine.map((o) => {
         const stage = STAGE[o.status] ?? 0;
         return `<article class="gui-card">
@@ -230,6 +295,13 @@
       case 'call': await window.sendTableServiceCall?.(value); closeSheet(); break;
       case 'pay': paySheet(); break;
       case 'member': auth().openMember?.(); break;
+      case 'notify':
+        // Inside the tap, where both the permission box and the sound are allowed.
+        openAudio();
+        try { await window.Notification?.requestPermission?.(); } catch (_) { /* refused is an answer too */ }
+        paint();
+        break;
+      case 'seen': slot('ready').hidden = true; break;
       default: break;
     }
   };
@@ -268,6 +340,7 @@
       const original = window.renderAll;
       window.renderAll = function wrapped(...args) {
         const result = original.apply(this, args);
+        if (document.documentElement.classList.contains('gui-on')) watchReady();
         if (document.documentElement.classList.contains('gui-on') && slot('sheet').hidden) paint();
         return result;
       };
@@ -275,8 +348,13 @@
     const mods = document.getElementById('modifierModalBackdrop');
     if (mods) new MutationObserver(() => { if (!mods.classList.contains('active')) { mergeCart(); paint(); } }).observe(mods, {attributes: true, attributeFilter: ['class']});
     window.addEventListener('poswai:auth-changed', sync);
-    // What the kitchen is doing with the guest's food, every so often.
-    setInterval(() => { if (isGuest() && ui.tab === 'orders' && document.visibilityState === 'visible') window.poswaiLiveData?.refresh?.().catch(() => {}); }, 20000);
+    /* What the kitchen is doing with the guest's food. It keeps asking while
+       the screen is in a pocket and while the guest is still reading the menu:
+       that is exactly when the drink becomes ready and the alert has to land. */
+    setInterval(() => {
+      if (!isGuest()) return;
+      Promise.resolve(window.poswaiLiveData?.refresh?.()).catch(() => {}).then(watchReady);
+    }, 15000);
     sync();
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
