@@ -419,6 +419,29 @@
   };
   const minutesSince = (date) => (date ? Math.max(0, Math.round((Date.now() - date.getTime()) / 60000)) : null);
 
+  /** Cancel a bill nobody has paid for.
+   *
+   * The app had no way to do this at all. A bill opened by mistake sat on the
+   * order list for good, and the only cure was the full cashier page on a
+   * computer. The server puts the ingredients back and keeps the reason, so
+   * this asks for one instead of throwing the bill away on a single tap.
+   */
+  const voidBill = async (order) => {
+    const no = window.shortOrderNo ? window.shortOrderNo(order.orderId) : order.orderId;
+    const reason = prompt(`ยกเลิกบิล ${no} · โต๊ะ ${order.table}\n\n`
+      + 'พิมพ์เหตุผล (3-200 ตัวอักษร)\nเหตุผลนี้จะถูกบันทึกไว้และแจ้งผู้จัดการ', '');
+    if (reason === null) return;
+    if (reason.trim().length < 3) { toast('ต้องใส่เหตุผลอย่างน้อย 3 ตัวอักษร'); return; }
+    if (!confirm(`ยกเลิกบิล ${no} โต๊ะ ${order.table} ใช่ไหม\n\nเหตุผล: ${reason.trim()}`)) return;
+    try {
+      await apiMutation(`/api/orders/${encodeURIComponent(order.orderId)}/void`,
+        {event_id: `void:${order.orderId}:${Date.now()}`, reason: reason.trim()});
+      await window.poswaiLiveData?.refresh();
+      paint();
+      toast(`ยกเลิกบิล ${no} แล้ว · คืนวัตถุดิบเข้าสต็อก`);
+    } catch (error) { toast(`ยกเลิกไม่สำเร็จ: ${error.message}`); }
+  };
+
   const ordersView = () => {
     const all = tickets();
     const cooking = all.filter((x) => !x.ready);
@@ -869,6 +892,8 @@
           can('cashier') && {label: `รับเงินโต๊ะ ${order.table}`, icon: 'coins', run: () => pressed({dataset: {act: 'pay', value: order.table}})},
           can('cashier') && {label: 'พิมพ์ใบแจ้งยอดโต๊ะนี้', icon: 'printer', run: () => { if (typeof printReceiptForTable === 'function') printReceiptForTable(order.table); }},
           can('kitchen') && {label: 'เปิดจอครัวเต็ม', icon: 'order', run: () => openWeb('kitchen')},
+          can('cashier') && !order.paid && {label: 'ยกเลิกบิลนี้', sub: 'คืนวัตถุดิบเข้าสต็อก และบันทึกเหตุผลไว้',
+            icon: 'trash', danger: true, run: () => voidBill(order)},
         ].filter(Boolean);
         history.pushState({aui: 'sheet'}, '');
         actionSheet(`โต๊ะ ${order.table} · ${window.shortOrderNo ? window.shortOrderNo(order.orderId) : order.orderId}`, picks);
