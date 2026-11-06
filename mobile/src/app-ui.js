@@ -418,6 +418,18 @@
     });
   };
   const minutesSince = (date) => (date ? Math.max(0, Math.round((Date.now() - date.getTime()) / 60000)) : null);
+  /** How long a bill has been waiting, in words a person can read at a glance.
+   *
+   * Minutes are what the kitchen cares about for the first hour. Past that the
+   * number stops meaning anything: a bill left open over a weekend showed
+   * "17494 นาที", which nobody can turn into days without a calculator. */
+  const waited = (mins) => {
+    if (mins < 60) return `${mins} นาที`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return mins % 60 ? `${hours} ชม. ${mins % 60} นาที` : `${hours} ชม.`;
+    const days = Math.floor(hours / 24);
+    return hours % 24 ? `${days} วัน ${hours % 24} ชม.` : `${days} วัน`;
+  };
 
   /** Cancel a bill nobody has paid for.
    *
@@ -492,7 +504,7 @@
     return `<article class="aui-card aui-order">
       <div class="aui-order-head">${icon('table')}<strong>โต๊ะ ${esc(order.table)}</strong><span class="aui-tag">${esc(order.mode || 'ทานที่ร้าน')}</span>
         ${paid ? '<span class="aui-tag paid">จ่ายแล้ว · รออาหาร</span>' : ''}
-        ${mins === null ? '<span class="aui-time grey">รอส่ง</span>' : `<span class="aui-time ${mins >= 10 ? 'late' : ''}">${icon('clock')}${mins} นาที</span>`}
+        ${mins === null ? '<span class="aui-time grey">รอส่ง</span>' : `<span class="aui-time ${mins >= 10 ? 'late' : ''}">${icon('clock')}${waited(mins)}</span>`}
         <button type="button" class="aui-iconbtn bare" data-act="ordermenu" data-value="${esc(order.orderId)}" aria-label="ตัวเลือกออเดอร์">${icon('dots')}</button></div>
       <ul class="aui-items">${[...lines].map(([key, qty]) => {
         const [name, options] = key.split('\u0000');
@@ -511,7 +523,7 @@
     const next = ONLINE_NEXT[o.status];
     return `<article class="aui-card aui-order">
       <div class="aui-order-head">${icon('bike', 'green')}<strong>${esc(o.channel || 'ออนไลน์')} ${esc(window.shortOrderNo ? window.shortOrderNo(o.order_no) : o.order_no)}</strong><span class="aui-tag green">ออนไลน์</span>
-        ${mins === null ? '' : `<span class="aui-time ${mins >= 15 ? 'late' : ''}">${icon('clock')}${mins} นาที</span>`}</div>
+        ${mins === null ? '' : `<span class="aui-time ${mins >= 15 ? 'late' : ''}">${icon('clock')}${waited(mins)}</span>`}</div>
       <ul class="aui-items">${(o.items || []).map((i) => `<li><span>${esc(i.name)}</span><b>${Number(i.qty)}</b></li>`).join('')}</ul>
       ${steps(stage)}
       ${next ? `<div class="aui-order-foot"><button type="button" class="aui-btn primary grow" data-act="online" data-value="${esc(o.order_no)}" data-next="${next[0]}" ${next[0] === 'handed_off' && o.payment_status !== 'paid' ? 'disabled' : ''}>${next[1]} ${icon('arrow', 'aui-i-xs')}</button></div>` : ''}
