@@ -145,6 +145,7 @@ html.aui-on.aui-sheet-open body { overflow: hidden; }
 .aui-order-head strong { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .aui-tag { font-size: 11px; color: #6e787d; background: #f1f3f5; padding: 2px 8px; border-radius: 7px; white-space: nowrap; }
 .aui-tag.green { color: var(--aui-green); background: #e7f5ed; }
+.aui-tag.paid { color: #7a5b00; background: #fff3cd; }
 .aui-time { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: #6e787d; white-space: nowrap; }
 .aui-time .aui-i { width: 16px; height: 16px; }
 .aui-time.late { color: var(--aui-red); }

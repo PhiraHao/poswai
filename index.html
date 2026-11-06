@@ -3675,7 +3675,11 @@
     }
 
     function getTableOrders(tStr) {
-      return state.orders.filter(o => o.table === String(tStr));
+      /* A bill paid before the food came out stays in state.orders so the
+         kitchen screen keeps it and someone can still mark it done. It has
+         left the table though: counting it here would hold the table busy and
+         ask for the money a second time. */
+      return state.orders.filter(o => o.table === String(tStr) && !o.paid);
     }
 
     function getTableSubtotal(tStr) {
@@ -5180,7 +5184,7 @@
   <script src="/payment-ui.js?v=21"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=80"></script>
+  <script src="/live-data.js?v=81"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=92"></script>

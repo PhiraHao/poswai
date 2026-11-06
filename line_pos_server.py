@@ -2651,15 +2651,29 @@ def create_order(req: OrderCreate, request: Request):
 
 
 @app.get("/api/orders")
-def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
+def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
+                     kitchen_pending: bool = False):
+    """บิลที่ยังเปิดอยู่ และถ้าขอมา บิลที่จ่ายแล้วแต่ครัวยังทำไม่เสร็จด้วย
+
+    บางร้านเก็บเงินก่อนแล้วค่อยเสิร์ฟ ปิดบิลไปแล้วครัวยังต้องทำต่อ ถ้าบิลนั้น
+    หายจากหน้าออเดอร์ทันทีที่จ่ายเงิน จะไม่มีใครกดว่าอาหารเสร็จได้อีกเลย
+    ตั๋วค้างในจอครัวตลอดไป `kitchen_pending` จึงดึงบิลพวกนั้นกลับมาด้วย
+    โดยติดธง `paid` ไว้ ฝั่งหน้าจอจะได้ไม่เอาไปนับรวมในยอดรอเก็บเงินของโต๊ะ
+    """
     if branch_id < 1:
         raise HTTPException(400, "สาขาไม่ถูกต้อง")
     if table_no:
         require_table_or_staff(request, branch_id, table_no)
+        kitchen_pending = False  # ลูกค้าที่โต๊ะเห็นเฉพาะบิลที่ยังไม่จ่าย
     else:
         require_staff(request, roles=("owner", "manager", "cashier", "kitchen", "service"), branch_id=branch_id)
+    where = "status='open'"
+    if kitchen_pending:
+        where = ("(status='open' OR (status='paid' AND EXISTS("
+                 "SELECT 1 FROM kds_station_tickets k WHERE k.order_no=order_events.order_no"
+                 " AND k.status!='ready')))")
     query = ("SELECT order_no,table_no,total_amount,status,created_at,note,queue_no"
-             " FROM order_events WHERE branch_id=? AND status='open'")
+             f" FROM order_events WHERE branch_id=? AND {where}")
     params: list = [branch_id]
     if table_no:
         query += " AND table_no=?"
@@ -2683,7 +2697,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = ""):
                 kitchen = "cooking"
             orders.append({"order_no": row[0], "table_no": row[1], "total_amount": row[2],
                            "status": row[3], "created_at": row[4], "kitchen": kitchen, "note": row[5],
-                           "queue_no": row[6],
+                           "queue_no": row[6], "paid": row[3] == "paid",
                            "items": [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3],
                                       "bom": json.loads(item[4]), "station": item[5],
                                       "courseMode": item[6], "options": item[7]} for item in items]})
@@ -2771,7 +2785,13 @@ def list_kds_tickets(request: Request, branch_id: int = 1):
         rows = conn.execute(
             "SELECT k.order_no,k.station,k.status,k.created_at,k.fired_at,k.ready_at,oe.table_no,oe.note,oe.queue_no "
             "FROM kds_station_tickets k JOIN order_events oe ON oe.order_no=k.order_no "
-            "WHERE oe.branch_id=? AND (k.status!='ready' OR k.created_at>=datetime('now','-1 day')) "
+            # A bill that is still open keeps its tickets however old it is.
+            # Ageing them off after a day left the order screen knowing nothing
+            # about the kitchen, so the bill sat in "cooking" for good and the
+            # button could never move it on. Only a closed bill's finished
+            # tickets drop away, which is what keeps the kitchen screen short.
+            "WHERE oe.branch_id=? AND (oe.status='open' OR k.status!='ready' "
+            "OR k.created_at>=datetime('now','-1 day')) "
             "ORDER BY k.created_at DESC LIMIT 300", (branch_id,),
         ).fetchall()
         tickets = []

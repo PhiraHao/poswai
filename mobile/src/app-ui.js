@@ -214,7 +214,10 @@
   const tablesPane = () => {
     const tables = pos().tablesList || [];
     const owed = (no) => (typeof getTableSubtotal === 'function' ? getTableSubtotal(no) : 0);
-    const bills = (no) => pos().orders.filter((o) => String(o.table) === String(no));
+    /* A bill already paid is not this table's business any more, however long
+       the kitchen still takes: it must not make the table look occupied nor
+       count towards what is waiting to be collected. */
+    const bills = (no) => pos().orders.filter((o) => String(o.table) === String(no) && !o.paid);
     const busy = tables.filter((t) => bills(t.no).length);
     const total = busy.reduce((sum, t) => sum + owed(t.no), 0);
     return `<div class="aui-tablesum"><span><small>โต๊ะที่ทานอยู่</small><strong>${busy.length} <em>/ ${tables.length} โต๊ะ</em></strong></span>
@@ -405,7 +408,11 @@
     }
     return pos().orders.map((order) => {
       const own = byOrder.get(order.orderId) || [];
-      const ready = own.length && own.every((t) => t.status === 'ready');
+      /* No ticket at all means nothing is being cooked — treat it as ready so
+         the card offers the useful button. It used to come out falsy, which
+         read the same as "still cooking" and left a "ทำเสร็จแล้ว" button that
+         had no ticket to act on, so pressing it did nothing, for ever. */
+      const ready = own.length ? own.every((t) => t.status === 'ready') : true;
       const created = own.map((t) => serverDate(t.created_at)).filter(Boolean).sort((a, b) => a - b)[0];
       return {order, tickets: own, ready, created, held: own.some((t) => t.status === 'held')};
     });
@@ -453,12 +460,15 @@
       const key = options ? `${item.name}\u0000${options}` : item.name;
       lines.set(key, (lines.get(key) || 0) + Number(item.qty || item.quantity || 1));
     }
+    // Paid up front and still cooking: the money button would charge twice.
+    const paid = Boolean(order.paid);
     const action = ready
-      ? (can('cashier') ? `<button type="button" class="aui-btn primary grow" data-act="pay" data-value="${esc(order.table)}">รับเงินโต๊ะนี้ ${icon('arrow', 'aui-i-xs')}</button>` : '')
+      ? (!paid && can('cashier') ? `<button type="button" class="aui-btn primary grow" data-act="pay" data-value="${esc(order.table)}">รับเงินโต๊ะนี้ ${icon('arrow', 'aui-i-xs')}</button>` : '')
       : held ? `<button type="button" class="aui-btn grow" data-act="fire" data-value="${esc(order.orderId)}">เริ่มทำคอร์สที่พักไว้</button>`
         : can('kitchen') ? `<button type="button" class="aui-btn primary grow" data-act="ready" data-value="${esc(order.orderId)}">ทำเสร็จแล้ว ${icon('arrow', 'aui-i-xs')}</button>` : '';
     return `<article class="aui-card aui-order">
       <div class="aui-order-head">${icon('table')}<strong>โต๊ะ ${esc(order.table)}</strong><span class="aui-tag">${esc(order.mode || 'ทานที่ร้าน')}</span>
+        ${paid ? '<span class="aui-tag paid">จ่ายแล้ว · รออาหาร</span>' : ''}
         ${mins === null ? '<span class="aui-time grey">รอส่ง</span>' : `<span class="aui-time ${mins >= 10 ? 'late' : ''}">${icon('clock')}${mins} นาที</span>`}
         <button type="button" class="aui-iconbtn bare" data-act="ordermenu" data-value="${esc(order.orderId)}" aria-label="ตัวเลือกออเดอร์">${icon('dots')}</button></div>
       <ul class="aui-items">${[...lines].map(([key, qty]) => {

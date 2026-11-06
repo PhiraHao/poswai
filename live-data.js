@@ -50,7 +50,10 @@
        asks as a guest, and the guest's refusal is no news once it is signed in. */
     const asStaff = Boolean(window.poswaiAuth?.current);
     try {
-      const scope = asStaff ? '' : `&table_no=${encodeURIComponent(table())}`;
+      /* Staff also get the bills already paid whose food the kitchen has not
+         finished — a shop that takes the money first still has to cook, and
+         someone has to be able to mark it done afterwards. */
+      const scope = asStaff ? '&kitchen_pending=true' : `&table_no=${encodeURIComponent(table())}`;
       orders = (await request(`/api/orders?branch_id=${branch()}${scope}`)).orders;
     } catch (error) {
       if (asStaff ? window.poswaiAuth?.current : token()) showToast(`โหลดออเดอร์ไม่สำเร็จ: ${error.message}`);
@@ -81,6 +84,10 @@
       /* The number the guest carries to a seat and the counter presses on the
          pager keypad. A bill made before the server kept one shows nothing. */
       queueNo: Number(order.queue_no) || 0,
+      /* Money already taken, food not out yet. The table screen must leave
+         these out of "waiting to collect"; the order screen still shows them
+         so the kitchen can be marked done. */
+      paid: Boolean(order.paid),
       // A guest cannot read the kitchen screen; the order says what it is doing.
       status: order.kitchen === 'ready' ? 'ready' : ['cooking', 'held'].includes(order.kitchen) ? 'cooking' : 'pending',
       time: new Date(order.created_at + 'Z').toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}),
