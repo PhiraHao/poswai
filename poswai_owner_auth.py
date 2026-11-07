@@ -36,10 +36,13 @@ LINE_EMAIL_PERMISSION = os.getenv("POSWAI_LINE_EMAIL_PERMISSION", "") not in (""
 # JavaScript redirect, which is exactly how the sign-in button navigates here —
 # and tells you to retry with the hand-off switched off:
 #   https://developers.line.biz/en/docs/line-login/how-to-handle-auto-login-failure/
-# So we switch it off from the start. The owner still gets one tap whenever the
-# browser already has a LINE session (SSO "ดำเนินการต่อในชื่อ…"), and an email or
-# QR code login when it does not. Set POSWAI_LINE_AUTO_LOGIN=1 to hand off again.
-LINE_AUTO_LOGIN = os.getenv("POSWAI_LINE_AUTO_LOGIN", "") not in ("", "0", "false")
+# It was switched off from the start for two weeks because of that. What the
+# owner met instead was worse: an iPhone with no LINE session in Safari gets the
+# bare "อีเมล / รหัสผ่าน" form, and most people here have never set a password on
+# their LINE account — the phone app is the only way in they have. Handing off to
+# the app turned out to work on that same phone (7 Nov 2026), so the hand-off is
+# on again and POSWAI_LINE_AUTO_LOGIN=0 switches it back off if it ever breaks.
+LINE_AUTO_LOGIN = os.getenv("POSWAI_LINE_AUTO_LOGIN", "1") not in ("", "0", "false")
 STATE_LIFETIME = 600            # a sign-in that takes longer than ten minutes is stale
 SESSION_LIFETIME = 30 * 24 * 3600   # an owner signs in on their own phone, not a shared till
 LINE_AUTH_URL = "https://access.line.me/oauth2/v2.1/authorize"
