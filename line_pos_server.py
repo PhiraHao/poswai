@@ -2230,6 +2230,21 @@ def _songwai_resolve(token: str, shop: str = "") -> dict:
     if response.status_code == 404:
         raise HTTPException(404, "ไม่พบร้านที่ใช้รหัสนี้ ตรวจรหัสร้านในแอปส่งไวอีกครั้ง")
     if response.status_code == 409:
+        # ส่งไวบอกมาด้วยว่ารหัสนี้ผูกไว้กับชื่อร้านไหน ต้องบอกต่อให้เจ้าของร้านรู้
+        # ไม่บอก เจ้าของร้านจะเดาชื่อไม่ออกและเปิดร้านไม่ได้อีกเลย (เจอจริง 7 พ.ย. 69)
+        linked = ""
+        try:
+            body = response.json()
+            if isinstance(body, dict):
+                linked = str(body.get("poswai_shop") or "").strip().lower()
+        except ValueError:
+            linked = ""
+        if not re.fullmatch(r"[a-z0-9-]{1,40}", linked or ""):
+            linked = ""          # ชื่อที่รูปไม่ถูกต้องไม่เอาขึ้นหน้าจอ
+        if linked and linked != shop:
+            raise HTTPException(409, f"รหัสร้านนี้ผูกกับร้าน \"{linked}\" ใน POS WAI อยู่แล้ว · "
+                                     f"ถ้าเป็นร้านของคุณ ให้ใช้ชื่อ {linked} ในลิงก์ร้าน "
+                                     "หรือถ้าเปิดร้านไว้แล้วให้กดเข้าสู่ระบบด้วยรหัสร้าน")
         raise HTTPException(409, "ร้านนี้เชื่อมกับร้านอื่นใน POS WAI อยู่แล้ว")
     if response.status_code != 200:
         raise HTTPException(502, "ส่งไวไม่ยืนยันรหัสร้านนี้")
@@ -4106,7 +4121,15 @@ def open_shop_from_songwai(req: SongwaiShopSignup, request: Request, response: R
     if not shops.valid_slug(slug):
         raise HTTPException(400, "ชื่อร้านในลิงก์ใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว")
     pin_hash = hash_pin(req.pin)
-    data = _songwai_resolve(token, slug)
+    # ถามเฉย ๆ ก่อน ยังไม่ผูก — ถ้าผูกตั้งแต่ตอนนี้แล้วเปิดร้านล้มกลางทาง (ชื่อร้านซ้ำ
+    # เปิดบ่อยเกินไป เขียนฐานข้อมูลไม่ผ่าน) ส่งไวจะชี้ไปร้านที่ไม่มีอยู่จริง เจ้าของร้าน
+    # จะเปิดร้านใหม่ก็ติด 409 และเข้าสู่ระบบด้วยรหัสร้านก็ติด 404 คือตันทั้งสองทาง
+    # (เจอจริงกับร้านมาม่าคาเฟ่-อรุโณทัย 7 พ.ย. 69)
+    data = _songwai_resolve(token)
+    linked = str(data.get("poswai_shop") or "").strip().lower()
+    if linked and linked != slug and _known_shop(linked):
+        raise HTTPException(409, f"รหัสร้านนี้เปิดร้าน \"{linked}\" ใน POS WAI ไว้แล้ว · "
+                                 "ให้กดเข้าสู่ระบบด้วยรหัสร้าน แทนการเปิดร้านใหม่")
     shop_name = (data.get("name") or "ร้านของฉัน").strip()[:80]
     phone = re.sub(r"[\s-]", "", str(data.get("phone") or ""))
     if not re.fullmatch(r"\+?\d{9,15}", phone):
@@ -4118,6 +4141,14 @@ def open_shop_from_songwai(req: SongwaiShopSignup, request: Request, response: R
                                   phone=phone, client_key=client, max_shops=MAX_SHOPS)
     except ShopError as exc:
         raise HTTPException(exc.status, str(exc)) from exc
+    # ผูกกับส่งไวตอนนี้ หลังจองชื่อร้านสำเร็จแล้ว · ผูกไม่ได้ก็คืนชื่อที่จองไว้
+    # ไม่เอาไปผูกในทรานแซกชันข้างล่าง เพราะเรียกข้ามเครื่องกินเวลาเป็นวินาที
+    # ถือล็อกเขียนไว้ระหว่างนั้นคือทั้งร้านค้าง
+    try:
+        _songwai_resolve(token, slug)
+    except HTTPException:
+        shops.release_shop(DB_PATH, slug)
+        raise
     CURRENT_SHOP.set(slug)
     try:
         with closing(connect_db()) as conn, conn:

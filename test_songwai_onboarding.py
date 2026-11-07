@@ -151,6 +151,47 @@ class SongwaiOnboardingTest(unittest.TestCase):
         self.assertEqual((refused.status_code, blank.status_code), (400, 400))
         post.assert_not_called()   # ไม่ยิงไปถามส่งไวจนกว่าข้อมูลจะครบ
 
+    def test_a_link_left_pointing_at_a_shop_that_was_never_created_is_not_a_dead_end(self):
+        """เปิดร้านล้มกลางทาง แล้วส่งไวยังชี้ชื่อเดิมอยู่ — เปิดด้วยชื่อเดิมต้องผ่าน
+
+        ร้านมาม่าคาเฟ่-อรุโณทัยติดตรงนี้จริง 7 พ.ย. 69: ส่งไวชี้ชื่อ mama-cafe88
+        แต่ร้านนั้นไม่เคยถูกสร้างใน POS WAI จะเปิดร้านใหม่ก็ติด 409 จะเข้าสู่ระบบ
+        ด้วยรหัสร้านก็ติด 404 คือตันทั้งสองทาง
+        """
+        dangling = dict(SHOP, poswai_shop="mama-cafe88")
+        response, _ = self._open(self.client(), shop_state=dangling, slug="mama-cafe88")
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["shop"]["slug"], "mama-cafe88")
+
+    def test_opening_a_second_shop_from_a_code_that_already_has_one_says_which(self):
+        """ร้านเดิมเปิดไว้แล้วจริง: บอกให้เข้าสู่ระบบ ไม่ใช่ปล่อยให้เปิดซ้ำ"""
+        self._open(self.client())
+        again = dict(SHOP, poswai_shop="khotnuea")
+        response, post = self._open(self.client(), shop_state=again, slug="khotnuea-2")
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertIn("khotnuea", response.json()["detail"])
+        # ถามเฉย ๆ เท่านั้น ห้ามเผลอไปผูกชื่อใหม่ที่เปิดไม่สำเร็จ
+        self.assertEqual(post.call_args.kwargs["json"], {"token": TOKEN, "shop": ""})
+        self.assertFalse((server.DB_PATH.parent / "shops" / "khotnuea-2.db").exists())
+
+    def test_a_refusal_from_songwai_names_the_shop_it_is_linked_to(self):
+        """เจ้าของร้านต้องรู้ว่าต้องใช้ชื่อไหน ไม่ใช่ถูกบอกแค่ว่าผูกกับร้านอื่น"""
+        client = self.client()
+        with patch.object(server.httpx, "post",
+                          return_value=_reply(409, {"error": "ผูกแล้ว", "poswai_shop": "mama-cafe88"})):
+            response = client.post("/api/shops/from-songwai", json={
+                "token": TOKEN, "slug": "mama-new", "pin": "secure-owner-pin", "accept_terms": True})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("mama-cafe88", response.json()["detail"])
+        self.assertFalse((server.DB_PATH.parent / "shops" / "mama-new.db").exists())
+
+    def test_a_name_already_taken_here_never_moves_the_link_at_songwai(self):
+        """จองชื่อไม่ได้ = ยังไม่ผูกอะไร ไม่งั้นส่งไวจะชี้ไปร้านที่ไม่มีอยู่"""
+        self._open(self.client())
+        response, post = self._open(self.client(), slug="khotnuea")
+        self.assertEqual(response.status_code, 409, response.text)
+        self.assertEqual(post.call_args.kwargs["json"], {"token": TOKEN, "shop": ""})
+
 
 if __name__ == "__main__":
     unittest.main()
