@@ -1,0 +1,23 @@
+.poswai-billing-notice{position:sticky;top:0;z-index:60;display:flex;gap:.75rem;align-items:center;justify-content:space-between;padding:.6rem .85rem;background:#fdf1dc;border-bottom:1px solid #e8c583;color:#5a3c00;font-size:.9rem;line-height:1.45}
+.poswai-billing-notice.is-late{background:#fdeae7;border-bottom-color:#e8a79e;color:#7d1f14}
+.poswai-billing-notice .pbn-text{margin:0;flex:1 1 auto}
+.poswai-billing-notice .pbn-actions{display:flex;gap:.4rem;flex:0 0 auto}
+.poswai-billing-notice button{border:0;border-radius:9px;padding:.45rem .8rem;font-weight:700;font-size:.85rem;cursor:pointer}
+.poswai-billing-notice .pbn-pay{background:#1f6feb;color:#fff}
+.poswai-billing-notice .pbn-close{background:rgba(0,0,0,.08);color:inherit;padding:.45rem .6rem}
+.poswai-billing-overlay{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(14,22,32,.55);overflow:auto}
+.poswai-billing-overlay .pbo-card{width:min(420px,100%);max-height:92vh;overflow:auto;display:grid;gap:.5rem;padding:1.1rem;background:#fff;border-radius:16px;color:#17222e;text-align:left}
+.poswai-billing-overlay h2{margin:0;font-size:1.15rem}
+.poswai-billing-overlay label{font-weight:700;font-size:.85rem;margin-top:.3rem}
+.poswai-billing-overlay select,.poswai-billing-overlay input[type=file]{width:100%;padding:.55rem .65rem;border:1px solid #dfe5ec;border-radius:10px;font:inherit;font-size:.9rem;background:#fff}
+.poswai-billing-overlay .pbo-state{margin:0;font-size:.9rem;color:#5d6b7a}
+.poswai-billing-overlay .pbo-total{margin:.2rem 0;font-weight:700;font-size:1rem}
+.poswai-billing-overlay .pbo-qr{display:grid;gap:.35rem;justify-items:center;padding:.6rem;background:#f7f9fc;border:1px solid #dfe5ec;border-radius:12px}
+.poswai-billing-overlay .pbo-qr canvas{width:200px;height:200px;image-rendering:pixelated}
+.poswai-billing-overlay .pbo-account,.poswai-billing-overlay .pbo-history{margin:0;font-size:.8rem;color:#5d6b7a;text-align:center}
+.poswai-billing-overlay .pbo-message{margin:.2rem 0;font-size:.85rem;color:#7d1f14;min-height:1.1em}
+.poswai-billing-overlay .pbo-buttons{display:flex;gap:.5rem;margin-top:.3rem}
+.poswai-billing-overlay .pbo-buttons button{flex:1 1 auto;border:0;border-radius:10px;padding:.6rem .8rem;font-weight:700;font-size:.9rem;cursor:pointer}
+.poswai-billing-overlay .pbo-send{background:#128a52;color:#fff}
+.poswai-billing-overlay .pbo-send:disabled{opacity:.55;cursor:not-allowed}
+.poswai-billing-overlay .pbo-cancel{background:#eef2f7;color:#17222e}

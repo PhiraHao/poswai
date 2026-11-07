@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>POS WAI ตัวพิมพ์</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="mark">POS&nbsp;WAI</div>
+    <div class="title">ตัวพิมพ์ใบเสร็จ</div>
+    <div class="lamp" id="lamp" aria-live="polite">พัก</div>
+  </header>
+
+  <main>
+    <section class="card run">
+      <p class="state" id="state">ยังไม่ได้ตั้งค่า</p>
+      <button class="big" id="run" disabled>เริ่มรับงานพิมพ์</button>
+      <p class="hint">เปิดแอปค้างไว้ตอนเปิดร้าน ใบเสร็จที่สั่งจากเครื่องไหนก็ได้จะมาออกที่เครื่องพิมพ์นี้</p>
+    </section>
+
+    <section class="card">
+      <h2>เครื่องพิมพ์</h2>
+      <p class="chosen" id="printer">ยังไม่ได้เลือก</p>
+      <div class="row">
+        <button id="find">ค้นหาเครื่องพิมพ์</button>
+        <button class="ghost" id="testPrint" disabled>พิมพ์ใบทดสอบ</button>
+      </div>
+      <ul class="found" id="found" hidden></ul>
+    </section>
+
+    <section class="card">
+      <h2>ร้านของคุณ</h2>
+      <label for="shop">ชื่อร้านในลิงก์</label>
+      <input id="shop" placeholder="เช่น guohao" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <label for="key">กุญแจเครื่องพิมพ์</label>
+      <input id="key" placeholder="ก๊อปมาจากหน้าแคชเชียร์" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <details>
+        <summary>ที่อยู่เว็บ</summary>
+        <input id="base" value="https://poswai.zzaxstudio.com" autocapitalize="off" spellcheck="false">
+      </details>
+      <button id="save">บันทึก</button>
+      <p class="hint">กุญแจอยู่ที่หน้าแคชเชียร์ของร้าน · กล่อง “เครื่องที่เสียบปริ้นเตอร์ไว้” · ปุ่มเพิ่มเครื่องพิมพ์</p>
+    </section>
+
+    <section class="card">
+      <h2>ล่าสุด</h2>
+      <ul class="log" id="log"><li class="quiet">ยังไม่มีอะไรเกิดขึ้น</li></ul>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
