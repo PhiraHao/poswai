@@ -262,3 +262,14 @@ class AppleSignInPageTest(OwnerAuthCase):
                        'data-staff-link-channel="apple"', 'data-link-channel="apple"',
                        'data-member-channel="apple"'):
             self.assertIn(marker, script)
+
+
+class NoShopOpeningOnIPhoneTest(OwnerAuthCase):
+    """App Review 3.1.1: the Songwai shop code signs in to a shop on the iPhone, never opens one."""
+
+    def test_the_songwai_tab_does_not_open_a_shop_on_the_iphone(self):
+        root = Path(server.__file__).parent
+        script = (root / "auth-ui.js").read_text(encoding="utf-8")
+        self.assertIn("/ยังไม่ได้เปิดใน POS WAI/.test(error.message) && !signupHere()", script)
+        self.assertIn("html.poswai-ios #poswaiSongwaiNew { display: none !important; }",
+                      (root / "auth-ui.css").read_text(encoding="utf-8"))

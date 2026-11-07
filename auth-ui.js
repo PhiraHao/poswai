@@ -638,7 +638,10 @@
       keepSession(result);
       go(`/?shop=${encodeURIComponent(result.shop.slug)}`);
     } catch (error) {
-      if (!songwaiNeedsShop && /ยังไม่ได้เปิดใน POS WAI/.test(error.message)) {
+      if (!songwaiNeedsShop && /ยังไม่ได้เปิดใน POS WAI/.test(error.message) && !signupHere()) {
+        // Apple 3.1.1: no opening a shop inside the iPhone app — only signing in to one.
+        $('#poswaiSongwaiError').textContent = 'ร้านนี้ยังไม่ได้เปิดใน POS WAI จึงยังเข้าด้วยรหัสร้านไม่ได้';
+      } else if (!songwaiNeedsShop && /ยังไม่ได้เปิดใน POS WAI/.test(error.message)) {
         songwaiNeedsShop = true;
         $('#poswaiSongwaiNew').hidden = false;
         $('#poswaiSongwaiError').textContent =

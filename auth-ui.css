@@ -70,6 +70,7 @@
 .poswai-channel.apple .poswai-channel-mark { background: transparent; color: #fff; font-size: 1.15rem; }
 /* App Review 3.1.1: no shop sign-up inside the iPhone app. */
 html.poswai-ios .poswai-signup-row { display: none; }
+html.poswai-ios #poswaiSongwaiNew { display: none !important; }
 .poswai-or { display: flex; align-items: center; gap: 12px; margin: 15px 0 13px; color: #8a94a3; font-size: .82rem; }
 .poswai-or::before, .poswai-or::after { content: ""; flex: 1; height: 1px; background: #e4e9f0; }
 .poswai-device-shop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 13px;

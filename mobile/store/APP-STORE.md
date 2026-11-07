@@ -10,7 +10,7 @@
 |---|---|---|
 | โปรเจกต์ Xcode | `mobile/ios/App/App.xcodeproj` | ✅ |
 | Bundle ID | `com.zzaxstudio.poswai` (ตัวเดียวกับ Android) | ✅ |
-| เวอร์ชัน | 1.0.5 (build 4) | ✅ |
+| เวอร์ชัน | 1.0.5 (build 5) | ✅ |
 | iOS ต่ำสุด | 15.0 | ✅ |
 | ไอคอนแอป | `Assets.xcassets/AppIcon.appiconset` 1024×1024 ไม่มีพื้นโปร่ง | ✅ โลโก้ใหม่ |
 | หน้าเปิดแอป | `Assets.xcassets/Splash.imageset` มาสคอต + โลโก้ | ✅ โลโก้ใหม่ |
