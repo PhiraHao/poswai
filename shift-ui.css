@@ -1,0 +1,130 @@
+/* กะการขายและรายงานช่วงวัน */
+
+.shift-panel .shift-hint,
+.range-panel .shift-hint {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  margin: 0 0 10px;
+}
+
+.shift-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.shift-row label { font-weight: 700; font-size: 0.85rem; }
+.shift-row .input { flex: 1 1 110px; min-width: 0; }
+
+/* The one number a person holds a handful of notes up against. */
+.shift-expected {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  margin-bottom: 10px;
+}
+.shift-expected strong { font-size: 1.5rem; font-weight: 800; color: #047857; }
+
+.shift-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 6px;
+  font-size: 0.82rem;
+  margin-bottom: 10px;
+}
+.shift-figures div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-soft, #f8fafc);
+  border-radius: 8px;
+}
+
+.shift-moves {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 0.82rem;
+}
+.shift-moves li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+.shift-moves em { color: var(--text-muted); font-style: normal; }
+.shift-moves .shift-empty { color: var(--text-muted); border: 0; }
+
+.shift-close { border-top: 1px solid var(--border-color); padding-top: 10px; }
+
+.shift-difference:not(:empty) {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-weight: 700;
+  background: #ecfdf5;
+  color: #047857;
+}
+/* A short drawer is the one thing this screen exists to surface. */
+.shift-difference.bad { background: #fef2f2; color: #b91c1c; }
+
+.shift-status:not(:empty) { font-size: 0.82rem; color: var(--text-muted); margin: 6px 0 0; }
+.shift-status.bad { color: var(--danger, #b91c1c); }
+
+/* ---- รายงานช่วงวัน ---- */
+
+.range-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 10px 0;
+}
+.range-figures div {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--bg-soft, #f8fafc);
+  border: 1px solid var(--border-color);
+}
+.range-figures span { display: block; font-size: 0.74rem; color: var(--text-muted); }
+.range-figures strong { font-size: 1.1rem; font-weight: 800; }
+
+/* Sales whose cost the shop never filled in. Said out loud, because a profit
+   that quietly treats them as free reads as a very profitable shop. */
+.range-incomplete:not(:empty) {
+  margin: 0 0 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  font-size: 0.8rem;
+}
+
+.range-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.range-tables table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.range-tables caption {
+  text-align: left;
+  font-weight: 800;
+  padding-bottom: 4px;
+}
+.range-tables th, .range-tables td {
+  text-align: left;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--border-color);
+}
+.range-tables td:not(:first-child), .range-tables th:not(:first-child) { text-align: right; }
+.range-tables .loss { color: var(--danger, #b91c1c); }

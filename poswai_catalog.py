@@ -456,12 +456,13 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any], *,
             raise CatalogError("Quantity must be a whole number from 1 to 1000")
         qty = int(qty_decimal)
         row = conn.execute("""SELECT name,price_cents,bom_json,station,sold_out,addons_json,active,
-            tax_mode,service_charge,levels_json FROM menu_catalog WHERE branch_id=? AND item_id=?""",
+            tax_mode,service_charge,levels_json,cost_cents
+            FROM menu_catalog WHERE branch_id=? AND item_id=?""",
             (branch_id, item_id)).fetchone()
         if row is None or (not row[6] and not offline):
             raise CatalogError(f"Item {item_id} is unavailable", 409)
         (name, price_cents, bom_json, station, sold_out, addons_json, active,
-         tax_mode, service_charge, levels_json) = row
+         tax_mode, service_charge, levels_json, cost_cents) = row
         if offline and not active:
             waived.append(f"{name} ถูกปิดขายไปแล้ว")
         elif offline and sold_out:
@@ -518,7 +519,9 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any], *,
                       # Carried out so the bill can tax and charge service on
                       # the right lines without reading the menu a second time.
                       "cents": line_cents * qty, "tax_mode": tax_mode,
-                      "service_charge": bool(service_charge)})
+                      "service_charge": bool(service_charge),
+                      # ต้นทุน ณ วันที่ขาย เก็บไว้กับบิล กำไรเดือนก่อนจะได้ไม่เพี้ยน
+                      "cost": cost_cents / 100})
     return {"items": lines, "total_amount": total_cents / 100,
             "total_cents": total_cents, "waived": waived,
             "deductions": {key: float(value) for key, value in sorted(deductions.items())}}

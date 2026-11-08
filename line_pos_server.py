@@ -74,6 +74,8 @@ import poswai_owner_auth as owner_auth
 from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
 import poswai_billing as billing
 import poswai_profile as profile
+import poswai_shifts as shifts
+import poswai_reports as reports
 
 async def _line_outbox_worker():
     while True:
@@ -470,6 +472,11 @@ def init_db() -> None:
     # The level and toppings the guest chose ("เผ็ดน้อย, ไข่ดาว"): the kitchen cooks to them.
     if "options" not in item_columns:
         cur.execute("ALTER TABLE order_items ADD COLUMN options TEXT NOT NULL DEFAULT ''")
+    # ต้นทุนต่อหน่วย ณ วันที่ขาย ไม่ใช่ต้นทุนวันนี้
+    # ร้านขึ้นราคาวัตถุดิบเดือนหน้า กำไรเดือนก่อนจะเพี้ยนทันทีถ้าคิดย้อนหลัง
+    # บิลเก่าก่อนมีคอลัมน์นี้เป็น 0 รายงานจึงบอกด้วยว่ากี่รายการยังไม่รู้ต้นทุน
+    if "unit_cost" not in item_columns:
+        cur.execute("ALTER TABLE order_items ADD COLUMN unit_cost REAL NOT NULL DEFAULT 0")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_events (
         event_id TEXT PRIMARY KEY, order_no TEXT NOT NULL UNIQUE, branch_id INTEGER NOT NULL,
         table_no TEXT NOT NULL, total_amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'open',
@@ -546,6 +553,7 @@ def init_db() -> None:
     init_inventory_movements(conn)
     init_commerce(conn)
     profile.ensure_schema(conn)
+    shifts.init_shifts(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
         staff_id INTEGER PRIMARY KEY, failures INTEGER NOT NULL, first_failed_at INTEGER NOT NULL)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_cancellations (
@@ -1560,6 +1568,110 @@ def menu_item_by_barcode(barcode: str, request: Request, branch_id: int = 1):
     if item["sold_out"]:
         raise HTTPException(409, f"{item['name']} ของหมด")
     return item
+
+
+@app.get("/api/reports/sales")
+def sales_over_a_range(request: Request, branch_id: int = 1,
+                       start: Optional[str] = None, end: Optional[str] = None):
+    """What a date range did: by day, by payment, by person, by item, by category.
+
+    Owners and managers only. A cashier's own screen shows the shift they are
+    standing at; last month's margins are not theirs to read.
+    """
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn:
+            return reports.sales_report(conn, branch_id, start=start, end=end)
+    except reports.ReportError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/reports/sales.csv")
+def sales_over_a_range_csv(request: Request, branch_id: int = 1,
+                           start: Optional[str] = None, end: Optional[str] = None):
+    """The same figures as a file. Sent with a BOM so Excel on a Thai Windows
+    opens it as UTF-8 instead of turning every Thai letter into a question
+    mark, which is what an accountant would actually receive otherwise."""
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn:
+            report = reports.sales_report(conn, branch_id, start=start, end=end)
+    except reports.ReportError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    body = "﻿" + reports.sales_csv(report)
+    name = f"poswai-sales-{report['start']}-{report['end']}.csv"
+    return Response(content=body, media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+class ShiftOpen(BaseModel):
+    branch_id: int = 1
+    opening: float = 0
+    note: str = ""
+
+
+class ShiftClose(BaseModel):
+    branch_id: int = 1
+    counted: float
+    note: str = ""
+
+
+class CashMovement(BaseModel):
+    branch_id: int = 1
+    kind: str
+    amount: float
+    reason: str = ""
+
+
+# Who may touch the drawer. A cashier opens and closes their own shift because
+# they are the one standing at it; the owner and manager can too, since someone
+# has to close a shift the cashier walked away from.
+TILL_ROLES = ("owner", "manager", "cashier")
+
+
+def _shift_call(request: Request, branch_id: int, work):
+    staff = require_staff(request, roles=TILL_ROLES, branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return work(conn, staff)
+    except shifts.ShiftError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/shifts/current")
+def read_current_shift(request: Request, branch_id: int = 1):
+    return _shift_call(request, branch_id, lambda conn, staff: {
+        "branch_id": branch_id, "shift": shifts.current_shift(conn, branch_id)})
+
+
+@app.get("/api/shifts")
+def read_shift_history(request: Request, branch_id: int = 1, limit: int = 30):
+    """Past shifts, newest first — where a short drawer is looked up later."""
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        return {"branch_id": branch_id, "shifts": shifts.list_shifts(conn, branch_id, limit)}
+
+
+@app.post("/api/shifts/open")
+def open_cash_shift(req: ShiftOpen, request: Request):
+    require_paid_subscription()
+    return _shift_call(request, req.branch_id, lambda conn, staff: {
+        "shift": shifts.open_shift(conn, req.branch_id, staff["id"], req.opening, req.note)})
+
+
+@app.post("/api/shifts/cash")
+def record_cash_movement(req: CashMovement, request: Request):
+    require_paid_subscription()
+    return _shift_call(request, req.branch_id, lambda conn, staff: {
+        "shift": shifts.add_movement(conn, req.branch_id, staff["id"], req.kind,
+                                     req.amount, req.reason)})
+
+
+@app.post("/api/shifts/close")
+def close_cash_shift(req: ShiftClose, request: Request):
+    require_paid_subscription()
+    return _shift_call(request, req.branch_id, lambda conn, staff: {
+        "shift": shifts.close_shift(conn, req.branch_id, staff["id"], req.counted, req.note)})
 
 
 class InventorySet(BaseModel):
@@ -2712,9 +2824,11 @@ def create_order(req: OrderCreate, request: Request):
                      charge["discount_cents"], charge["service_charge_cents"], charge["vat_cents"]))
         for item in quote["items"]:
             options = ", ".join(part for part in [item.get("level", ""), *item.get("addons", [])] if part)
-            cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options) VALUES (?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options,unit_cost)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
                         (req.order_no, item["id"], item["name"], item["qty"], item["price"],
-                         json.dumps(item["bom"]), item["station"], item["course_mode"], options))
+                         json.dumps(item["bom"]), item["station"], item["course_mode"], options,
+                         item.get("cost", 0)))
         for station in {item["station"] for item in quote["items"]}:
             status = "held" if any(item["station"] == station and item["course_mode"] == "HOLD" for item in quote["items"]) else "queued"
             cur.execute("INSERT INTO kds_station_tickets (order_no,station,status) VALUES (?,?,?)",
@@ -3037,7 +3151,11 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
             conn.execute("UPDATE order_events SET status='paid' WHERE order_no=?", (order_no,))
             # No staff id when the guest paid: nobody rang this one up, and the
             # commission rules read that column to decide who earned it.
-            cursor = conn.execute("INSERT INTO pos_orders(branch_id,order_no,closed_by_staff_id,total_amount,net_amount,payment_method) VALUES (?,?,?,?,?,?)",
+            # closed_at to the millisecond: a shift is opened and closed to
+            # the millisecond too, and a bill that lands in the same second as
+            # a shift change would otherwise fall inside both drawers.
+            cursor = conn.execute("INSERT INTO pos_orders(branch_id,order_no,closed_by_staff_id,total_amount,net_amount,payment_method,closed_at)"
+                                  " VALUES (?,?,?,?,?,?,strftime('%Y-%m-%d %H:%M:%f','now'))",
                                   (req.branch_id, order_no, cashier["id"] if cashier else None,
                                    amount, amount, "QR PromptPay"))
             allocate_commissions(conn, cursor.lastrowid)
@@ -3088,7 +3206,8 @@ def close_payment(req: PaymentCreate, request: Request):
         cur.execute("INSERT INTO payment_events (event_id, order_no, amount, method, slip_reference) VALUES (?,?,?,?,?)",
                     (req.event_id, req.order_no, req.amount, req.method, req.slip_reference))
         cur.execute("UPDATE order_events SET status='paid' WHERE order_no=?", (req.order_no,))
-        cur.execute("INSERT INTO pos_orders (branch_id, order_no, closed_by_staff_id, total_amount, net_amount, payment_method) VALUES (?,?,?,?,?,?)",
+        cur.execute("INSERT INTO pos_orders (branch_id, order_no, closed_by_staff_id, total_amount, net_amount, payment_method, closed_at)"
+                    " VALUES (?,?,?,?,?,?,strftime('%Y-%m-%d %H:%M:%f','now'))",
                     (order[0], req.order_no, closed_by, req.amount, req.amount, req.method))
         commission = allocate_commissions(conn, cur.lastrowid)
         if offline_at:
@@ -4010,14 +4129,14 @@ def print_app_asset(asset_name: str):
 
 @app.get("/{asset_name}.css")
 def serve_workspace_css(asset_name: str):
-    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "legal", "guest-ui"}:
+    if asset_name not in {"ui", "workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "legal", "guest-ui", "shift-ui"}:
         raise HTTPException(404, "Stylesheet not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.css", media_type="text/css")
 
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
