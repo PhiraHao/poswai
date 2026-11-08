@@ -7,7 +7,7 @@
     const disable = (selector, reason) => document.querySelectorAll(selector).forEach(element => {
       element.disabled = true; element.title = reason;
     });
-    disable('button[onclick*="toggleReserveTable"],button[onclick*="addNewTableDynamic"],button[onclick*="removeLastTableDynamic"],button[onclick*="scanBarcodeItem"],button[onclick*="cashierAddQuickItem"]', 'ยังไม่บันทึกบนเซิร์ฟเวอร์');
+    disable('button[onclick*="toggleReserveTable"],button[onclick*="addNewTableDynamic"],button[onclick*="removeLastTableDynamic"],button[onclick*="cashierAddQuickItem"]', 'ยังไม่บันทึกบนเซิร์ฟเวอร์');
     // VAT and service charge now come from the shop's own settings and are
     // worked out on the server, so only splitting a bill is still a display.
     disable('#splitBillCount', 'แยกบิลยังเป็นตัวเลขบนใบเสร็จ ยังไม่แยกการชำระเงินจริง');

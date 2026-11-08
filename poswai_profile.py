@@ -31,6 +31,40 @@ MAX_RATE_BP = 10000
 
 TAX_EXEMPT = "none"  # a menu item's own tax_mode, meaning VAT never applies to it
 
+# What the shop actually sells. It decides the words on the screens and which
+# of them a shop ever opens — a clothes shop has no kitchen to watch and no
+# tables to seat anyone at, and being shown both is how an owner concludes the
+# software was not meant for them.
+#
+# It changes wording and visibility only. Nothing is deleted when a shop
+# switches, because a shop that tries "ค้าปลีก" for an afternoon and goes back
+# must find its tables and its recipes still there.
+BUSINESS_TYPES = {
+    "restaurant": {
+        "label": "ร้านอาหาร / คาเฟ่",
+        "tabs_hidden": [],
+        "words": {"sell": "สั่งอาหาร", "sell_hint": "เมนูและตะกร้า", "item": "เมนู",
+                  "items": "เมนูอาหาร", "seat": "โต๊ะ", "stock": "วัตถุดิบและสูตร",
+                  "workspace": "ร้านอาหาร"},
+    },
+    "retail": {
+        "label": "ร้านค้า / ขายสินค้า",
+        # No kitchen to watch: the thing is on the shelf, it is handed over.
+        "tabs_hidden": ["kitchen"],
+        "words": {"sell": "ขายสินค้า", "sell_hint": "สินค้าและตะกร้า", "item": "สินค้า",
+                  "items": "รายการสินค้า", "seat": "ช่องขาย", "stock": "สต็อกสินค้า",
+                  "workspace": "ร้านค้า"},
+    },
+    "service": {
+        "label": "ร้านบริการ / รับงาน",
+        "tabs_hidden": ["kitchen"],
+        "words": {"sell": "เปิดบิล", "sell_hint": "บริการและตะกร้า", "item": "บริการ",
+                  "items": "รายการบริการ", "seat": "คิว", "stock": "ของใช้ในร้าน",
+                  "workspace": "ร้านบริการ"},
+    },
+}
+DEFAULT_BUSINESS_TYPE = "restaurant"
+
 
 class ProfileError(Exception):
     def __init__(self, message: str, status_code: int = 400):
@@ -41,6 +75,7 @@ class ProfileError(Exception):
 # name -> (SQL type and default, python caster). Adding a setting here is the
 # whole job: the table widens itself on open and the API passes it through.
 FIELDS: dict[str, tuple[str, str]] = {
+    "business_type": (f"TEXT NOT NULL DEFAULT '{DEFAULT_BUSINESS_TYPE}'", "business_type"),
     "legal_name": ("TEXT NOT NULL DEFAULT ''", "text"),
     "address": ("TEXT NOT NULL DEFAULT ''", "text"),
     "phone": ("TEXT NOT NULL DEFAULT ''", "text"),
@@ -75,6 +110,11 @@ def read(conn: sqlite3.Connection) -> dict[str, Any]:
     row = conn.execute(f"SELECT {columns} FROM shop_profile WHERE id=1").fetchone()
     profile = dict(zip(FIELDS, row))
     profile["vat_inclusive"] = bool(profile["vat_inclusive"])
+    # A database edited by hand, or written by a build that knew another type,
+    # must not leave the screens with no words at all.
+    if profile["business_type"] not in BUSINESS_TYPES:
+        profile["business_type"] = DEFAULT_BUSINESS_TYPE
+    profile["business"] = BUSINESS_TYPES[profile["business_type"]]
     return profile
 
 
@@ -96,6 +136,10 @@ def save(conn: sqlite3.Connection, changes: dict[str, Any]) -> dict[str, Any]:
 
 def _cast(name: str, value: Any) -> Any:
     kind = FIELDS[name][1]
+    if kind == "business_type":
+        if value not in BUSINESS_TYPES:
+            raise ProfileError("ประเภทธุรกิจไม่ถูกต้อง")
+        return value
     if kind == "text":
         text = str(value).strip() if name in MULTILINE else " ".join(str(value).split())
         limit = TEXT_LIMITS[name]

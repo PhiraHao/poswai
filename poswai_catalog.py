@@ -8,6 +8,7 @@ No example products are seeded into a live branch automatically.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections import defaultdict
 from decimal import Decimal, InvalidOperation
@@ -20,7 +21,20 @@ class CatalogError(ValueError):
         self.status_code = status_code
 
 
-STATIONS = ("ครัวร้อน", "ครัวเย็น/ยำ", "บาร์น้ำ")
+# Where an order line is made up. A kitchen splits the ticket between its
+# stations; a shop that sells things off a shelf has one counter and no split.
+#
+# Every name any business type uses is accepted by the validator, not just the
+# ones the shop's current type offers, so a shop that switches type keeps all
+# its items. The type only decides which names it is offered when adding one.
+STATIONS_BY_BUSINESS = {
+    "restaurant": ("ครัวร้อน", "ครัวเย็น/ยำ", "บาร์น้ำ"),
+    "retail": ("หน้าร้าน",),
+    "service": ("หน้าร้าน",),
+}
+STATIONS = STATIONS_BY_BUSINESS["restaurant"]
+ALL_STATIONS = tuple(dict.fromkeys(
+    station for group in STATIONS_BY_BUSINESS.values() for station in group))
 # How the shop's printed price relates to tax, so the bill can be explained.
 TAX_MODES = ("included", "excluded", "none")
 # Columns added after the first release. Each is widened in place on open so an
@@ -37,10 +51,14 @@ ADDED_COLUMNS = (
     ("option_title", "TEXT NOT NULL DEFAULT ''"),
     ("levels_json", "TEXT NOT NULL DEFAULT '[]'"),
     ("addons_json", "TEXT NOT NULL DEFAULT '[]'"),
+    # The number printed on the packet. A shop that sells things off a shelf
+    # finds an item by scanning it, not by reading a grid of photos, and the
+    # scanner is a keyboard: it types the digits and presses Enter.
+    ("barcode", "TEXT NOT NULL DEFAULT ''"),
 )
 MENU_COLUMNS = ("item_id,name,price_cents,bom_json,active,station,category,description,"
                 "cost_cents,photo,tax_mode,service_charge,sold_out,option_title,"
-                "levels_json,addons_json")
+                "levels_json,addons_json,barcode")
 
 
 def _positive_decimal(value: Any, field: str, *, allow_zero: bool = False) -> Decimal:
@@ -132,19 +150,90 @@ def _signed_cents(value: Any, field: str) -> int:
     return int(cents)
 
 
-def _validated_levels(levels: Any) -> list[str]:
-    """Sweetness or spice choices. They never change the price."""
+def _validated_levels(levels: Any) -> list[dict]:
+    """The one choice a customer must make about this item before buying it.
+
+    It began as sweetness and spice, which never change the price, and is
+    stored as a bare list of names. A shop selling shirts needs the same
+    control to carry money: size M and size XL are the same product at two
+    prices, and they are not two separate products on the shelf.
+
+    So a level is now a name and a price difference. A plain string still
+    reads as that name with no difference, which is every row written before
+    this and every drink whose sweetness is free.
+    """
     if not isinstance(levels, list) or len(levels) > 12:
         raise CatalogError("Invalid option list")
-    result = []
+    result, seen = [], set()
     for level in levels:
-        name = _text(level, "option", 80)
+        if isinstance(level, dict):
+            name = _text(level.get("name"), "option", 80)
+            # A stored row already holds exact cents; a submitted form holds
+            # baht. Reading the wrong one turns 10 baht into 10 satang.
+            raw = level.get("price_cents")
+            extra = int(raw) if raw is not None else _money_cents(level.get("price", 0))
+        else:
+            name, extra = _text(level, "option", 80), 0
         if not name:
             raise CatalogError("An option cannot be blank")
-        if name in result:
+        if name in seen:
             raise CatalogError(f"Option {name} is listed twice")
-        result.append(name)
+        if abs(extra) > 1_000_000:
+            raise CatalogError("Invalid option price")
+        seen.add(name)
+        result.append({"name": name, "price_cents": extra})
     return result
+
+
+def _levels_out(levels: list[dict]) -> dict:
+    """Both shapes of the size list, because one of them is already shipped.
+
+    The Android app on a shop's phone carries its own copy of the pages and
+    reads ``levels`` as plain names. Changing that field's shape would break
+    every till that has not updated yet, and a shop cannot sell while it waits
+    for Google to push a new build. So the names stay exactly where they were
+    and the prices arrive beside them, in a field an older app ignores.
+    """
+    return {"levels": [level["name"] for level in levels],
+            "level_prices": [{"name": level["name"], "price": level["price_cents"] / 100}
+                             for level in levels]}
+
+
+def _validated_barcode(conn: sqlite3.Connection, branch_id: int, item_id: str, barcode: Any) -> str:
+    """The printed number, and nobody else's.
+
+    Two products sharing a barcode means every scan of it rings up whichever
+    one the query happened to return first, and the shop finds out from its
+    stock count weeks later. Blank is fine and common: most of a kitchen's
+    menu has no barcode at all.
+    """
+    code = re.sub(r"[\s-]", "", str(barcode or ""))
+    if not code:
+        return ""
+    if not re.fullmatch(r"[0-9A-Za-z]{4,32}", code):
+        raise CatalogError("บาร์โค้ดต้องเป็นตัวเลขหรือตัวอักษร 4 ถึง 32 ตัว")
+    clash = conn.execute("SELECT item_id FROM menu_catalog WHERE branch_id=? AND barcode=? AND item_id<>?",
+                         (branch_id, code, item_id)).fetchone()
+    if clash:
+        raise CatalogError(f"บาร์โค้ดนี้ใช้กับสินค้า {clash[0]} อยู่แล้ว", 409)
+    return code
+
+
+def find_by_barcode(conn: sqlite3.Connection, branch_id: int, barcode: Any) -> dict | None:
+    """The one item that carries this number, or nothing."""
+    code = re.sub(r"[\s-]", "", str(barcode or ""))
+    if not code:
+        return None
+    row = conn.execute(f"SELECT {MENU_COLUMNS} FROM menu_catalog WHERE branch_id=? AND barcode=?",
+                       (_branch(branch_id), code)).fetchone()
+    if row is None:
+        return None
+    return {"id": row[0], "name": row[1], "price": row[2] / 100, "active": bool(row[4]),
+            "category": row[6], "photo": row[9], "sold_out": bool(row[12]),
+            "option_title": row[13],
+            **_levels_out(_validated_levels(json.loads(row[14]))),
+            "addons": [_addon_out(addon) for addon in json.loads(row[15])],
+            "barcode": row[16]}
 
 
 def _validated_addons(addons: Any) -> list[dict]:
@@ -214,14 +303,14 @@ def upsert_menu_item(
     name: str, price: Any, bom: list[dict], active: bool = True, station: str = "ครัวร้อน",
     *, category: Any = "", description: Any = "", cost: Any = 0, photo: Any = None,
     tax_mode: str = "included", service_charge: bool = False, sold_out: bool = False,
-    option_title: Any = "", levels: Any = None, addons: Any = None,
+    option_title: Any = "", levels: Any = None, addons: Any = None, barcode: Any = "",
 ) -> dict:
     """Write one menu item. ``photo`` of None keeps whatever photo is on file,
     because the picture is uploaded by its own endpoint, not by this form."""
     branch_id, item_id = _branch(branch_id), _item_id(item_id)
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 200:
         raise CatalogError("Invalid item name")
-    if station not in STATIONS:
+    if station not in ALL_STATIONS:
         raise CatalogError("Invalid kitchen station")
     if tax_mode not in TAX_MODES:
         raise CatalogError("Invalid tax mode")
@@ -233,31 +322,36 @@ def upsert_menu_item(
     option_title = _text(option_title, "option title", 120)
     canonical_levels = _validated_levels([] if levels is None else levels)
     canonical_addons = _validated_addons([] if addons is None else addons)
+    barcode = _validated_barcode(conn, branch_id, item_id, barcode)
     kept_photo = conn.execute(
         "SELECT photo FROM menu_catalog WHERE branch_id=? AND item_id=?",
         (branch_id, item_id)).fetchone()
     photo = (kept_photo[0] if kept_photo else "") if photo is None else _text(photo, "photo", 300)
     conn.execute("""INSERT INTO menu_catalog
         (branch_id,item_id,name,price_cents,bom_json,active,station,category,description,
-         cost_cents,photo,tax_mode,service_charge,sold_out,option_title,levels_json,addons_json)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+         cost_cents,photo,tax_mode,service_charge,sold_out,option_title,levels_json,addons_json,
+         barcode)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         ON CONFLICT(branch_id,item_id) DO UPDATE SET
         name=excluded.name,price_cents=excluded.price_cents,bom_json=excluded.bom_json,
         active=excluded.active,station=excluded.station,category=excluded.category,
         description=excluded.description,cost_cents=excluded.cost_cents,photo=excluded.photo,
         tax_mode=excluded.tax_mode,service_charge=excluded.service_charge,sold_out=excluded.sold_out,
         option_title=excluded.option_title,levels_json=excluded.levels_json,
-        addons_json=excluded.addons_json,updated_at=CURRENT_TIMESTAMP""",
+        addons_json=excluded.addons_json,barcode=excluded.barcode,
+        updated_at=CURRENT_TIMESTAMP""",
         (branch_id, item_id, name.strip(), cents, json.dumps(canonical_bom), int(active), station,
          category, description, cost_cents, photo, tax_mode, int(service_charge), int(sold_out),
          option_title, json.dumps(canonical_levels, ensure_ascii=False),
-         json.dumps(canonical_addons, ensure_ascii=False)))
+         json.dumps(canonical_addons, ensure_ascii=False), barcode))
     return {"branch_id": branch_id, "id": item_id, "name": name.strip(),
             "price": cents / 100, "bom": canonical_bom, "active": active, "station": station,
             "category": category, "description": description, "cost": cost_cents / 100,
             "photo": photo, "tax_mode": tax_mode, "service_charge": service_charge,
-            "sold_out": sold_out, "option_title": option_title, "levels": canonical_levels,
-            "addons": [_addon_out(addon) for addon in canonical_addons]}
+            "sold_out": sold_out, "option_title": option_title,
+            **_levels_out(canonical_levels),
+            "addons": [_addon_out(addon) for addon in canonical_addons],
+            "barcode": barcode}
 
 
 def set_menu_status(conn: sqlite3.Connection, branch_id: int, item_id: str,
@@ -320,8 +414,9 @@ def list_menu_items(conn: sqlite3.Connection, branch_id: int, *, active_only: bo
              "category": row[6], "description": row[7], "cost": row[8] / 100,
              "photo": row[9], "tax_mode": row[10], "service_charge": bool(row[11]),
              "sold_out": bool(row[12]), "option_title": row[13],
-             "levels": json.loads(row[14]),
-             "addons": [_addon_out(addon) for addon in json.loads(row[15])]}
+             **_levels_out(_validated_levels(json.loads(row[14]))),
+             "addons": [_addon_out(addon) for addon in json.loads(row[15])],
+             "barcode": row[16]}
             for row in conn.execute(sql, (branch_id,))]
 
 
@@ -361,11 +456,12 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any], *,
             raise CatalogError("Quantity must be a whole number from 1 to 1000")
         qty = int(qty_decimal)
         row = conn.execute("""SELECT name,price_cents,bom_json,station,sold_out,addons_json,active,
-            tax_mode,service_charge FROM menu_catalog WHERE branch_id=? AND item_id=?""",
+            tax_mode,service_charge,levels_json FROM menu_catalog WHERE branch_id=? AND item_id=?""",
             (branch_id, item_id)).fetchone()
         if row is None or (not row[6] and not offline):
             raise CatalogError(f"Item {item_id} is unavailable", 409)
-        name, price_cents, bom_json, station, sold_out, addons_json, active, tax_mode, service_charge = row
+        (name, price_cents, bom_json, station, sold_out, addons_json, active,
+         tax_mode, service_charge, levels_json) = row
         if offline and not active:
             waived.append(f"{name} ถูกปิดขายไปแล้ว")
         elif offline and sold_out:
@@ -395,7 +491,21 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any], *,
         if line_cents < 0:
             raise CatalogError(f"{name} ลดราคาจนติดลบไม่ได้")
         bom = _validated_bom(bom)
+        # The chosen size, priced from the shop's own list like a topping is.
+        # A blank choice is allowed: most items offer no choice at all, and a
+        # shop that lists sizes free of charge still prices them at zero.
         level = _text(getter("level", ""), "option", 80)
+        if level:
+            sizes = {size["name"]: size for size in _validated_levels(json.loads(levels_json))}
+            if level in sizes:
+                line_cents += sizes[level]["price_cents"]
+                if line_cents < 0:
+                    raise CatalogError(f"{name} ลดราคาจนติดลบไม่ได้")
+            elif offline:
+                # The sale already happened at a till that had the old menu.
+                waived.append(f"{name} ขายเป็นแบบ {level} ซึ่งไม่มีในเมนูแล้ว")
+            else:
+                raise CatalogError(f"{name} ไม่มีตัวเลือก {level}", 409)
         total_cents += line_cents * qty
         if total_cents > 100_000_000:
             raise CatalogError("Order total exceeds limit")

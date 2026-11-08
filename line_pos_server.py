@@ -33,7 +33,7 @@ import threading
 import httpx
 from contextlib import closing
 from contextvars import ContextVar
-from typing import List, Optional
+from typing import List, Optional, Union
 from pathlib import Path
 from urllib.parse import urlencode
 from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
@@ -48,10 +48,11 @@ from poswai_commissions import allocate_commissions
 from poswai_inventory import (InventoryError, apply_inventory_movement,
                               init_inventory_movements, list_inventory_movements)
 from easyslip import SlipVerificationError, verify_bank_slip
-from poswai_catalog import (CatalogError, deduct_inventory, delete_menu_item, init_catalog,
+from poswai_catalog import (CatalogError, deduct_inventory, delete_menu_item,
+                            find_by_barcode, init_catalog,
                             list_menu_categories, list_menu_items, quote_order,
                             set_menu_photo, set_menu_status, upsert_menu_item,
-                            STATIONS, TAX_MODES)
+                            STATIONS, STATIONS_BY_BUSINESS, TAX_MODES)
 from poswai_printing import (PrintError, agent_for_key, delete_agent, finish_job, init_printing,
                             issue_agent, list_agents, queue_job, take_job, waiting_count)
 from poswai_tables import (TableError, add_table, delete_table, init_tables, list_tables,
@@ -1449,8 +1450,11 @@ class MenuUpsert(BaseModel):
     service_charge: bool = False
     sold_out: bool = False
     option_title: str = ""
-    levels: list[str] = []
+    # A size, a flavour or a colour. Plain names when every choice costs the
+    # same, or {"name", "price"} when size XL is dearer than size M.
+    levels: list[Union[str, dict]] = []
     addons: list[dict] = []
+    barcode: str = ""
 
 
 @app.get("/api/menu")
@@ -1481,7 +1485,8 @@ def put_menu_item(item_id: str, item: MenuUpsert, request: Request):
                 item.active, item.station, category=item.category,
                 description=item.description, cost=item.cost, tax_mode=item.tax_mode,
                 service_charge=item.service_charge, sold_out=item.sold_out,
-                option_title=item.option_title, levels=item.levels, addons=item.addons)
+                option_title=item.option_title, levels=item.levels, addons=item.addons,
+                barcode=item.barcode)
     except CatalogError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
@@ -1522,13 +1527,39 @@ def delete_menu(item_id: str, request: Request, branch_id: int = 1):
 @app.get("/api/menu/categories")
 def get_menu_categories(request: Request, branch_id: int = 1):
     require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        kind = profile.read(conn)["business_type"]
+    # Only the names this kind of shop uses are offered, but anything already
+    # saved under another kind still validates, so switching loses nothing.
     return {"branch_id": branch_id, "categories": list_menu_categories_for(branch_id),
-            "stations": list(STATIONS), "tax_modes": list(TAX_MODES)}
+            "stations": list(STATIONS_BY_BUSINESS.get(kind, STATIONS)),
+            "business_type": kind, "tax_modes": list(TAX_MODES)}
 
 
 def list_menu_categories_for(branch_id: int) -> list[str]:
     with closing(connect_db()) as conn:
         return list_menu_categories(conn, branch_id)
+
+
+@app.get("/api/menu/barcode/{barcode}")
+def menu_item_by_barcode(barcode: str, request: Request, branch_id: int = 1):
+    """The item behind a scanned number, for the person at the till.
+
+    A scanner is a keyboard: it types the digits and presses Enter, so the till
+    asks here and drops what comes back into the basket. A guest holding a
+    table QR is not given this — they choose from the pictures, and a lookup by
+    number would let them walk the whole catalogue one code at a time.
+    """
+    require_staff(request, roles=("owner", "manager", "cashier"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        item = find_by_barcode(conn, branch_id, barcode)
+    if not item:
+        raise HTTPException(404, "ไม่พบสินค้าที่ใช้บาร์โค้ดนี้")
+    if not item["active"]:
+        raise HTTPException(409, f"{item['name']} ถูกปิดขายอยู่")
+    if item["sold_out"]:
+        raise HTTPException(409, f"{item['name']} ของหมด")
+    return item
 
 
 class InventorySet(BaseModel):
@@ -3986,7 +4017,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
@@ -4105,6 +4136,10 @@ def public_config():
             # Everything here is printed on the customer's own receipt, so the
             # till needs it before anyone signs in and none of it is private.
             "receipt": _shop_profile(),
+            # What this shop sells, so the screens use its words and hide the
+            # ones it has no use for. Needed before anyone signs in, because
+            # the first screen a customer sees is already named by it.
+            "business": _business_profile(),
             "point_baht": POINT_BAHT}
 
 
@@ -4305,6 +4340,7 @@ class ShopSettings(BaseModel):
     """The shop's name and PromptPay live in the registry, the rest with the shop."""
     name: Optional[str] = None
     promptpay_id: Optional[str] = None
+    business_type: Optional[str] = None
     legal_name: Optional[str] = None
     address: Optional[str] = None
     phone: Optional[str] = None
@@ -4319,6 +4355,15 @@ class ShopSettings(BaseModel):
 def _shop_profile() -> dict:
     with closing(connect_db()) as conn:
         return profile.read(conn)
+
+
+def _business_profile() -> dict:
+    kind = _shop_profile()["business_type"]
+    shape = profile.BUSINESS_TYPES[kind]
+    return {"type": kind, "label": shape["label"], "words": shape["words"],
+            "tabs_hidden": shape["tabs_hidden"],
+            "choices": [{"value": value, "label": shape["label"]}
+                        for value, shape in profile.BUSINESS_TYPES.items()]}
 
 
 @app.get("/api/shop/settings")

@@ -39,6 +39,10 @@
          from the dish's name. No options means straight into the cart. */
       optionGroupTitle: item.option_title || 'เลือกตัวเลือกเพิ่ม',
       levelOptions: item.levels || [],
+      // What each choice adds to the price, beside the names the cart screen
+      // has always read. Sizes that cost the same are all zero.
+      levelPrices: item.level_prices || (item.levels || []).map(name => ({name, price: 0})),
+      barcode: item.barcode || '',
       customAddons: (item.addons || []).map(addon => ({
         name: addon.name, price: addon.price, ingId: addon.ingId, qty: addon.qty,
       })),
@@ -166,6 +170,9 @@
               <datalist id="liveCategoryList"></datalist>
             </label>
             <label>สเตชันครัว/บาร์ <select name="station"><option>ครัวร้อน</option><option>ครัวเย็น/ยำ</option><option>บาร์น้ำ</option></select></label>
+            <label>บาร์โค้ด
+              <input name="barcode" maxlength="32" inputmode="numeric" placeholder="สแกนหรือพิมพ์เลขบนซอง · เว้นว่างได้">
+            </label>
           </div>
           <div class="row" style="margin-top:12px">
             <label style="grid-column:1/-1">คำอธิบายเมนู <textarea name="description" maxlength="500" placeholder="บอกสั้น ๆ ว่าจานนี้เป็นยังไง ลูกค้าจะเห็นใต้ชื่อเมนู"></textarea></label>
@@ -447,24 +454,34 @@
     message.textContent = 'ไม่ใส่ก็ได้ · ใส่แล้วลูกค้าจะต้องเลือกหนึ่งระดับก่อนสั่ง';
     rows.replaceChildren(message);
   };
-  const addLevelRow = (value = '') => {
+  /* A choice and what it costs. Sweetness is free, so the price stays 0 and
+     the shop never looks at it; size XL on a shirt is not, and before this
+     the only way to charge for it was to list it as a separate product. */
+  const addLevelRow = (value = '', extra = 0) => {
     levelRows().querySelector('.live-bom-empty')?.remove();
     const row = document.createElement('div');
     row.className = 'live-bom-row';
-    row.style.gridTemplateColumns = 'minmax(0,1fr) auto';
+    row.style.gridTemplateColumns = 'minmax(0,1fr) 110px auto';
     const input = document.createElement('input');
     input.maxLength = 80; input.value = value;
-    input.placeholder = 'เช่น เผ็ดน้อย, หวาน 50%';
-    input.setAttribute('aria-label', 'ชื่อระดับ');
+    input.placeholder = 'เช่น เผ็ดน้อย, ไซซ์ XL';
+    input.setAttribute('aria-label', 'ชื่อตัวเลือก');
+    const price = document.createElement('input');
+    price.type = 'number'; price.step = '1'; price.value = extra || 0;
+    price.className = 'live-level-price';
+    price.placeholder = 'บวกกี่บาท';
+    price.setAttribute('aria-label', 'ราคาที่บวกเพิ่ม');
     const remove = document.createElement('button');
     remove.type = 'button'; remove.textContent = 'ลบ';
     remove.addEventListener('click', () => { row.remove(); renderLevelEmpty(); });
-    row.append(input, remove);
+    row.append(input, price, remove);
     levelRows().append(row);
     return row;
   };
-  const readLevels = () => [...levelRows().querySelectorAll('.live-bom-row input')]
-    .map(input => input.value.trim()).filter(Boolean);
+  const readLevels = () => [...levelRows().querySelectorAll('.live-bom-row')]
+    .map(row => ({name: row.querySelector('input').value.trim(),
+                  price: Number(row.querySelector('.live-level-price')?.value) || 0}))
+    .filter(level => level.name);
   panel.querySelector('#liveLevelAdd').addEventListener('click', () => addLevelRow().querySelector('input').focus());
 
   /* ---- toppings -------------------------------------------------------- */
@@ -544,8 +561,14 @@
     field('tax_mode').value = item.tax_mode || 'included';
     field('service_charge').checked = !!item.service_charge;
     field('option_title').value = item.option_title || '';
+    /* A copy must not carry the original's barcode: one number belongs to one
+       product, and the server refuses the save anyway. */
+    field('barcode').value = asCopy ? '' : (item.barcode || '');
     (item.bom || []).forEach(part => addBomRow(part.ingId, part.qty));
-    (item.levels || []).forEach(level => addLevelRow(level));
+    // level_prices carries the price; levels is the names-only field that an
+    // app which has not updated yet still reads.
+    (item.level_prices || (item.levels || []).map(name => ({name, price: 0})))
+      .forEach(level => addLevelRow(level.name, level.price));
     (item.addons || []).forEach(addon => addAddonRow(addon));
     renderBomEmpty(); renderLevelEmpty(); renderAddonEmpty();
     /* A copy starts with no picture of its own: the photo belongs to the
@@ -606,6 +629,7 @@
            availability is changed from the dish's own row, so carry it over. */
         active: kept ? kept.active : true, sold_out: kept ? kept.sold_out : false,
         option_title: field('option_title').value.trim(),
+        barcode: field('barcode').value.trim(),
         bom: readBom(), levels: readLevels(), addons: readAddons(),
       };
       await request(`/api/menu/${encodeURIComponent(itemId)}`,
@@ -844,6 +868,9 @@
   shopPanel.innerHTML = `<h3>ข้อมูลร้าน</h3>
     <p>ทุกอย่างในหน้านี้ไปอยู่บนใบเสร็จที่ลูกค้าถือกลับบ้าน กรอกให้ตรงกับที่จดทะเบียนไว้</p>
     <form id="liveShopForm">
+      <label>ร้านนี้ขายอะไร
+        <select name="business_type"></select></label>
+      <p class="live-hint">เปลี่ยนได้ตลอด ข้อมูลเก่าไม่หาย · ร้านค้าและร้านบริการจะไม่มีหน้าจอครัว</p>
       <label>ชื่อร้านที่ลูกค้าเห็น <input name="name" maxlength="80" required></label>
       <label>ชื่อตามใบทะเบียน (ถ้าต่างจากชื่อร้าน) <input name="legal_name" maxlength="120" placeholder="เช่น บริษัท ซีแซ่บ จำกัด"></label>
       <label>ที่อยู่ร้าน <textarea name="address" rows="2" maxlength="200" placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"></textarea></label>
@@ -882,6 +909,13 @@
                           'receipt_header', 'receipt_footer']) {
         shopField(name).value = settings[name] || '';
       }
+      const kinds = shopField('business_type');
+      if (!kinds.options.length) {
+        const config = await (await fetch('/api/config', {cache:'no-store'})).json();
+        kinds.innerHTML = (config.business?.choices || [])
+          .map(choice => `<option value="${choice.value}">${choice.label}</option>`).join('');
+      }
+      kinds.value = settings.business_type || 'restaurant';
       /* Three shop-wide choices are stored as a rate plus a flag, but an owner
          thinks of them as one question: does my menu price include the tax? */
       shopField('vat_mode').value = !settings.vat_rate_bp ? 'none'
@@ -904,6 +938,7 @@
     const body = {
       // The address and the closing message keep the line breaks the owner
       // typed, because the receipt prints them the way they were written.
+      business_type: text('business_type'),
       legal_name: text('legal_name'), address: text('address'),
       phone: text('phone'), tax_id: text('tax_id'),
       receipt_header: text('receipt_header'), receipt_footer: text('receipt_footer'),
@@ -923,6 +958,9 @@
       const config = await (await fetch('/api/config', {cache:'no-store'})).json();
       if (config.promptpay_id) state.promptPayId = config.promptpay_id;
       if (config.receipt) window.POSWAI_RECEIPT = config.receipt;
+      // The screens are renamed straight away; nobody should have to reload
+      // the page to find out their shop is now a shop.
+      window.poswaiApplyBusiness?.(config.business);
     } catch (error) { note.textContent = error.message; }
   });
 

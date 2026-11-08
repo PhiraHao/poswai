@@ -714,12 +714,12 @@
 
   <!-- 7 Complete Modules Navigation -->
   <nav class="role-tabs-wrap" aria-label="เมนูหลัก">
-    <div class="nav-brand"><span class="nav-brand-mark" aria-hidden="true">W</span><span><strong>POS WAI</strong><small>Restaurant workspace</small></span></div>
+    <div class="nav-brand"><span class="nav-brand-mark" aria-hidden="true">W</span><span><strong>POS WAI</strong><small data-biz="workspace">ร้านอาหาร</small></span></div>
     <div class="nav-section-label">พื้นที่ทำงาน</div>
     <div class="role-tabs">
       <button class="role-tab active" onclick="switchTab('customer', this)" aria-current="page" title="สั่งอาหาร">
-        <svg aria-hidden="true"><use href="/icons.svg#menu"></use></svg><span>สั่งอาหาร</span>
-        <small>เมนูและตะกร้า</small>
+        <svg aria-hidden="true"><use href="/icons.svg#menu"></use></svg><span data-biz="sell">สั่งอาหาร</span>
+        <small data-biz="sell_hint">เมนูและตะกร้า</small>
       </button>
       <button class="role-tab" onclick="switchTab('kitchen', this)" title="จอครัว">
         <svg aria-hidden="true"><use href="/icons.svg#chef"></use></svg><span>จอครัว</span>
@@ -733,7 +733,7 @@
       </button>
       <button class="role-tab" onclick="switchTab('inventory', this)" title="สต็อก">
         <svg aria-hidden="true"><use href="/icons.svg#inventory"></use></svg><span>สต็อก</span>
-        <small>วัตถุดิบและสูตร</small>
+        <small data-biz="stock">วัตถุดิบและสูตร</small>
         <span id="stockBadge" class="tab-badge" style="display:none;">0</span>
       </button>
       <button class="role-tab" onclick="switchTab('crm', this)" title="สมาชิก">
@@ -763,7 +763,7 @@
          TAB 1: ลูกค้าสแกนสั่งอาหาร + ชุดเซตโปรโมชัน + ตัวเลือกท็อปปิ้ง/แยกคอร์ส + โหมดจัดการเมนูด่วนหน้าร้าน
          ================================================================= -->
     <section id="view-customer" class="view-section active">
-      <div class="module-intro"><div><h1>สั่งอาหาร</h1><p>เลือกเมนู จัดการตะกร้า และติดตามบิลของโต๊ะ</p></div><span class="module-state">หน้าลูกค้า</span></div>
+      <div class="module-intro"><div><h1 data-biz="sell">สั่งอาหาร</h1><p>เลือกรายการ จัดการตะกร้า และติดตามบิล</p></div><span class="module-state">หน้าลูกค้า</span></div>
       <div class="liff-header">
         <div>
           <div style="font-size:0.75rem; opacity:0.92;">POS WAI • ระบบจัดการร้านอาหารอัจฉริยะผ่าน LINE OA & Offline-First</div>
@@ -1061,7 +1061,10 @@
               <div class="card-title">🔍 สแกนบาร์โค้ด / คีย์ออเดอร์ด่วนลง <span id="cashierQuickOrderTableLabel" style="color:var(--info);">โต๊ะ 1</span></div>
             </div>
             <div style="display:flex; gap:6px; margin-bottom:8px;">
-              <input type="text" id="barcodeInput" class="input" placeholder="ยิงบาร์โค้ดสินค้า เช่น 8850001 (กะเพรา), 8850008 (ชาไทย)..." />
+              <!-- เครื่องสแกนคือคีย์บอร์ด มันพิมพ์เลขแล้วกด Enter เอง — คนขายจึงไม่ต้องแตะหน้าจอ -->
+              <input type="text" id="barcodeInput" class="input" autocomplete="off"
+                     onkeydown="if (event.key === 'Enter') { event.preventDefault(); scanBarcodeItem(); }"
+                     placeholder="ยิงบาร์โค้ดหรือพิมพ์เลขแล้วกด Enter" />
               <button class="btn btn-primary" onclick="scanBarcodeItem()">📷 สแกนบาร์โค้ด</button>
             </div>
             <div style="display:flex; gap:6px;">
@@ -1170,7 +1173,7 @@
          TAB 4: ระบบจัดการสินค้าคงคลัง สูตรอาหาร (BOM) ใบสั่งซื้อ (PO) & ของเสีย (Waste)
          ================================================================= -->
     <section id="view-inventory" class="view-section">
-      <div class="module-intro"><div><h1>สต็อกและสูตรอาหาร</h1><p>ตรวจวัตถุดิบ สูตร BOM และรายการเคลื่อนไหว</p></div><span class="module-state">คลังสินค้า</span></div>
+      <div class="module-intro"><div><h1 data-biz="stock">สต็อกและสูตรอาหาร</h1><p>ตรวจวัตถุดิบ สูตร BOM และรายการเคลื่อนไหว</p></div><span class="module-state">คลังสินค้า</span></div>
       <div class="grid-2">
         <div>
           <div class="card">
@@ -2314,6 +2317,19 @@
         // หน้ารายชื่อพนักงานถือสำเนาเดิมอยู่ ไม่บอกมันก็ยังขึ้นว่า "ยังไม่ผูก LINE" ต่อไป
         window.dispatchEvent(new Event('poswai:staff-refresh'));
       } catch (error) { showToast(`เชื่อม LINE ไม่สำเร็จ: ${error.message}`); }
+    }
+
+    /* A plain read, with the server's own Thai message when it refuses.
+       Nothing is queued for later: a lookup that failed is a lookup, and the
+       person at the till needs the answer now or not at all. */
+    async function apiRead(path) {
+      const response = await fetch(path, {cache: "no-store", credentials: "same-origin"});
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try { detail = (await response.json()).detail || detail; } catch { /* not JSON */ }
+        throw new Error(detail);
+      }
+      return response.json();
     }
 
     async function apiMutation(path, payload) {
@@ -3469,6 +3485,11 @@
       });
 
       const courseMode = document.getElementById("modCourseSelect").value; // FIRE or HOLD
+      /* A size can carry its own price now — size XL costs more than size M.
+         The server prices it from its own list and refuses a line whose total
+         disagrees, so the cart has to add the same amount here. */
+      const sizePrice = (menu.levelPrices || [])
+        .find(level => level.name === state.selectedModLevel)?.price || 0;
       state.cart.push({
         id: menu.id,
         // Live mode bills by the server's own item id, so a line built here
@@ -3478,7 +3499,7 @@
         baseCategory: menu.category,
         station: menu.station || "ครัวร้อน",
         courseMode,
-        price: menu.price + extraPrice,
+        price: menu.price + extraPrice + sizePrice,
         cost: menu.cost,
         qty: 1,
         extraBom,
@@ -4066,29 +4087,42 @@
       renderAll();
     }
 
-    function scanBarcodeItem() {
-      const code = document.getElementById("barcodeInput").value.trim();
-      if (!code) { showToast("กรุณากรอกรหัสบาร์โค้ดก่อน"); return; }
-      const menu = DEFAULT_MENU.find(m => m.barcode === code || m.name.includes(code));
-      if (!menu) { showToast(`ไม่พบสินค้าในรหัส ${code}`); return; }
-      const tStr = state.selectedCashierTable;
-      const ordId = "BAR-" + Math.floor(1000 + Math.random() * 9000);
-      const itemObj = [{ id: menu.id, name: menu.name, price: menu.price, cost: menu.cost, qty: 1 }];
-      deductBomInventory(itemObj);
-      state.orders.unshift({
-        orderId: ordId,
-        table: tStr,
-        items: itemObj,
-        discount: 0,
-        note: "สแกนบาร์โค้ด " + menu.barcode,
-        status: "pending",
-        time: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
-        source: "Barcode POS"
-      });
-      document.getElementById("barcodeInput").value = "";
-      addAuditLog(`📷 สแกนบาร์โค้ด ${menu.barcode} (${menu.name}) เข้าโต๊ะ ${tStr}`);
-      renderAll();
-      showToast(`ตัวอย่าง: เพิ่ม "${menu.name}" เข้าโต๊ะ ${tStr} ในเครื่องนี้แล้ว`);
+    /* A scanner is a keyboard: it types the number and presses Enter. So the
+       number is looked up on the server — the till's own copy of the menu can
+       be minutes old, and a shop that just priced something would ring up the
+       old price — and the product goes into the cart like any other.
+
+       It stays in the cart rather than becoming its own bill, because a retail
+       customer puts several things on the counter and pays once. */
+    async function scanBarcodeItem() {
+      const box = document.getElementById("barcodeInput");
+      const code = box.value.trim();
+      if (!code) { showToast("ยิงบาร์โค้ดหรือพิมพ์เลขก่อนครับ"); return; }
+      if (!state.productionMode) {
+        const demo = DEFAULT_MENU.find(m => m.barcode === code || m.name.includes(code));
+        if (!demo) { showToast(`ไม่พบสินค้ารหัส ${code}`); return; }
+        box.value = "";
+        addToCart(demo.id);
+        showToast(`เพิ่ม "${demo.name}" ลงตะกร้าแล้ว`);
+        return;
+      }
+      try {
+        const branch = window.poswaiAuth?.branchId || 1;
+        const found = await apiRead(`/api/menu/barcode/${encodeURIComponent(code)}?branch_id=${branch}`);
+        const local = DEFAULT_MENU.find(m => m.serverId === found.id);
+        if (!local) {
+          // On the server but not in this till's copy: refresh and try once.
+          if (window.poswaiLiveData) await window.poswaiLiveData.refresh();
+        }
+        const item = DEFAULT_MENU.find(m => m.serverId === found.id);
+        if (!item) { showToast(`พบ ${found.name} แต่ยังโหลดเข้าเครื่องไม่สำเร็จ ลองรีเฟรช`); return; }
+        box.value = "";
+        addToCart(item.id);
+        showToast(`เพิ่ม "${found.name}" ลงตะกร้าแล้ว`);
+      } catch (error) {
+        showToast(`⚠️ ${error.message}`);
+      }
+      box.focus();   // the next item is already on its way to the scanner
     }
 
     function cashierAddQuickItem() {
@@ -5328,12 +5362,13 @@
   <script src="/offline-review.js?v=2"></script>
   <script src="/service-call.js?v=77"></script>
   <script src="/guest-order-alert.js?v=2"></script>
-  <script src="/auth-ui.js?v=96"></script>
+  <script src="/auth-ui.js?v=97"></script>
   <script src="/landing.js?v=44"></script>
-  <script src="/payment-ui.js?v=22"></script>
+  <script src="/payment-ui.js?v=23"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=82"></script>
+  <script src="/live-data.js?v=83"></script>
+  <script src="/business-type.js?v=1"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=92"></script>

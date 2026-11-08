@@ -117,7 +117,8 @@ class MenuWorkbenchTest(unittest.TestCase):
     # ---- toppings are priced by the shop, not by the customer -----------
 
     def test_a_chosen_topping_adds_its_own_price_and_its_own_stock(self):
-        self._save(addons=[{"name": "เพิ่มไข่ดาว", "price": 10, "ingId": "EGG", "qty": 2}])
+        self._save(addons=[{"name": "เพิ่มไข่ดาว", "price": 10, "ingId": "EGG", "qty": 2}],
+                   levels=["เผ็ดน้อย", "เผ็ดมาก"])
         before = self._stock("EGG")
         response = self._order("ORD-1", (60 + 10) * 3, price=70, qty=3,
                                addons=["เพิ่มไข่ดาว"], level="เผ็ดมาก")
