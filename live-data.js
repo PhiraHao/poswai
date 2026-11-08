@@ -80,7 +80,11 @@
     orders = orders.filter(order => !closedHere.has(order.order_no));
     state.orders = orders.map(order => ({
       orderId: order.order_no, table: order.table_no, items: order.items,
-      discount: 0, note: order.note || '-',
+      /* The server already worked the bill out: menu prices, discount, service
+         charge and VAT. The till shows and charges that, never its own sum. */
+      total: Number(order.total_amount) || 0,
+      totals: order.totals || null,
+      discount: Number(order.totals?.discount) || 0, note: order.note || '-',
       /* The number the guest carries to a seat and the counter presses on the
          pager keypad. A bill made before the server kept one shows nothing. */
       queueNo: Number(order.queue_no) || 0,
@@ -837,43 +841,88 @@
   const shopPanel = document.createElement('section');
   shopPanel.className = 'live-catalog-panel';
   shopPanel.hidden = true;
-  shopPanel.innerHTML = `<h3>ตั้งค่าร้าน</h3>
-    <p>ชื่อร้านที่ลูกค้าเห็น และบัญชีพร้อมเพย์ที่รับเงินของร้านนี้</p>
-    <form id="liveShopForm"><label>ชื่อร้าน <input name="name" maxlength="80" required></label>
-      <label>พร้อมเพย์ (เบอร์โทรหรือเลขบัตรประชาชน) <input name="promptpay_id" maxlength="20" inputmode="numeric"></label>
+  shopPanel.innerHTML = `<h3>ข้อมูลร้าน</h3>
+    <p>ทุกอย่างในหน้านี้ไปอยู่บนใบเสร็จที่ลูกค้าถือกลับบ้าน กรอกให้ตรงกับที่จดทะเบียนไว้</p>
+    <form id="liveShopForm">
+      <label>ชื่อร้านที่ลูกค้าเห็น <input name="name" maxlength="80" required></label>
+      <label>ชื่อตามใบทะเบียน (ถ้าต่างจากชื่อร้าน) <input name="legal_name" maxlength="120" placeholder="เช่น บริษัท ซีแซ่บ จำกัด"></label>
+      <label>ที่อยู่ร้าน <textarea name="address" rows="2" maxlength="200" placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"></textarea></label>
+      <label>เบอร์โทรร้าน <input name="phone" maxlength="30" inputmode="tel"></label>
+      <label>เลขประจำตัวผู้เสียภาษี 13 หลัก <input name="tax_id" maxlength="20" inputmode="numeric" placeholder="เว้นว่างได้ถ้าร้านไม่ได้จดทะเบียน"></label>
+      <label>พร้อมเพย์ที่รับเงิน <input name="promptpay_id" maxlength="20" inputmode="numeric"></label>
+
+      <h4>ภาษีและค่าบริการ</h4>
+      <label>ภาษีมูลค่าเพิ่ม
+        <select name="vat_mode">
+          <option value="none">ไม่คิด VAT (ร้านส่วนใหญ่เลือกอันนี้)</option>
+          <option value="inclusive">ราคาในเมนูรวม VAT แล้ว</option>
+          <option value="exclusive">บวก VAT เพิ่มจากราคาในเมนู</option>
+        </select></label>
+      <label>อัตรา VAT (%) <input name="vat_rate" type="number" min="0" max="100" step="0.01" value="7"></label>
+      <label>ค่าบริการ (%) <input name="service_charge" type="number" min="0" max="100" step="0.01" value="0"
+        placeholder="0 = ไม่คิด"></label>
+      <p class="live-hint">ค่าบริการคิดเฉพาะเมนูที่ติ๊กไว้ในหน้าเมนูว่าเก็บค่าบริการ · ส่วนลดหักก่อนค่าบริการและ VAT</p>
+
+      <h4>ใบเสร็จ</h4>
+      <label>ข้อความหัวใบเสร็จ <input name="receipt_header" maxlength="120" placeholder="เช่น ขอบคุณที่อุดหนุนครับ"></label>
+      <label>ข้อความท้ายใบเสร็จ <textarea name="receipt_footer" rows="2" maxlength="200" placeholder="เช่น เปิดทุกวัน 08:00–20:00 · ติดตามเราที่ LINE @ร้าน"></textarea></label>
+
       <button type="submit">บันทึกการตั้งค่า</button></form>
     <p id="liveShopStatus" role="status"></p><p id="liveShopLink"></p>`;
-  /* Shop settings sit with the tables on the cashier screen, not with the
-     ingredients. Only the owner ever sees this panel, so a cashier standing
-     at the same till cannot change the shop's name or its bank account.
-
-     It goes at the foot of the screen: the table map and the payment buttons
-     are worked every few minutes, this box is filled in once. */
-  const settingsHome = document.querySelector('#view-cashier');
+  /* The owner's own screen. A cashier standing at the same till never sees it,
+     so they cannot change the shop's bank account or its tax number. */
+  const settingsHome = document.querySelector('#settingsHome') || document.querySelector('#view-cashier');
   if (settingsHome) settingsHome.append(shopPanel);
   else panel.before(shopPanel);
+  const shopField = name => shopPanel.querySelector(`[name="${name}"]`);
   const loadShop = async () => {
     try {
       const settings = await request('/api/shop/settings');
-      shopPanel.querySelector('[name="name"]').value = settings.name || '';
-      shopPanel.querySelector('[name="promptpay_id"]').value = settings.promptpay_id || '';
+      for (const name of ['name', 'promptpay_id', 'legal_name', 'address', 'phone', 'tax_id',
+                          'receipt_header', 'receipt_footer']) {
+        shopField(name).value = settings[name] || '';
+      }
+      /* Three shop-wide choices are stored as a rate plus a flag, but an owner
+         thinks of them as one question: does my menu price include the tax? */
+      shopField('vat_mode').value = !settings.vat_rate_bp ? 'none'
+        : (settings.vat_inclusive ? 'inclusive' : 'exclusive');
+      shopField('vat_rate').value = ((settings.vat_rate_bp || 700) / 100).toString();
+      shopField('service_charge').value = ((settings.service_charge_bp || 0) / 100).toString();
       shopPanel.querySelector('#liveShopLink').textContent = settings.editable
         ? `ลิงก์เข้าร้านของคุณ ${window.POSWAI_APP?.server || location.origin}/?shop=${settings.slug} · ชื่อร้านในลิงก์ ${settings.slug}` +
           (settings.trial_ends_at ? ` · ทดลองใช้ฟรีถึง ${settings.trial_ends_at}` : '')
-        : 'ร้านนี้ตั้งค่าจากเซิร์ฟเวอร์ ติดต่อทีมงานหากต้องการแก้';
-      shopPanel.querySelector('#liveShopForm').hidden = !settings.editable;
+        : 'ชื่อร้านและพร้อมเพย์ของร้านนี้ตั้งจากเซิร์ฟเวอร์ ส่วนที่เหลือแก้ได้ตามปกติ';
+      for (const name of ['name', 'promptpay_id']) shopField(name).disabled = !settings.editable;
     } catch (error) { shopPanel.querySelector('#liveShopStatus').textContent = error.message; }
   };
   shopPanel.querySelector('#liveShopForm').addEventListener('submit', async event => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     const note = shopPanel.querySelector('#liveShopStatus');
+    const text = name => String(data.get(name) ?? '').trim();
+    const mode = text('vat_mode');
+    const body = {
+      // The address and the closing message keep the line breaks the owner
+      // typed, because the receipt prints them the way they were written.
+      legal_name: text('legal_name'), address: text('address'),
+      phone: text('phone'), tax_id: text('tax_id'),
+      receipt_header: text('receipt_header'), receipt_footer: text('receipt_footer'),
+      // "ไม่คิด VAT" is a zero rate, so the bill maths has one thing to read.
+      vat_rate_bp: mode === 'none' ? 0 : Math.round(Number(data.get('vat_rate') || 0) * 100),
+      vat_inclusive: mode !== 'exclusive',
+      service_charge_bp: Math.round(Number(data.get('service_charge') || 0) * 100),
+    };
+    if (!shopField('name').disabled) {
+      body.name = text('name');
+      body.promptpay_id = text('promptpay_id');
+    }
     try {
       await request('/api/shop/settings', {method:'PUT', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({name:String(data.get('name')).trim(), promptpay_id:String(data.get('promptpay_id')).trim()})});
-      note.textContent = 'บันทึกแล้ว';
+        body: JSON.stringify(body)});
+      note.textContent = 'บันทึกแล้ว ใบเสร็จใบต่อไปจะใช้ข้อมูลนี้';
       const config = await (await fetch('/api/config', {cache:'no-store'})).json();
       if (config.promptpay_id) state.promptPayId = config.promptpay_id;
+      if (config.receipt) window.POSWAI_RECEIPT = config.receipt;
     } catch (error) { note.textContent = error.message; }
   });
 

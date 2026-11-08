@@ -8,11 +8,9 @@
       element.disabled = true; element.title = reason;
     });
     disable('button[onclick*="toggleReserveTable"],button[onclick*="addNewTableDynamic"],button[onclick*="removeLastTableDynamic"],button[onclick*="scanBarcodeItem"],button[onclick*="cashierAddQuickItem"]', 'ยังไม่บันทึกบนเซิร์ฟเวอร์');
-    disable('#enableVatCheckbox,#enableScCheckbox,#splitBillCount', 'ยังไม่รองรับการคิดภาษี ค่าบริการ หรือแยกบิลบนเซิร์ฟเวอร์');
-    for (const id of ['enableVatCheckbox','enableScCheckbox']) {
-      const checkbox = document.getElementById(id);
-      if (checkbox) checkbox.checked = false;
-    }
+    // VAT and service charge now come from the shop's own settings and are
+    // worked out on the server, so only splitting a bill is still a display.
+    disable('#splitBillCount', 'แยกบิลยังเป็นตัวเลขบนใบเสร็จ ยังไม่แยกการชำระเงินจริง');
     document.getElementById('shiftSummaryText')?.closest('.card')?.setAttribute('hidden', 'hidden');
     document.getElementById('cashierQuickMenuSelect')?.closest('.card')?.setAttribute('hidden', 'hidden');
     document.querySelectorAll('button[onclick^="simulateCustomerSendSlip"]').forEach(button => {

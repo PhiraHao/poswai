@@ -72,6 +72,7 @@ import poswai_shops as shops
 import poswai_owner_auth as owner_auth
 from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
 import poswai_billing as billing
+import poswai_profile as profile
 
 async def _line_outbox_worker():
     while True:
@@ -171,8 +172,12 @@ STAFF_ROLES = ("manager", "cashier", "kitchen", "service", "staff")
 LEAVE_TYPES = ("sick", "personal", "vacation")
 DEFAULT_LEAVE_QUOTA = {"sick": 30, "personal": 3, "vacation": 6}
 TAB_LABELS = {"customer": "สั่งอาหาร", "kitchen": "จอครัว", "cashier": "แคชเชียร์",
-              "inventory": "สต็อก", "crm": "สมาชิก", "staff": "พนักงาน", "analytics": "รายงาน"}
+              "inventory": "สต็อก", "crm": "สมาชิก", "staff": "พนักงาน", "analytics": "รายงาน",
+              "settings": "ตั้งค่า"}
 ALL_TABS = tuple(TAB_LABELS)
+# หน้าตั้งค่าถือบัญชีรับเงินและเลขภาษีของร้าน เป็นเรื่องของเจ้าของคนเดียว
+# ผู้จัดการคุมร้านได้ทั้งหมดยกเว้นสองอย่างนี้ เหมือนที่เขาแต่งตั้งผู้จัดการคนอื่นไม่ได้
+MANAGER_TABS = tuple(tab for tab in ALL_TABS if tab != "settings")
 # One matrix for the whole app: the API enforces it per endpoint and the PWA hides
 # what a role may not open. Server rules stay authoritative; hiding a tab is cosmetic.
 ROLE_PERMISSIONS = {
@@ -180,11 +185,12 @@ ROLE_PERMISSIONS = {
               "allowed": ["จัดการทุกส่วนของร้าน", "ตั้งค่าบัญชีรับเงินและค่าแรง",
                           "แต่งตั้งผู้จัดการและกำหนดสิทธิ์", "ดูรายงานและเงินเดือนทั้งทีม"],
               "restricted": []},
-    "manager": {"label": "ผู้จัดการร้าน", "tabs": list(ALL_TABS),
+    "manager": {"label": "ผู้จัดการร้าน", "tabs": list(MANAGER_TABS),
                 "allowed": ["อนุมัติหรือปฏิเสธใบลา", "จัดตารางกะและระงับสิทธิ์ POS",
                             "ยกเลิกบิลทุกยอด และคืนเงินบิลที่ชำระแล้ว",
                             "ตั้งเมนูของหมดและออกใบสั่งซื้อ", "ดูรายงานและเงินเดือนทั้งทีม"],
-                "restricted": ["แต่งตั้งผู้จัดการ", "แก้ไขหรือลบบัญชีเจ้าของร้าน"]},
+                "restricted": ["แต่งตั้งผู้จัดการ", "แก้ไขหรือลบบัญชีเจ้าของร้าน",
+                               "แก้ข้อมูลร้าน เลขภาษี พร้อมเพย์ และอัตรา VAT"]},
     "cashier": {"label": "แคชเชียร์", "tabs": ["customer", "cashier", "crm", "staff"],
                 "allowed": ["เปิด-ปิดกะและลิ้นชักเงินสด", "รับชำระเงิน แยกบิล ย้ายโต๊ะ",
                             "พิมพ์ใบเสร็จและใบกำกับภาษี",
@@ -478,6 +484,12 @@ def init_db() -> None:
     # ไล่ 1, 2, 3 ไปทั้งวัน แล้วขึ้นวันใหม่เริ่มหนึ่งใหม่ บิลเก่าก่อนมีคอลัมน์นี้เป็น 0
     if "queue_no" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
         cur.execute("ALTER TABLE order_events ADD COLUMN queue_no INTEGER NOT NULL DEFAULT 0")
+    # ยอดก่อนส่วนลด ส่วนลด ค่าบริการ และ VAT ของบิลนี้
+    # เก็บไว้เป็นสตางค์ เพราะอัตรา VAT กับค่าบริการของร้านเปลี่ยนได้
+    # ถ้าคิดใหม่ตอนพิมพ์ซ้ำ ใบเสร็จจะไม่ตรงกับเงินที่ลูกค้าจ่ายจริง
+    for column in ("subtotal_cents", "discount_cents", "service_charge_cents", "vat_cents"):
+        if column not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
+            cur.execute(f"ALTER TABLE order_events ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0")
     # สมาชิกที่สั่งบิลนี้ ถ้าเข้าสู่ระบบลูกค้าไว้ — ใช้ส่งไลน์บอกว่าของพร้อมแล้ว
     # ลูกค้าขาจรที่สแกน QR เฉย ๆ ไม่มีใครให้ส่งถึง จึงเป็น NULL ตามปกติ
     if "customer_id" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
@@ -532,6 +544,7 @@ def init_db() -> None:
     init_dossier(conn)
     init_inventory_movements(conn)
     init_commerce(conn)
+    profile.ensure_schema(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
         staff_id INTEGER PRIMARY KEY, failures INTEGER NOT NULL, first_failed_at INTEGER NOT NULL)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_cancellations (
@@ -1410,6 +1423,9 @@ class OrderCreate(BaseModel):
     offline_at: Optional[str] = None
     # What the guest or the till asked of the kitchen, shown on its screen and ticket.
     note: str = ""
+    # A discount the till gave on the whole bill, in baht. Staff only: a guest
+    # ordering from the table QR cannot discount their own food.
+    discount: float = 0
 
 
 class ServiceCallCreate(BaseModel):
@@ -2625,13 +2641,31 @@ def create_order(req: OrderCreate, request: Request):
                 deduct_inventory(conn, req.branch_id, quote["deductions"], allow_negative=True)
                 quote["total_amount"] = total_cents / 100
             else:
-                if round(req.total_amount * 100) != quote["total_cents"]:
-                    raise CatalogError("Order total differs from current menu prices", 409)
                 if any(round(item.price * 100) != round(canonical["price"] * 100) for item, canonical in zip(req.items, quote["items"])):
                     raise CatalogError("Order item price differs from current menu", 409)
                 deduct_inventory(conn, req.branch_id, quote["deductions"])
         except CatalogError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
+
+        # The menu prices are settled; now the shop's own rules say what is
+        # actually owed. A shop with no VAT, no service charge and no discount
+        # gets back exactly its subtotal, which is what every till sent before
+        # any of this existed.
+        discount_cents = max(0, round(float(req.discount or 0) * 100))
+        if discount_cents and ordered_by != "staff":
+            raise HTTPException(403, "ลูกค้าลดราคาเองไม่ได้")
+        try:
+            charge = profile.bill(quote["items"], profile=profile.read(conn),
+                                  discount_cents=discount_cents)
+        except profile.ProfileError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        if offline_at:
+            # An offline till charged what it charged; the recorded total is
+            # the money that changed hands, not what today's rules would make.
+            charge["total_cents"] = round(quote["total_amount"] * 100)
+        elif round(req.total_amount * 100) != charge["total_cents"]:
+            raise HTTPException(409, "Order total differs from current menu prices")
+        quote["total_amount"] = charge["total_cents"] / 100
         note = " ".join(str(req.note or "").split())[:200]
         # เลขคิวของวันนี้ นับต่อจากบิลล่าสุดของสาขานี้
         # วันเทียบแบบ UTC ตรง ๆ ได้ เพราะร้านไทยเปิด 7 โมงถึงเที่ยงคืนกว่า ๆ
@@ -2639,10 +2673,12 @@ def create_order(req: OrderCreate, request: Request):
         queue_no = cur.execute(
             "SELECT COALESCE(MAX(queue_no),0)+1 FROM order_events"
             " WHERE branch_id=? AND date(created_at)=date('now')", (req.branch_id,)).fetchone()[0]
-        cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount, note, queue_no, customer_id)"
-                    " VALUES (?,?,?,?,?,?,?,?)",
+        cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount, note, queue_no,"
+                    " customer_id, subtotal_cents, discount_cents, service_charge_cents, vat_cents)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (req.event_id, req.order_no, req.branch_id, req.table_no, quote["total_amount"], note,
-                     queue_no, _member_if_signed_in(request)))
+                     queue_no, _member_if_signed_in(request), charge["subtotal_cents"],
+                     charge["discount_cents"], charge["service_charge_cents"], charge["vat_cents"]))
         for item in quote["items"]:
             options = ", ".join(part for part in [item.get("level", ""), *item.get("addons", [])] if part)
             cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -2687,7 +2723,8 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
         where = ("(status='open' OR (status='paid' AND EXISTS("
                  "SELECT 1 FROM kds_station_tickets k WHERE k.order_no=order_events.order_no"
                  " AND k.status!='ready')))")
-    query = ("SELECT order_no,table_no,total_amount,status,created_at,note,queue_no"
+    query = ("SELECT order_no,table_no,total_amount,status,created_at,note,queue_no,"
+             "subtotal_cents,discount_cents,service_charge_cents,vat_cents"
              f" FROM order_events WHERE branch_id=? AND {where}")
     params: list = [branch_id]
     if table_no:
@@ -2713,6 +2750,9 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
             orders.append({"order_no": row[0], "table_no": row[1], "total_amount": row[2],
                            "status": row[3], "created_at": row[4], "kitchen": kitchen, "note": row[5],
                            "queue_no": row[6], "paid": row[3] == "paid",
+                           # แยกไว้ให้หน้าแคชเชียร์กับใบเสร็จแสดงยอดชุดเดียวกับที่เซิร์ฟเวอร์คิด
+                           "totals": {"subtotal": row[7] / 100, "discount": row[8] / 100,
+                                      "service_charge": row[9] / 100, "vat": row[10] / 100},
                            "items": [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3],
                                       "bom": json.loads(item[4]), "station": item[5],
                                       "courseMode": item[6], "options": item[7]} for item in items]})
@@ -4062,6 +4102,9 @@ def public_config():
             "shop": {"slug": slug, "name": shop["name"] if shop else "",
                      "is_demo": slug == DEMO_SHOP, "trial_ends_at": shop["trial_ends_at"] if shop else None},
             "billing": _billing_notice(slug),
+            # Everything here is printed on the customer's own receipt, so the
+            # till needs it before anyone signs in and none of it is private.
+            "receipt": _shop_profile(),
             "point_baht": POINT_BAHT}
 
 
@@ -4259,8 +4302,23 @@ def open_shop(req: ShopSignup, request: Request, response: Response):
 
 
 class ShopSettings(BaseModel):
+    """The shop's name and PromptPay live in the registry, the rest with the shop."""
     name: Optional[str] = None
     promptpay_id: Optional[str] = None
+    legal_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    tax_id: Optional[str] = None
+    vat_rate_bp: Optional[int] = None
+    vat_inclusive: Optional[bool] = None
+    service_charge_bp: Optional[int] = None
+    receipt_header: Optional[str] = None
+    receipt_footer: Optional[str] = None
+
+
+def _shop_profile() -> dict:
+    with closing(connect_db()) as conn:
+        return profile.read(conn)
 
 
 @app.get("/api/shop/settings")
@@ -4268,29 +4326,43 @@ def read_shop_settings(request: Request):
     require_staff(request, roles=("owner",))
     slug = CURRENT_SHOP.get()
     shop = shops.get_shop(DB_PATH, slug)
-    if not shop:
-        return {"slug": slug, "name": "", "promptpay_id": PROMPTPAY_ID, "editable": False}
-    return {"slug": slug, "name": shop["name"], "promptpay_id": shop["promptpay_id"],
-            "trial_ends_at": shop["trial_ends_at"], "editable": True}
+    settings = _shop_profile()
+    # Only the name and PromptPay belong to the hosting registry, so the first
+    # shop — which has no registry row — can still edit everything else.
+    settings.update({"slug": slug, "name": shop["name"] if shop else "",
+                     "promptpay_id": shop["promptpay_id"] if shop else PROMPTPAY_ID,
+                     "trial_ends_at": shop["trial_ends_at"] if shop else None,
+                     "editable": bool(shop)})
+    return settings
 
 
 @app.put("/api/shop/settings")
 def save_shop_settings(req: ShopSettings, request: Request):
     require_staff(request, roles=("owner",))
     slug = CURRENT_SHOP.get()
-    if not shops.get_shop(DB_PATH, slug):
-        raise HTTPException(409, "ร้านหลักตั้งค่าผ่านไฟล์ตั้งค่าเซิร์ฟเวอร์")
+    registered = shops.get_shop(DB_PATH, slug)
+    changes = {field: getattr(req, field) for field in profile.FIELDS}
+    if any(value is not None for value in changes.values()):
+        try:
+            with closing(connect_db()) as conn, conn:
+                profile.save(conn, changes)
+        except profile.ProfileError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+    if not registered:
+        if req.name is not None or req.promptpay_id is not None:
+            raise HTTPException(409, "ร้านหลักตั้งชื่อกับพร้อมเพย์ผ่านไฟล์ตั้งค่าเซิร์ฟเวอร์")
+        return read_shop_settings(request)
     name = req.name.strip() if req.name is not None else None
     promptpay = re.sub(r"[\s-]", "", req.promptpay_id) if req.promptpay_id is not None else None
     if name is not None and (not name or len(name) > 80):
         raise HTTPException(400, "ชื่อร้านต้องยาว 1–80 ตัวอักษร")
     if promptpay and not re.fullmatch(r"\d{10}|\d{13}|\d{15}", promptpay):
         raise HTTPException(400, "พร้อมเพย์ต้องเป็นเบอร์โทร 10 หลัก เลขบัตร 13 หลัก หรือ e-Wallet 15 หลัก")
-    shop = shops.update_shop(DB_PATH, slug, name=name, promptpay_id=promptpay)
+    shops.update_shop(DB_PATH, slug, name=name, promptpay_id=promptpay)
     if name is not None:
         with closing(connect_db()) as conn, conn:
             conn.execute("UPDATE branches SET name=? WHERE id=1", (name,))
-    return {"slug": slug, "name": shop["name"], "promptpay_id": shop["promptpay_id"]}
+    return read_shop_settings(request)
 
 
 # =====================================================================

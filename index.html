@@ -748,6 +748,10 @@
         <svg aria-hidden="true"><use href="/icons.svg#chart"></use></svg><span>รายงาน</span>
         <small>ยอดขายและข้อมูลเชิงลึก</small>
       </button>
+      <button class="role-tab" onclick="switchTab('settings', this)" title="ตั้งค่า">
+        <svg aria-hidden="true"><use href="/icons.svg#settings"></use></svg><span>ตั้งค่า</span>
+        <small>ข้อมูลร้าน ภาษี ใบเสร็จ</small>
+      </button>
     </div>
     <button class="mobile-more" type="button" onclick="toggleMobileNavigation()" aria-expanded="false" aria-label="ดูเมนูเพิ่มเติม"><svg aria-hidden="true"><use href="/icons.svg#more"></use></svg><span>เพิ่มเติม</span></button>
     <div class="nav-footer"><span class="nav-status-dot" aria-hidden="true"></span><span>ระบบตัวอย่าง</span></div>
@@ -936,8 +940,15 @@
             <label class="label">หมายเหตุรวมของบิลนี้:</label>
             <input type="text" id="orderNoteInput" class="input" placeholder="เช่น ขอช้อนกลาง, แยกน้ำจิ้ม..." />
 
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:8px; border-top:1px solid var(--border-color);">
-              <span style="font-weight:700;">ยอดสุทธิรอบนี้ (หักโปรอัตโนมัติ):</span>
+            <!-- ส่วนลดท้ายบิลที่พนักงานกดเอง ลูกค้าที่สแกน QR สั่งเองจะไม่เห็นช่องนี้ -->
+            <div id="cartDiscountRow" hidden style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+              <label class="label" for="billDiscountInput" style="margin:0;">ส่วนลดท้ายบิล (บาท)</label>
+              <input type="number" id="billDiscountInput" class="input" value="0" min="0" step="1"
+                     style="width:100px;" oninput="renderCart()" />
+            </div>
+            <div id="cartBreakdown" style="margin-top:10px; padding-top:8px; border-top:1px solid var(--border-color); font-size:0.8rem; color:var(--text-muted);"></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
+              <span style="font-weight:700;">ยอดสุทธิรอบนี้:</span>
               <span style="font-size:1.15rem; font-weight:800; color:var(--line-green-dark);" id="cartTotalLabel">฿0.00</span>
             </div>
             <button class="btn btn-line btn-block" style="margin-top:10px; padding:11px;" onclick="submitOrderFromCustomer()">
@@ -1076,16 +1087,10 @@
 
             <!-- Tax (VAT 7%), Service Charge, Split Bill Controls -->
             <div style="background:#f8fafc; padding:10px; border-radius:10px; border:1px solid var(--border-color); margin-bottom:10px; font-size:0.8rem;">
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                  <input type="checkbox" id="enableVatCheckbox" checked onchange="renderSelectedTableBill()" />
-                  คำนวณภาษี VAT 7%
-                </label>
-                <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                  <input type="checkbox" id="enableScCheckbox" onchange="renderSelectedTableBill()" />
-                  Service Charge 10%
-                </label>
-              </div>
+              <!-- ภาษีและค่าบริการไม่ใช่ของที่แคชเชียร์เลือกเองทีละบิล
+                   มันเป็นกติกาของร้านที่เจ้าของร้านตั้งครั้งเดียว หน้านี้แค่บอกว่าตอนนี้คิดอะไรอยู่ -->
+              <div id="cashierTaxRule" style="color:var(--text-muted);"></div>
+
               <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:8px; flex-wrap:wrap;">
                 <div style="display:flex; align-items:center; gap:6px;">
                   <span>✂️ <strong>แยกบิลหารเท่า:</strong></span>
@@ -1107,6 +1112,18 @@
               <button class="btn btn-line btn-block" onclick="confirmPaymentAndPrint('QR PromptPay (ตรวจสลิปแล้ว)')">
                 ✅ ยืนยันสลิปถูกต้อง & พิมพ์ใบเสร็จ
               </button>
+            </div>
+
+            <!-- รับเงินสดแล้วทอนเท่าไร — คิดในหัวคนหน้าเคาน์เตอร์คือที่มาของเงินทอนผิด
+                 และของลิ้นชักที่นับเงินไม่ตรงตอนสิ้นวัน -->
+            <div id="cashTenderBox" style="background:#fffbeb; border:1px solid #fcd34d; border-radius:10px; padding:8px 10px; margin-bottom:8px; font-size:0.82rem;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <label for="cashTenderedInput" style="font-weight:700;">รับเงินสดมา</label>
+                <input type="number" id="cashTenderedInput" class="input" min="0" step="1" placeholder="0"
+                       style="width:110px;" oninput="renderCashChange()" />
+                <span id="cashQuickButtons" style="display:flex; gap:4px; flex-wrap:wrap;"></span>
+              </div>
+              <div id="cashChangeLabel" style="margin-top:6px; font-weight:800;"></div>
             </div>
 
             <!-- Omni-Channel Payment Buttons -->
@@ -1782,6 +1799,15 @@
       </div>
 
     </section>
+
+    <!-- =================================================================
+         TAB 8: ตั้งค่าร้าน — สิ่งที่กรอกครั้งเดียวแล้วออกทุกใบเสร็จ
+         หน้านี้เป็นของเจ้าของร้านคนเดียว แคชเชียร์ที่ยืนหน้าเครื่องเดียวกันเข้าไม่ได้
+         ================================================================= -->
+    <section id="view-settings" class="view-section">
+      <div class="module-intro"><div><h1>ตั้งค่าร้าน</h1><p>ข้อมูลร้าน ภาษี ค่าบริการ และหัวท้ายใบเสร็จ</p></div></div>
+      <div id="settingsHome"></div>
+    </section>
   </main>
   <div class="mobile-cart-dock"><button type="button" onclick="document.getElementById('customerCartPanel').scrollIntoView({behavior:'smooth',block:'start'})"><span>ดูตะกร้า <strong id="mobileCartCount">0</strong> รายการ</span><strong id="mobileCartTotal">฿0.00</strong></button></div>
 
@@ -2208,7 +2234,7 @@
       const nav = document.querySelector(".role-tabs-wrap");
       nav.classList.remove("mobile-open");
       nav.querySelector(".mobile-more").setAttribute("aria-expanded", "false");
-      nav.querySelector(".mobile-more span").textContent = ["crm", "staff", "analytics"].includes(tabId) ? btnEl.querySelector("span:not(.tab-badge)").textContent : "เพิ่มเติม";
+      nav.querySelector(".mobile-more span").textContent = ["crm", "staff", "analytics", "settings"].includes(tabId) ? btnEl.querySelector("span:not(.tab-badge)").textContent : "เพิ่มเติม";
       window.scrollTo({ top: 0, behavior: "auto" });
       renderAll();
     }
@@ -3566,14 +3592,46 @@
       return autoDiscount;
     }
 
+    /* ส่วนลดท้ายบิลรวม = โปรอัตโนมัติ + ที่พนักงานกดเอง แต่ไม่เกินยอดบิล */
+    function cartDiscountTotal(subtotal) {
+      const manual = Math.max(0, Number(document.getElementById("billDiscountInput")?.value) || 0);
+      return Math.min(subtotal, getCartDiscount(subtotal) + manual);
+    }
+
+    /* คิดยอดด้วยกติกาเดียวกับ poswai_profile.bill ฝั่งเซิร์ฟเวอร์
+       ถ้าสองฝั่งคิดไม่ตรงกัน เซิร์ฟเวอร์จะปฏิเสธออเดอร์ ไม่ใช่ยอมรับยอดที่หน้าจอส่งมา */
+    function billFromSubtotal(subtotal, discount) {
+      const rules = shopTaxRules();
+      const net = Math.max(0, subtotal - discount);
+      const sc = net * rules.scBp / 10000;
+      const taxed = net + sc;
+      const vat = !rules.vatBp ? 0
+        : (rules.inclusive ? taxed - taxed * 10000 / (10000 + rules.vatBp)
+                           : taxed * rules.vatBp / 10000);
+      return {net, sc, vat, inclusive: rules.inclusive, vatBp: rules.vatBp, scBp: rules.scBp,
+              grand: rules.inclusive ? taxed : taxed + vat};
+    }
+
     function renderCart() {
       const container = document.getElementById("cartItemsContainer");
       const subtotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
-      const discount = getCartDiscount(subtotal);
-      const net = Math.max(0, subtotal - discount);
+      const discount = cartDiscountTotal(subtotal);
+      const calc = billFromSubtotal(subtotal, discount);
+      const net = calc.grand;
+
+      // ช่องส่วนลดขึ้นเฉพาะตอนพนักงานเข้าระบบ ไม่งั้นลูกค้าลดราคาเองจากมือถือ
+      const row = document.getElementById("cartDiscountRow");
+      if (row) row.hidden = !window.poswaiAuth?.current;
+      const rate = (bp) => (bp / 100).toFixed(bp % 100 ? 2 : 0);
+      const parts = [`ยอดรวม ฿${subtotal.toFixed(2)}`];
+      if (discount > 0) parts.push(`ส่วนลด -฿${discount.toFixed(2)}`);
+      if (calc.sc > 0) parts.push(`ค่าบริการ ${rate(calc.scBp)}% ฿${calc.sc.toFixed(2)}`);
+      if (calc.vat > 0) parts.push(`VAT ${rate(calc.vatBp)}%${calc.inclusive ? " (รวมในราคา)" : ""} ฿${calc.vat.toFixed(2)}`);
+      const breakdown = document.getElementById("cartBreakdown");
+      if (breakdown) breakdown.textContent = parts.join(" · ");
 
       document.getElementById("cartCountLabel").textContent = state.cart.reduce((s, i) => s + i.qty, 0);
-      document.getElementById("cartTotalLabel").textContent = `฿${net.toFixed(2)}` + (discount > 0 ? ` (ลดรวม -฿${discount})` : "");
+      document.getElementById("cartTotalLabel").textContent = `฿${net.toFixed(2)}`;
       document.getElementById("mobileCartCount").textContent = state.cart.reduce((s, i) => s + i.qty, 0);
       document.getElementById("mobileCartTotal").textContent = `฿${net.toFixed(2)}`;
 
@@ -3613,7 +3671,7 @@
       }
       const table = state.customerTable;
       const subtotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
-      const discount = getCartDiscount(subtotal);
+      const discount = cartDiscountTotal(subtotal);
       const note = document.getElementById("orderNoteInput").value.trim() || "-";
       const orderId = "ORD-" + crypto.randomUUID();
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
@@ -3626,7 +3684,8 @@
       try {
         await apiMutation("/api/orders", {
           event_id: crypto.randomUUID(), order_no: orderId, branch_id: state.productionMode ? (window.poswaiAuth?.branchId || 1) : 1,
-          table_no: table, total_amount: subtotal - discount, items: apiItems,
+          table_no: table, total_amount: Number(billFromSubtotal(subtotal, discount).grand.toFixed(2)),
+          discount, items: apiItems,
           note: note === "-" ? "" : note
         });
       } catch (error) { showToast(`⚠️ ส่งออเดอร์ไม่สำเร็จ: ${error.message}`); return; }
@@ -3689,13 +3748,30 @@
       }, 0);
     }
 
+    /* ร้านตั้ง VAT กับค่าบริการของตัวเองในหน้าตั้งค่า ไม่ใช่ 10%/7% ที่เคยฝังไว้ในโค้ด
+       เลขที่เก็บเงินจริงคือเลขที่เซิร์ฟเวอร์คิด ตรงนี้มีไว้ให้ดูก่อนกดเท่านั้น */
+    function shopTaxRules() {
+      const receipt = window.POSWAI_RECEIPT || {};
+      return {vatBp: Number(receipt.vat_rate_bp) || 0,
+              inclusive: receipt.vat_inclusive !== false,
+              scBp: Number(receipt.service_charge_bp) || 0};
+    }
+
     function getTableGrandTotalWithTax(tStr) {
-      const sub = getTableSubtotal(tStr);
-      const useSc = document.getElementById("enableScCheckbox") && document.getElementById("enableScCheckbox").checked;
-      const useVat = document.getElementById("enableVatCheckbox") && document.getElementById("enableVatCheckbox").checked;
-      const sc = useSc ? sub * 0.10 : 0;
-      const vat = useVat ? (sub + sc) * 0.07 : 0;
-      return { sub, sc, vat, grand: sub + sc + vat };
+      const orders = getTableOrders(tStr);
+      /* บิลที่มาจากเซิร์ฟเวอร์คิดมาแล้วทุกอย่าง รวมของจริงให้ตรงกัน
+         บิลเก่าก่อนมียอดย่อย กับโหมดสาธิต คิดจากราคาในเมนูเองเหมือนเดิม */
+      const served = orders.filter(o => o.totals);
+      if (served.length === orders.length && orders.length) {
+        const add = (key) => served.reduce((sum, o) => sum + (o.totals[key] || 0), 0);
+        const rules = shopTaxRules();
+        return {sub: add('subtotal'), discount: add('discount'), sc: add('service_charge'),
+                vat: add('vat'), grand: served.reduce((sum, o) => sum + (o.total || 0), 0),
+                inclusive: rules.inclusive, vatBp: rules.vatBp, scBp: rules.scBp};
+      }
+      const calc = billFromSubtotal(getTableSubtotal(tStr), 0);
+      return {sub: calc.net, discount: 0, sc: calc.sc, vat: calc.vat, grand: calc.grand,
+              inclusive: calc.inclusive, vatBp: calc.vatBp, scBp: calc.scBp};
     }
 
     function renderCustomerActiveOrders() {
@@ -4037,6 +4113,35 @@
       showToast(`✅ เพิ่ม ${menu.name} x${qty} ลงโต๊ะ ${tStr} และตัดสต็อก BOM แล้ว`);
     }
 
+    /* เงินทอน พร้อมปุ่มแบงก์กลม ที่คนหน้าเคาน์เตอร์หยิบมาจริง ไม่ต้องคิดในหัว */
+    const CASH_NOTES = [20, 50, 100, 500, 1000];
+
+    function renderCashChange() {
+      const box = document.getElementById("cashTenderedInput");
+      const label = document.getElementById("cashChangeLabel");
+      const quick = document.getElementById("cashQuickButtons");
+      if (!box || !label) return;
+      const due = getTableGrandTotalWithTax(state.selectedCashierTable).grand;
+      if (quick) {
+        // แบงก์ที่ใหญ่กว่ายอด บวกด้วยเงินพอดี คือสิ่งที่ลูกค้ายื่นมาจริง
+        const picks = [...new Set([Math.ceil(due), ...CASH_NOTES.filter(note => note >= due),
+                                   ...CASH_NOTES.map(note => Math.ceil(due / note) * note)])]
+          .filter(amount => amount >= due && amount > 0).sort((a, b) => a - b).slice(0, 4);
+        quick.innerHTML = picks.map(amount =>
+          `<button type="button" class="btn btn-outline" style="padding:2px 8px; font-size:0.75rem;"
+             onclick="document.getElementById('cashTenderedInput').value=${amount}; renderCashChange();">฿${amount}</button>`).join("");
+      }
+      const paid = Number(box.value);
+      if (!box.value || !Number.isFinite(paid)) { label.textContent = ""; return; }
+      if (paid < due) {
+        label.style.color = "var(--danger)";
+        label.textContent = `ยังขาดอีก ฿${(due - paid).toFixed(2)}`;
+      } else {
+        label.style.color = "var(--line-green-dark)";
+        label.textContent = `เงินทอน ฿${(paid - due).toFixed(2)}`;
+      }
+    }
+
     function renderSelectedTableBill() {
       const tStr = state.selectedCashierTable;
       document.getElementById("selectedTableHeader").textContent = "โต๊ะ " + tStr;
@@ -4045,6 +4150,19 @@
       const splitCount = Math.max(1, Number(document.getElementById("splitBillCount").value) || 1);
       const perPerson = calc.grand / splitCount;
       document.getElementById("splitBillPerPersonLabel").textContent = `คนละ ฿${perPerson.toFixed(2)} (${splitCount} ท่าน)`;
+
+      const ruleEl = document.getElementById("cashierTaxRule");
+      if (ruleEl) {
+        const rate = (bp) => (bp / 100).toFixed(bp % 100 ? 2 : 0);
+        const rules = shopTaxRules();
+        const says = [];
+        if (rules.vatBp) says.push(`VAT ${rate(rules.vatBp)}% ${rules.inclusive ? "รวมในราคาเมนูแล้ว" : "บวกเพิ่มจากราคาเมนู"}`);
+        if (rules.scBp) says.push(`ค่าบริการ ${rate(rules.scBp)}%`);
+        ruleEl.textContent = says.length
+          ? `ร้านนี้คิด ${says.join(" · ")} · แก้ได้ที่หน้าตั้งค่า`
+          : "ร้านนี้ไม่คิด VAT และค่าบริการ · เปิดได้ที่หน้าตั้งค่า";
+      }
+      renderCashChange();
 
       const detailsEl = document.getElementById("cashierBillDetails");
       if (orders.length === 0) {
@@ -4058,9 +4176,10 @@
             </div>
           `).join("")).join("")}
           <div style="border-top:1px dashed var(--border-color); margin-top:6px; padding-top:6px;">
-            <div style="display:flex; justify-content:space-between;"><span>ยอดก่อนภาษี (Subtotal):</span><span>฿${calc.sub.toFixed(2)}</span></div>
-            ${calc.sc > 0 ? `<div style="display:flex; justify-content:space-between;"><span>Service Charge 10%:</span><span>฿${calc.sc.toFixed(2)}</span></div>` : ""}
-            ${calc.vat > 0 ? `<div style="display:flex; justify-content:space-between;"><span>ภาษีมูลค่าเพิ่ม VAT 7%:</span><span>฿${calc.vat.toFixed(2)}</span></div>` : ""}
+            <div style="display:flex; justify-content:space-between;"><span>ยอดรวม (Subtotal):</span><span>฿${calc.sub.toFixed(2)}</span></div>
+            ${calc.discount > 0 ? `<div style="display:flex; justify-content:space-between; color:var(--line-green-dark);"><span>ส่วนลด:</span><span>-฿${calc.discount.toFixed(2)}</span></div>` : ""}
+            ${calc.sc > 0 ? `<div style="display:flex; justify-content:space-between;"><span>ค่าบริการ ${(calc.scBp / 100).toFixed(calc.scBp % 100 ? 2 : 0)}%:</span><span>฿${calc.sc.toFixed(2)}</span></div>` : ""}
+            ${calc.vat > 0 ? `<div style="display:flex; justify-content:space-between;"><span>VAT ${(calc.vatBp / 100).toFixed(calc.vatBp % 100 ? 2 : 0)}%${calc.inclusive ? " (รวมในราคา)" : ""}:</span><span>฿${calc.vat.toFixed(2)}</span></div>` : ""}
             <div style="display:flex; justify-content:space-between; font-size:1.05rem; font-weight:800; color:var(--info); margin-top:4px;">
               <span>ยอดสุทธิรวม (Grand Total):</span><span>฿${calc.grand.toFixed(2)}</span>
             </div>
@@ -4184,13 +4303,24 @@
         showToast("ช่องทางนี้ยังไม่ได้เชื่อมผู้ให้บริการรับชำระเงินจริง");
         return;
       }
-      if (calc.sc > 0 || calc.vat > 0) {
-        showToast("⚠️ ยังไม่รองรับการปิดบิลที่บวก VAT หรือค่าบริการ กรุณาปิดรายการนี้และตรวจยอดก่อน");
-        return;
+      /* เงินสดที่รับมาไม่พอ คือบิลที่กดพลาด ไม่ใช่บิลที่ต้องปิด — ปล่อยผ่านไป
+         ลิ้นชักจะขาดเงินทุกวันโดยไม่มีอะไรบอก จนกว่าจะนับเงินปิดกะตอนเย็น */
+      let change = 0;
+      const tendered = document.getElementById("cashTenderedInput");
+      if (method.includes("เงินสด") && tendered?.value) {
+        const paid = Number(tendered.value);
+        if (!Number.isFinite(paid) || paid < calc.grand) {
+          showToast(`⚠️ เงินที่รับมาน้อยกว่ายอดบิล ยังขาดอีก ฿${(calc.grand - (paid || 0)).toFixed(2)}`);
+          return;
+        }
+        change = paid - calc.grand;
       }
+      state.lastCashChange = change ? {paid: Number(tendered.value), change} : null;
       try {
         for (const order of orders) {
-          const orderAmount = Math.max(0, order.items.reduce((sum, item) => sum + item.price * item.qty, 0) - (order.discount || 0));
+          /* ยอดที่เซิร์ฟเวอร์บันทึกไว้ตอนสั่ง — บวก VAT ค่าบริการ หักส่วนลดแล้ว
+             คิดใหม่ตรงนี้เมื่อไร เซิร์ฟเวอร์จะปฏิเสธว่ายอดไม่ตรงกับบิล */
+          const orderAmount = order.total ?? Math.max(0, order.items.reduce((sum, item) => sum + item.price * item.qty, 0) - (order.discount || 0));
           await apiMutation("/api/payments/close", {
             event_id: `close-${order.orderId}-${crypto.randomUUID()}`, order_no: order.orderId,
             amount: Number(orderAmount.toFixed(2)), method
@@ -4211,6 +4341,9 @@
 
       state.orders = state.orders.filter(o => o.table !== tStr);
       delete state.slips[tStr];
+      state.lastCashChange = null;
+      const tenderedBox = document.getElementById("cashTenderedInput");
+      if (tenderedBox) tenderedBox.value = "";
       document.getElementById("cashierQrBox").style.display = "none";
 
       addAuditLog(`💰 ปิดบิลโต๊ะ ${tStr} ยอดสุทธิ ฿${calc.grand.toFixed(2)} ชำระโดย ${method}`);
@@ -4230,9 +4363,19 @@
       const custTaxInfo = document.getElementById("taxInvoiceCustomerInfo").value.trim() || "ลูกค้าทั่วไป (ออกใบกำกับภาษีอย่างย่อ)";
       const line = "--------------------------------";
 
+      const shop = window.POSWAI_RECEIPT || {};
+      const rate = (bp) => (bp / 100).toFixed(bp % 100 ? 2 : 0);
+      /* ที่อยู่กับท้ายใบเสร็จเป็นช่องหลายบรรทัด เจ้าของร้านขึ้นบรรทัดเองได้
+         กระดาษใบเสร็จกว้างคงที่ จึงต้องแยกตามที่เขาพิมพ์ ไม่ใช่ต่อกันยาว */
+      const receiptLines = (value) => String(value).split(/\r?\n/);
       const lines = [
-        `   ${state.shopName}`,
-        `   TAX ID: 0505566001234 (VAT Included)`,
+        `   ${shop.legal_name || state.shopName}`,
+        ...(shop.address ? receiptLines(shop.address).map(part => `   ${part.trim()}`) : []),
+        ...(shop.phone ? [`   โทร. ${shop.phone}`] : []),
+        // No tax number is printed unless the shop gave one of its own. A
+        // receipt carrying somebody else's is worse than one carrying none.
+        ...(shop.tax_id ? [`   เลขผู้เสียภาษี ${shop.tax_id}`] : []),
+        ...(shop.receipt_header ? [`   ${shop.receipt_header}`] : []),
         `   ${docTitle}`,
         line,
         `โต๊ะ: ${tStr} | วันที่: ${new Date().toLocaleString("th-TH")}`,
@@ -4242,14 +4385,17 @@
         ...(isFullTax ? [`ลูกค้า/เลขผู้เสียภาษี: ${custTaxInfo}`, line] : []),
         ...orders.flatMap(o => o.items.map(i => `${i.name.slice(0,18).padEnd(18," ")} x${i.qty}  ฿${(i.price*i.qty).toFixed(2)}`)),
         line,
-        `ยอดก่อนภาษี (Subtotal): ฿${calc.sub.toFixed(2)}`,
-        ...(calc.sc > 0 ? [`Service Charge 10%:    ฿${calc.sc.toFixed(2)}`] : []),
-        ...(calc.vat > 0 ? [`VAT 7%:                ฿${calc.vat.toFixed(2)}`] : []),
+        `ยอดรวม (Subtotal): ฿${calc.sub.toFixed(2)}`,
+        ...(calc.sc > 0 ? [`ค่าบริการ ${rate(calc.scBp)}%:${" ".repeat(8)}฿${calc.sc.toFixed(2)}`] : []),
+        ...(calc.vat > 0 ? [`VAT ${rate(calc.vatBp)}%${calc.inclusive ? " (รวมในราคา)" : ""}: ฿${calc.vat.toFixed(2)}`] : []),
         `ยอดสุทธิ (GRAND TOTAL): ฿${calc.grand.toFixed(2)}`,
+        ...(state.lastCashChange ? [`รับมา: ฿${state.lastCashChange.paid.toFixed(2)}`,
+                                    `เงินทอน: ฿${state.lastCashChange.change.toFixed(2)}`] : []),
         ...(splitCount > 1 ? [`แยกบิล (${splitCount} ท่าน): ท่านละ ฿${(calc.grand / splitCount).toFixed(2)}`] : []),
         line,
-        `PromptPay: ${state.promptPayId}`,
-        "   ขอบคุณที่ใช้บริการครับ   "
+        ...(state.promptPayId ? [`PromptPay: ${state.promptPayId}`] : []),
+        ...(shop.receipt_footer ? receiptLines(shop.receipt_footer).map(part => `   ${part.trim()}`)
+                                : ["   ขอบคุณที่ใช้บริการครับ   "])
       ];
       document.getElementById("thermalReceiptPreview").textContent = lines.join("\n");
     }
@@ -5143,6 +5289,9 @@
 
     fetch("/api/config").then(r => r.json()).then(config => {
       if (config.promptpay_id) state.promptPayId = config.promptpay_id;
+      /* ทุกอย่างที่พิมพ์ลงใบเสร็จ: ชื่อตามทะเบียน ที่อยู่ เลขภาษี VAT ค่าบริการ
+         ร้านที่ยังไม่ได้ตั้งค่า ได้ค่าว่าง ซึ่งแปลว่าใบเสร็จไม่พิมพ์บรรทัดนั้น ไม่ใช่เอาของร้านอื่นมาใส่ */
+      window.POSWAI_RECEIPT = config.receipt || {};
       lineLiffId = config.line_liff_id || "";
       state.staffLive = !!config.staff_live;
       if (config.preview_only) {
@@ -5179,12 +5328,12 @@
   <script src="/offline-review.js?v=2"></script>
   <script src="/service-call.js?v=77"></script>
   <script src="/guest-order-alert.js?v=2"></script>
-  <script src="/auth-ui.js?v=95"></script>
+  <script src="/auth-ui.js?v=96"></script>
   <script src="/landing.js?v=44"></script>
-  <script src="/payment-ui.js?v=21"></script>
+  <script src="/payment-ui.js?v=22"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=81"></script>
+  <script src="/live-data.js?v=82"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=92"></script>

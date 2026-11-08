@@ -360,12 +360,12 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any], *,
         if qty_decimal != qty_decimal.to_integral_value() or qty_decimal > 1000:
             raise CatalogError("Quantity must be a whole number from 1 to 1000")
         qty = int(qty_decimal)
-        row = conn.execute("""SELECT name,price_cents,bom_json,station,sold_out,addons_json,active
-            FROM menu_catalog WHERE branch_id=? AND item_id=?""",
+        row = conn.execute("""SELECT name,price_cents,bom_json,station,sold_out,addons_json,active,
+            tax_mode,service_charge FROM menu_catalog WHERE branch_id=? AND item_id=?""",
             (branch_id, item_id)).fetchone()
         if row is None or (not row[6] and not offline):
             raise CatalogError(f"Item {item_id} is unavailable", 409)
-        name, price_cents, bom_json, station, sold_out, addons_json, active = row
+        name, price_cents, bom_json, station, sold_out, addons_json, active, tax_mode, service_charge = row
         if offline and not active:
             waived.append(f"{name} ถูกปิดขายไปแล้ว")
         elif offline and sold_out:
@@ -404,7 +404,11 @@ def quote_order(conn: sqlite3.Connection, branch_id: int, items: list[Any], *,
         lines.append({"id": item_id, "name": name, "qty": qty,
                       "price": line_cents / 100, "bom": bom, "station": station,
                       "course_mode": course_mode, "level": level,
-                      "addons": [addon["name"] for addon in chosen]})
+                      "addons": [addon["name"] for addon in chosen],
+                      # Carried out so the bill can tax and charge service on
+                      # the right lines without reading the menu a second time.
+                      "cents": line_cents * qty, "tax_mode": tax_mode,
+                      "service_charge": bool(service_charge)})
     return {"items": lines, "total_amount": total_cents / 100,
             "total_cents": total_cents, "waived": waived,
             "deductions": {key: float(value) for key, value in sorted(deductions.items())}}

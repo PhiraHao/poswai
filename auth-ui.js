@@ -56,7 +56,7 @@
   /* Mirrors ROLE_PERMISSIONS in line_pos_server.py and is refreshed from /api/permissions.
      Hiding a tab is only a convenience: every endpoint checks the role again. */
   const tabsByRole = {
-    owner: ['customer','kitchen','cashier','inventory','crm','staff','analytics'],
+    owner: ['customer','kitchen','cashier','inventory','crm','staff','analytics','settings'],
     manager: ['customer','kitchen','cashier','inventory','crm','staff','analytics'],
     cashier: ['customer','cashier','crm','staff'],
     kitchen: ['kitchen','inventory','staff'],

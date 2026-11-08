@@ -37,11 +37,22 @@ class StaffQuotaAndAccessTest(unittest.TestCase):
             matrix = client.get("/api/permissions")
             self.assertEqual(matrix.status_code, 200)
             roles = matrix.json()["roles"]
-            self.assertEqual(len(roles["owner"]["tabs"]), 7)
+            # The owner opens every screen there is; counting them only breaks
+            # this test the next time the app grows one.
+            self.assertEqual(set(roles["owner"]["tabs"]), set(server.TAB_LABELS))
             self.assertNotIn("inventory", roles["cashier"]["tabs"])
             self.assertNotIn("analytics", roles["cashier"]["tabs"])
             self.assertNotIn("cashier", roles["kitchen"]["tabs"])
             self.assertEqual(roles["staff"]["tabs"], ["customer", "staff"])
+
+    def test_only_the_owner_opens_the_shop_settings(self):
+        """They hold the shop's bank account, tax number and VAT rate. A
+        manager runs the floor; what the shop bills under is not theirs."""
+        with TestClient(server.app) as client:
+            roles = client.get("/api/permissions").json()["roles"]
+        self.assertIn("settings", roles["owner"]["tabs"])
+        for role in ("manager", "cashier", "kitchen", "service", "staff"):
+            self.assertNotIn("settings", roles[role]["tabs"], role)
 
     def test_new_staff_get_a_leave_allowance_that_approved_leave_reduces(self):
         with TestClient(server.app) as manager, TestClient(server.app) as worker:
