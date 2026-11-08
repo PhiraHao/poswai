@@ -729,7 +729,7 @@
       </button>
       <button class="role-tab" onclick="switchTab('cashier', this)" title="แคชเชียร์">
         <svg aria-hidden="true"><use href="/icons.svg#cashier"></use></svg><span>แคชเชียร์</span>
-        <small>โต๊ะและการชำระเงิน</small>
+        <small data-biz="seats_hint">โต๊ะและการชำระเงิน</small>
         <span id="cashierBadge" class="tab-badge" style="display:none;">0</span>
       </button>
       <button class="role-tab" onclick="switchTab('inventory', this)" title="สต็อก">
@@ -767,7 +767,7 @@
       <div class="module-intro"><div><h1 data-biz="sell">สั่งอาหาร</h1><p>เลือกรายการ จัดการตะกร้า และติดตามบิล</p></div><span class="module-state">หน้าลูกค้า</span></div>
       <div class="liff-header">
         <div>
-          <div style="font-size:0.75rem; opacity:0.92;">POS WAI • ระบบจัดการร้านอาหารอัจฉริยะผ่าน LINE OA & Offline-First</div>
+          <div style="font-size:0.75rem; opacity:0.92;">POS WAI • <span data-biz="tagline">ระบบจัดการร้านอาหารผ่าน LINE OA ใช้ได้แม้เน็ตหลุด</span></div>
           <div style="font-size:1.1rem; font-weight:800;" id="shopNameDisplay">POS WAI - สาขาเชียงใหม่ (นิมมาน)</div>
         </div>
         <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
@@ -1019,7 +1019,7 @@
          TAB 3: แคชเชียร์ POS ครบวงจร (Shift, ย้าย/รวมโต๊ะ, Split Bill, VAT/ใบกำกับภาษี, สแกนบาร์โค้ด)
          ================================================================= -->
     <section id="view-cashier" class="view-section">
-      <div class="module-intro"><div><h1>แคชเชียร์</h1><p>ดูสถานะโต๊ะ ตรวจบิล และจัดการกะ</p></div><span class="module-state">จุดชำระเงิน</span></div>
+      <div class="module-intro"><div><h1>แคชเชียร์</h1><p><span data-biz="seats_hint">โต๊ะและการชำระเงิน</span> · ตรวจบิลและจัดการกะ</p></div><span class="module-state">จุดชำระเงิน</span></div>
       <!-- Shift & Cash Drawer Bar -->
       <div class="card" style="background:#f8fafc; border-left:5px solid var(--info);">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
@@ -1174,7 +1174,7 @@
          TAB 4: ระบบจัดการสินค้าคงคลัง สูตรอาหาร (BOM) ใบสั่งซื้อ (PO) & ของเสีย (Waste)
          ================================================================= -->
     <section id="view-inventory" class="view-section">
-      <div class="module-intro"><div><h1 data-biz="stock">สต็อกและสูตรอาหาร</h1><p>ตรวจวัตถุดิบ สูตร BOM และรายการเคลื่อนไหว</p></div><span class="module-state">คลังสินค้า</span></div>
+      <div class="module-intro"><div><h1 data-biz="stock_title">สต็อกและสูตรอาหาร</h1><p>ตรวจวัตถุดิบ สูตร BOM และรายการเคลื่อนไหว</p></div><span class="module-state">คลังสินค้า</span></div>
       <div class="grid-2">
         <div>
           <div class="card">
@@ -1812,6 +1812,8 @@
       <div class="module-intro"><div><h1>ตั้งค่าร้าน</h1><p>ข้อมูลร้าน ภาษี ค่าบริการ และหัวท้ายใบเสร็จ</p></div></div>
       <div id="settingsHome"></div>
     </section>
+  <!-- รหัสวัตถุดิบที่มีอยู่ ให้บรรทัดใบสั่งซื้อเติมให้เอง -->
+  <datalist id="poIngredientList"></datalist>
   </main>
   <div class="mobile-cart-dock"><button type="button" onclick="document.getElementById('customerCartPanel').scrollIntoView({behavior:'smooth',block:'start'})"><span>ดูตะกร้า <strong id="mobileCartCount">0</strong> รายการ</span><strong id="mobileCartTotal">฿0.00</strong></button></div>
 
@@ -5380,16 +5382,17 @@
   <script src="/offline-review.js?v=2"></script>
   <script src="/service-call.js?v=77"></script>
   <script src="/guest-order-alert.js?v=2"></script>
-  <script src="/auth-ui.js?v=98"></script>
+  <script src="/auth-ui.js?v=99"></script>
   <script src="/landing.js?v=44"></script>
   <script src="/payment-ui.js?v=24"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=84"></script>
-  <script src="/business-type.js?v=1"></script>
+  <script src="/live-data.js?v=85"></script>
+  <script src="/business-type.js?v=2"></script>
   <script src="/shift-ui.js?v=1"></script>
   <script src="/range-report.js?v=1"></script>
   <script src="/tax-invoice-ui.js?v=1"></script>
+  <script src="/purchasing-ui.js?v=1"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=92"></script>

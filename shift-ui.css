@@ -128,3 +128,57 @@
 }
 .range-tables td:not(:first-child), .range-tables th:not(:first-child) { text-align: right; }
 .range-tables .loss { color: var(--danger, #b91c1c); }
+
+/* ---- สั่งของเข้าร้าน ---- */
+
+.po-block { margin-bottom: 12px; }
+.po-block > summary {
+  cursor: pointer;
+  font-weight: 800;
+  padding: 6px 0;
+}
+.po-heading { margin: 14px 0 6px; font-size: 0.9rem; }
+
+.po-line {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) 100px 110px auto;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.po-total { font-weight: 800; margin-left: auto; }
+
+.po-suppliers { list-style: none; margin: 6px 0 0; padding: 0; font-size: 0.82rem; }
+.po-suppliers li {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border-color);
+}
+.po-suppliers span { color: var(--text-muted); }
+
+.po-list { display: grid; gap: 10px; }
+.po-card {
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+}
+.po-card header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.po-card header em { font-style: normal; color: var(--text-muted); }
+.po-card header strong:last-child { margin-left: auto; }
+.po-card table { width: 100%; border-collapse: collapse; }
+.po-card th, .po-card td { text-align: right; padding: 3px 4px; border-bottom: 1px solid var(--border-color); }
+.po-card th:first-child, .po-card td:first-child { text-align: left; }
+.po-card .po-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.po-reason { color: var(--danger, #b91c1c); margin: 6px 0 0; }
+
+/* Waiting on a delivery is the state worth spotting across the screen. */
+.po-sent { border-color: #fcd34d; background: #fffbeb; }
+.po-received { opacity: 0.75; }
+.po-cancelled { opacity: 0.6; }

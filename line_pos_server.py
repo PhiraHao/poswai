@@ -77,6 +77,7 @@ import poswai_profile as profile
 import poswai_shifts as shifts
 import poswai_reports as reports
 import poswai_tax_invoice as tax_invoice
+import poswai_purchasing as purchasing
 
 async def _line_outbox_worker():
     while True:
@@ -556,6 +557,7 @@ def init_db() -> None:
     profile.ensure_schema(conn)
     shifts.init_shifts(conn)
     tax_invoice.init_tax_invoices(conn)
+    purchasing.init_purchasing(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
         staff_id INTEGER PRIMARY KEY, failures INTEGER NOT NULL, first_failed_at INTEGER NOT NULL)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_cancellations (
@@ -1570,6 +1572,109 @@ def menu_item_by_barcode(barcode: str, request: Request, branch_id: int = 1):
     if item["sold_out"]:
         raise HTTPException(409, f"{item['name']} ของหมด")
     return item
+
+
+class SupplierSave(BaseModel):
+    name: str
+    phone: str = ""
+    note: str = ""
+    active: bool = True
+
+
+class PurchaseOrderCreate(BaseModel):
+    branch_id: int = 1
+    supplier_id: int
+    lines: list[dict]
+    note: str = ""
+
+
+class PurchaseOrderReceive(BaseModel):
+    received: dict = {}
+
+
+class PurchaseOrderCancel(BaseModel):
+    reason: str
+
+
+# Ordering spends the shop's money and receiving changes the shelf, so both
+# stay with the people who answer for stock.
+PURCHASING_ROLES = ("owner", "manager", "kitchen")
+
+
+def _purchasing(request: Request, branch_id: int | None, work, roles=PURCHASING_ROLES):
+    staff = require_staff(request, roles=roles, branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            return work(conn, staff)
+    except purchasing.PurchaseError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except InventoryError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/suppliers")
+def read_suppliers(request: Request, include_inactive: bool = False):
+    return _purchasing(request, None, lambda conn, staff: {
+        "suppliers": purchasing.list_suppliers(conn, include_inactive)})
+
+
+@app.post("/api/suppliers")
+def create_supplier(req: SupplierSave, request: Request):
+    require_paid_subscription()
+    return _purchasing(request, None, lambda conn, staff: purchasing.save_supplier(
+        conn, name=req.name, phone=req.phone, note=req.note, active=req.active),
+        roles=("owner", "manager"))
+
+
+@app.put("/api/suppliers/{supplier_id}")
+def update_supplier(supplier_id: int, req: SupplierSave, request: Request):
+    require_paid_subscription()
+    return _purchasing(request, None, lambda conn, staff: purchasing.save_supplier(
+        conn, supplier_id=supplier_id, name=req.name, phone=req.phone,
+        note=req.note, active=req.active), roles=("owner", "manager"))
+
+
+@app.get("/api/purchase-orders")
+def read_purchase_orders(request: Request, branch_id: int = 1,
+                         status: Optional[str] = None, limit: int = 50):
+    return _purchasing(request, branch_id, lambda conn, staff: {
+        "branch_id": branch_id,
+        "orders": purchasing.list_orders(conn, branch_id, status=status, limit=limit),
+        # What is already ordered and not yet here, so a shop stops ordering
+        # a second time because it forgot the first.
+        "on_the_way": purchasing.on_the_way(conn, branch_id)})
+
+
+@app.post("/api/purchase-orders")
+def create_purchase_order(req: PurchaseOrderCreate, request: Request):
+    require_paid_subscription()
+    return _purchasing(request, req.branch_id, lambda conn, staff: purchasing.create_order(
+        conn, branch_id=req.branch_id, supplier_id=req.supplier_id, staff_id=staff["id"],
+        lines=req.lines, note=req.note))
+
+
+@app.post("/api/purchase-orders/{order_id}/send")
+def send_purchase_order(order_id: int, request: Request, branch_id: int = 1):
+    require_paid_subscription()
+    return _purchasing(request, branch_id,
+                       lambda conn, staff: purchasing.send_order(conn, order_id))
+
+
+@app.post("/api/purchase-orders/{order_id}/receive")
+def receive_purchase_order(order_id: int, req: PurchaseOrderReceive, request: Request,
+                           branch_id: int = 1):
+    """Book in what turned up. This is the step that moves stock."""
+    require_paid_subscription()
+    return _purchasing(request, branch_id, lambda conn, staff: purchasing.receive_order(
+        conn, order_id, staff["id"], req.received, apply_movement=apply_inventory_movement))
+
+
+@app.post("/api/purchase-orders/{order_id}/cancel")
+def cancel_purchase_order(order_id: int, req: PurchaseOrderCancel, request: Request,
+                          branch_id: int = 1):
+    require_paid_subscription()
+    return _purchasing(request, branch_id, lambda conn, staff: purchasing.cancel_order(
+        conn, order_id, req.reason), roles=("owner", "manager"))
 
 
 class TaxInvoiceRequest(BaseModel):
@@ -4237,7 +4342,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

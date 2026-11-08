@@ -45,7 +45,9 @@ BUSINESS_TYPES = {
         "tabs_hidden": [],
         "words": {"sell": "สั่งอาหาร", "sell_hint": "เมนูและตะกร้า", "item": "เมนู",
                   "items": "เมนูอาหาร", "seat": "โต๊ะ", "stock": "วัตถุดิบและสูตร",
-                  "workspace": "ร้านอาหาร"},
+                  "workspace": "ร้านอาหาร",
+                  "tagline": "ระบบจัดการร้านอาหารผ่าน LINE OA ใช้ได้แม้เน็ตหลุด",
+                  "seats_hint": "โต๊ะและการชำระเงิน", "stock_title": "สต็อกและสูตรอาหาร"},
     },
     "retail": {
         "label": "ร้านค้า / ขายสินค้า",
@@ -53,14 +55,18 @@ BUSINESS_TYPES = {
         "tabs_hidden": ["kitchen"],
         "words": {"sell": "ขายสินค้า", "sell_hint": "สินค้าและตะกร้า", "item": "สินค้า",
                   "items": "รายการสินค้า", "seat": "ช่องขาย", "stock": "สต็อกสินค้า",
-                  "workspace": "ร้านค้า"},
+                  "workspace": "ร้านค้า",
+                  "tagline": "ระบบขายหน้าร้าน ใช้ได้แม้เน็ตหลุด",
+                  "seats_hint": "ช่องขายและการชำระเงิน", "stock_title": "สต็อกสินค้า"},
     },
     "service": {
         "label": "ร้านบริการ / รับงาน",
         "tabs_hidden": ["kitchen"],
         "words": {"sell": "เปิดบิล", "sell_hint": "บริการและตะกร้า", "item": "บริการ",
                   "items": "รายการบริการ", "seat": "คิว", "stock": "ของใช้ในร้าน",
-                  "workspace": "ร้านบริการ"},
+                  "workspace": "ร้านบริการ",
+                  "tagline": "ระบบเปิดบิลรับงาน ใช้ได้แม้เน็ตหลุด",
+                  "seats_hint": "คิวและการชำระเงิน", "stock_title": "ของใช้ในร้าน"},
     },
 }
 DEFAULT_BUSINESS_TYPE = "restaurant"
