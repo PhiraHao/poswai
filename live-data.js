@@ -876,6 +876,8 @@
       <label>ที่อยู่ร้าน <textarea name="address" rows="2" maxlength="200" placeholder="บ้านเลขที่ ถนน ตำบล อำเภอ จังหวัด รหัสไปรษณีย์"></textarea></label>
       <label>เบอร์โทรร้าน <input name="phone" maxlength="30" inputmode="tel"></label>
       <label>เลขประจำตัวผู้เสียภาษี 13 หลัก <input name="tax_id" maxlength="20" inputmode="numeric" placeholder="เว้นว่างได้ถ้าร้านไม่ได้จดทะเบียน"></label>
+      <label>สถานะของที่อยู่นี้ (บนใบกำกับภาษี)
+        <input name="tax_branch" maxlength="60" placeholder="เว้นว่าง = สำนักงานใหญ่ · หรือใส่ สาขาที่ 00002"></label>
       <label>พร้อมเพย์ที่รับเงิน <input name="promptpay_id" maxlength="20" inputmode="numeric"></label>
 
       <h4>ภาษีและค่าบริการ</h4>
@@ -906,7 +908,7 @@
     try {
       const settings = await request('/api/shop/settings');
       for (const name of ['name', 'promptpay_id', 'legal_name', 'address', 'phone', 'tax_id',
-                          'receipt_header', 'receipt_footer']) {
+                          'tax_branch', 'receipt_header', 'receipt_footer']) {
         shopField(name).value = settings[name] || '';
       }
       const kinds = shopField('business_type');
@@ -940,7 +942,7 @@
       // typed, because the receipt prints them the way they were written.
       business_type: text('business_type'),
       legal_name: text('legal_name'), address: text('address'),
-      phone: text('phone'), tax_id: text('tax_id'),
+      phone: text('phone'), tax_id: text('tax_id'), tax_branch: text('tax_branch'),
       receipt_header: text('receipt_header'), receipt_footer: text('receipt_footer'),
       // "ไม่คิด VAT" is a zero rate, so the bill maths has one thing to read.
       vat_rate_bp: mode === 'none' ? 0 : Math.round(Number(data.get('vat_rate') || 0) * 100),

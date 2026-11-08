@@ -55,6 +55,30 @@ def _rows(conn: sqlite3.Connection, sql: str, params: tuple) -> list[tuple]:
     return conn.execute(sql, params).fetchall()
 
 
+def branch_summary(conn: sqlite3.Connection, *, start=None, end=None,
+                   today: dt.date | None = None) -> dict:
+    """Every branch side by side, for an owner who runs more than one.
+
+    A shop with two branches had to open each one's report and add them up on
+    paper, which is where the second branch stops being looked at.
+    """
+    start_day, end_day = date_range(start, end, today)
+    scope = (start_day, end_day)
+    rows = conn.execute(
+        f"SELECT b.id, b.name, COUNT(p.id), COALESCE(SUM(p.net_amount),0)"
+        f" FROM branches b LEFT JOIN pos_orders p"
+        f"   ON p.branch_id=b.id AND p.status='paid'"
+        f"   AND date(p.closed_at, '{BANGKOK_SHIFT}') BETWEEN ? AND ?"
+        f" GROUP BY b.id, b.name ORDER BY 4 DESC", scope).fetchall()
+    branches = [{"branch_id": row[0], "name": row[1], "bills": row[2],
+                 "revenue": round(row[3] or 0, 2),
+                 "average_bill": round((row[3] or 0) / row[2], 2) if row[2] else 0}
+                for row in rows]
+    return {"start": start_day, "end": end_day, "branches": branches,
+            "bills": sum(b["bills"] for b in branches),
+            "revenue": round(sum(b["revenue"] for b in branches), 2)}
+
+
 def sales_report(conn: sqlite3.Connection, branch_id: int, *,
                  start=None, end=None, today: dt.date | None = None) -> dict:
     """Everything the owner asked of a date range, in one read."""

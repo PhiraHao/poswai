@@ -76,6 +76,7 @@ import poswai_billing as billing
 import poswai_profile as profile
 import poswai_shifts as shifts
 import poswai_reports as reports
+import poswai_tax_invoice as tax_invoice
 
 async def _line_outbox_worker():
     while True:
@@ -554,6 +555,7 @@ def init_db() -> None:
     init_commerce(conn)
     profile.ensure_schema(conn)
     shifts.init_shifts(conn)
+    tax_invoice.init_tax_invoices(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
         staff_id INTEGER PRIMARY KEY, failures INTEGER NOT NULL, first_failed_at INTEGER NOT NULL)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_cancellations (
@@ -1570,6 +1572,105 @@ def menu_item_by_barcode(barcode: str, request: Request, branch_id: int = 1):
     return item
 
 
+class TaxInvoiceRequest(BaseModel):
+    branch_id: int = 1
+    order_no: str
+    name: str
+    tax_id: str = ""
+    address: str = ""
+    branch: str = ""
+
+
+class TaxInvoiceCancel(BaseModel):
+    reason: str
+
+
+def _seller_for_invoice() -> dict:
+    """The shop as it is right now, copied onto the document and frozen there."""
+    settings = _shop_profile()
+    slug = CURRENT_SHOP.get()
+    shop = shops.get_shop(DB_PATH, slug) if slug not in (MAIN_SHOP, DEMO_SHOP) else None
+    return {"name": settings["legal_name"] or (shop["name"] if shop else slug),
+            "address": settings["address"], "phone": settings["phone"],
+            "tax_id": settings["tax_id"],
+            "branch": settings["tax_branch"] or tax_invoice.HEAD_OFFICE,
+            "vat_rate_bp": settings["vat_rate_bp"],
+            "vat_inclusive": settings["vat_inclusive"]}
+
+
+@app.post("/api/tax-invoices")
+def issue_tax_invoice(req: TaxInvoiceRequest, request: Request):
+    """ออกใบกำกับภาษีเต็มรูป — numbered, recorded, and issued once per bill."""
+    staff = require_staff(request, roles=("owner", "manager", "cashier"), branch_id=req.branch_id)
+    require_paid_subscription()
+    try:
+        with closing(connect_db()) as conn, conn:
+            return tax_invoice.issue(
+                conn, order_no=req.order_no, branch_id=req.branch_id, staff_id=staff["id"],
+                seller=_seller_for_invoice(),
+                buyer={"name": req.name, "tax_id": req.tax_id,
+                       "address": req.address, "branch": req.branch})
+    except tax_invoice.InvoiceError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/tax-invoices")
+def list_tax_invoices(request: Request, branch_id: int = 1, limit: int = 50):
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        return {"branch_id": branch_id,
+                "invoices": tax_invoice.listing(conn, branch_id, limit)}
+
+
+@app.get("/api/tax-invoices/{number}")
+def read_tax_invoice(number: str, request: Request):
+    """Reprinting hands back what was issued, never a freshly computed one."""
+    require_staff(request, roles=("owner", "manager", "cashier"))
+    try:
+        with closing(connect_db()) as conn:
+            return tax_invoice.by_number(conn, number)
+    except tax_invoice.InvoiceError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/tax-invoices/{number}/cancel")
+def cancel_tax_invoice(number: str, req: TaxInvoiceCancel, request: Request):
+    """Void it. The row and its number stay used: two documents sharing one
+    number is exactly what an audit looks for."""
+    require_staff(request, roles=("owner", "manager"))
+    try:
+        with closing(connect_db()) as conn, conn:
+            return tax_invoice.cancel(conn, number, req.reason)
+    except tax_invoice.InvoiceError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+def _report_reader(request: Request, branch_id: int) -> dict:
+    """Who may read a branch's figures.
+
+    An owner owns every branch of their shop, so asking them to sign in at
+    each one to read its report would be asking them to work around their own
+    system. A manager runs one branch and reads that one. Shops cannot see
+    each other either way: each shop is its own database file.
+    """
+    staff = require_staff(request, roles=("owner", "manager"))
+    if staff["role"] != "owner" and staff["branch_id"] != branch_id:
+        raise HTTPException(403, "คุณไม่ได้อยู่สาขานี้")
+    return staff
+
+
+@app.get("/api/reports/branches")
+def sales_across_branches(request: Request, start: Optional[str] = None,
+                          end: Optional[str] = None):
+    """Every branch side by side. The owner's screen; a manager runs one branch."""
+    require_staff(request, roles=("owner",))
+    try:
+        with closing(connect_db()) as conn:
+            return reports.branch_summary(conn, start=start, end=end)
+    except reports.ReportError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
 @app.get("/api/reports/sales")
 def sales_over_a_range(request: Request, branch_id: int = 1,
                        start: Optional[str] = None, end: Optional[str] = None):
@@ -1578,7 +1679,7 @@ def sales_over_a_range(request: Request, branch_id: int = 1,
     Owners and managers only. A cashier's own screen shows the shift they are
     standing at; last month's margins are not theirs to read.
     """
-    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    _report_reader(request, branch_id)
     try:
         with closing(connect_db()) as conn:
             return reports.sales_report(conn, branch_id, start=start, end=end)
@@ -1592,7 +1693,7 @@ def sales_over_a_range_csv(request: Request, branch_id: int = 1,
     """The same figures as a file. Sent with a BOM so Excel on a Thai Windows
     opens it as UTF-8 instead of turning every Thai letter into a question
     mark, which is what an accountant would actually receive otherwise."""
-    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    _report_reader(request, branch_id)
     try:
         with closing(connect_db()) as conn:
             report = reports.sales_report(conn, branch_id, start=start, end=end)
@@ -4136,7 +4237,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
@@ -4464,6 +4565,7 @@ class ShopSettings(BaseModel):
     address: Optional[str] = None
     phone: Optional[str] = None
     tax_id: Optional[str] = None
+    tax_branch: Optional[str] = None
     vat_rate_bp: Optional[int] = None
     vat_inclusive: Optional[bool] = None
     service_charge_bp: Optional[int] = None

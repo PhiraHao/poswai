@@ -24,18 +24,22 @@
     <div class="card-header"><div class="card-title">📅 ยอดขายตามช่วงวันที่</div></div>
     <p class="shift-hint">เลือกช่วงวันแล้วกดดู · ว่างไว้ = 30 วันล่าสุด</p>
     <div class="shift-row">
+      <!-- เจ้าของร้านเท่านั้นที่เห็นช่องนี้ ผู้จัดการดูได้เฉพาะสาขาตัวเอง -->
+      <label for="rangeBranch" id="rangeBranchLabel" hidden>สาขา</label>
+      <select id="rangeBranch" class="input" hidden></select>
       <label for="rangeStart">ตั้งแต่</label><input id="rangeStart" type="date" class="input">
       <label for="rangeEnd">ถึง</label><input id="rangeEnd" type="date" class="input">
       <button type="button" class="btn btn-line" id="rangeGo">ดูรายงาน</button>
       <button type="button" class="btn btn-outline" id="rangeCsv">ดาวน์โหลด Excel/CSV</button>
     </div>
+    <div id="rangeBranchSummary"></div>
     <div class="range-figures" id="rangeFigures"></div>
     <p class="range-incomplete" id="rangeIncomplete"></p>
     <div class="range-tables" id="rangeTables"></div>
     <p id="rangeStatus" role="status" class="shift-status"></p>`;
 
   const at = (id) => panel.querySelector(`#${id}`);
-  const branch = () => window.poswaiAuth?.branchId || 1;
+  const branch = () => Number(at('rangeBranch').value) || window.poswaiAuth?.branchId || 1;
   const query = () => {
     const parts = [`branch_id=${branch()}`];
     if (at('rangeStart').value) parts.push(`start=${at('rangeStart').value}`);
@@ -80,16 +84,49 @@
     at('rangeStatus').textContent = `ช่วง ${report.start} ถึง ${report.end}`;
   };
 
+  /* Every branch side by side, for an owner who runs more than one. A shop
+     with two branches had to open each report and add them up on paper,
+     which is where the second branch stops being looked at. */
+  const drawBranches = (summary) => {
+    const box = at('rangeBranchSummary');
+    if (!summary || summary.branches.length < 2) { box.innerHTML = ''; return; }
+    box.innerHTML = `<div class="range-tables">${table(
+      `ทุกสาขารวมกัน · ${money(summary.revenue)} จาก ${summary.bills} บิล`,
+      ['สาขา', 'บิล', 'ยอดขาย', 'เฉลี่ย/บิล'],
+      summary.branches.map(b =>
+        `<tr><td>${text(b.name)}</td><td>${b.bills}</td><td>${money(b.revenue)}</td>` +
+        `<td>${money(b.average_bill)}</td></tr>`))}</div>`;
+  };
+
+  const fillBranches = async () => {
+    if (window.poswaiAuth?.current?.role !== 'owner') return null;
+    try {
+      const summary = await ask(`/api/reports/branches${
+        at('rangeStart').value || at('rangeEnd').value
+          ? '?' + query().replace(/branch_id=\d+&?/, '') : ''}`);
+      if (summary.branches.length > 1 && !at('rangeBranch').options.length) {
+        at('rangeBranch').innerHTML = summary.branches
+          .map(b => `<option value="${b.branch_id}">${text(b.name)}</option>`).join('');
+        at('rangeBranch').value = window.poswaiAuth?.branchId || summary.branches[0].branch_id;
+        at('rangeBranch').hidden = false;
+        at('rangeBranchLabel').hidden = false;
+      }
+      return summary;
+    } catch { return null; }   // one branch, or not allowed: the single report still works
+  };
+
   const load = async () => {
     at('rangeStatus').textContent = 'กำลังโหลด…';
     at('rangeStatus').classList.remove('bad');
     try {
+      drawBranches(await fillBranches());
       draw(await ask(`/api/reports/sales?${query()}`));
     } catch (error) {
       at('rangeStatus').textContent = error.message;
       at('rangeStatus').classList.add('bad');
     }
   };
+  at('rangeBranch').addEventListener('change', load);
 
   at('rangeGo').addEventListener('click', load);
   at('rangeCsv').addEventListener('click', () => {

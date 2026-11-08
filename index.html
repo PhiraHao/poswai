@@ -1139,7 +1139,7 @@
               <button class="btn btn-purple" onclick="confirmPaymentAndPrint('บัตรเครดิต/เดบิต (EDC)')">💳 บัตรเครดิต / เดบิต</button>
               <button class="btn btn-warning" onclick="confirmPaymentAndPrint('e-Wallet (TrueMoney/LINE Pay)')">📱 e-Wallet / สแกนจ่าย</button>
               <button class="btn btn-outline" onclick="printReceiptForTable(state.selectedCashierTable, 'ใบแจ้งหนี้ (Pre-Bill)', false)">🧾 พิมพ์ใบแจ้งหนี้</button>
-              <button class="btn btn-outline" onclick="printReceiptForTable(state.selectedCashierTable, 'ใบกำกับภาษีเต็มรูป (Full Tax Invoice)', true)">📄 ออกใบกำกับภาษีเต็มรูป</button>
+              <button class="btn btn-outline" onclick="issueTaxInvoiceForTable()">📄 ออกใบกำกับภาษีเต็มรูป</button>
             </div>
 
             <div id="cashierQrBox" style="display:none; margin-top:10px;">
@@ -4389,6 +4389,21 @@
       showToast(`🎉 ปิดบิลโต๊ะ ${tStr} (฿${calc.grand.toFixed(2)}) เรียบร้อย!`);
     }
 
+    /* ใบกำกับภาษีออกจากบิลที่ชำระเงินแล้วเท่านั้น เพราะมันคือหลักฐานว่าขายไปแล้วจริง
+       โต๊ะที่ยังไม่เก็บเงินจึงออกไม่ได้ และบอกคนกดว่าทำไม แทนการเงียบไปเฉย ๆ */
+    function issueTaxInvoiceForTable() {
+      const tStr = state.selectedCashierTable;
+      /* The bill this table just paid, if the screen still has it. The dialog
+         lists every recent paid bill anyway, because a customer usually asks
+         after the food is done and the bill has left the table. */
+      const paid = getTableOrders(tStr).filter(order => order.paid).map(order => order.orderId);
+      if (!state.productionMode) {
+        showToast("โหมดตัวอย่างยังออกใบกำกับภาษีจริงไม่ได้");
+        return;
+      }
+      window.openTaxInvoice?.(paid);
+    }
+
     function printReceiptForTable(tStr, docTitle, isFullTax) {
       const orders = getTableOrders(tStr);
       if (orders.length === 0) {
@@ -5365,15 +5380,16 @@
   <script src="/offline-review.js?v=2"></script>
   <script src="/service-call.js?v=77"></script>
   <script src="/guest-order-alert.js?v=2"></script>
-  <script src="/auth-ui.js?v=97"></script>
+  <script src="/auth-ui.js?v=98"></script>
   <script src="/landing.js?v=44"></script>
-  <script src="/payment-ui.js?v=23"></script>
+  <script src="/payment-ui.js?v=24"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=83"></script>
+  <script src="/live-data.js?v=84"></script>
   <script src="/business-type.js?v=1"></script>
   <script src="/shift-ui.js?v=1"></script>
   <script src="/range-report.js?v=1"></script>
+  <script src="/tax-invoice-ui.js?v=1"></script>
   <script src="/tables-ui.js?v=85"></script>
   <script src="/print-agent-ui.js?v=91"></script>
   <script src="/print-direct.js?v=92"></script>

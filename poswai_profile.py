@@ -80,6 +80,10 @@ FIELDS: dict[str, tuple[str, str]] = {
     "address": ("TEXT NOT NULL DEFAULT ''", "text"),
     "phone": ("TEXT NOT NULL DEFAULT ''", "text"),
     "tax_id": ("TEXT NOT NULL DEFAULT ''", "tax_id"),
+    # What the Revenue Department calls this address: the head office, or a
+    # numbered branch. A full tax invoice has to say which, and a shop that
+    # leaves it blank is the head office, which is almost always true.
+    "tax_branch": ("TEXT NOT NULL DEFAULT ''", "text"),
     "vat_rate_bp": ("INTEGER NOT NULL DEFAULT 0", "rate"),
     "vat_inclusive": ("INTEGER NOT NULL DEFAULT 1", "flag"),
     "service_charge_bp": ("INTEGER NOT NULL DEFAULT 0", "rate"),
@@ -87,7 +91,7 @@ FIELDS: dict[str, tuple[str, str]] = {
     "receipt_footer": ("TEXT NOT NULL DEFAULT ''", "text"),
 }
 TEXT_LIMITS = {"legal_name": 120, "address": 200, "phone": 30,
-               "receipt_header": 120, "receipt_footer": 200}
+               "receipt_header": 120, "receipt_footer": 200, "tax_branch": 60}
 # The two fields a shop writes as a block, where the line breaks are the point:
 # an address and a closing message are printed the way they were typed. Every
 # other field is one line, so stray spacing in it is collapsed.

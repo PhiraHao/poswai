@@ -250,3 +250,68 @@ class TheEndpoints(ReportCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AcrossBranches(ReportCase):
+    """เจ้าของที่มีหลายสาขาเคยต้องเปิดรายงานทีละสาขาแล้วบวกเองบนกระดาษ
+    ซึ่งเป็นจุดที่สาขาที่สองเลิกถูกมอง"""
+
+    def setUp(self):
+        super().setUp()
+        with self.conn:
+            self.conn.execute("INSERT INTO branches(id,name) VALUES(2,'สาขาสอง')")
+            self.conn.execute(
+                "INSERT INTO staffs(id,branch_id,name,role,pin_code_hash) VALUES(4,2,?,?,?)",
+                ("ผจก.สอง", "manager", server.hash_pin("secure-pin-manager")))
+
+    def summary(self, **params):
+        return reports.branch_summary(self.conn, today=dt.date(2026, 11, 9), **params)
+
+    def test_every_branch_is_listed_even_one_that_sold_nothing(self):
+        """A branch missing from the list reads as a branch that is fine."""
+        self.bill("A", "2026-11-05", 100, branch_id=1)
+        summary = self.summary()
+        names = {b["name"]: b for b in summary["branches"]}
+        self.assertEqual(set(names), {"Test", "สาขาสอง"})
+        self.assertEqual(names["สาขาสอง"]["revenue"], 0)
+        self.assertEqual(names["สาขาสอง"]["bills"], 0)
+
+    def test_the_total_is_every_branch_added_up(self):
+        self.bill("A", "2026-11-05", 100, branch_id=1)
+        self.bill("B", "2026-11-05", 400, branch_id=2)
+        summary = self.summary()
+        self.assertEqual(summary["revenue"], 500)
+        self.assertEqual(summary["bills"], 2)
+
+    def test_branches_are_ranked_by_what_they_took(self):
+        self.bill("A", "2026-11-05", 100, branch_id=1)
+        self.bill("B", "2026-11-05", 400, branch_id=2)
+        self.assertEqual(self.summary()["branches"][0]["name"], "สาขาสอง")
+
+    def test_the_range_applies_to_every_branch_alike(self):
+        self.bill("A", "2026-11-05", 100, branch_id=1)
+        self.bill("OLD", "2026-01-01", 900, branch_id=2)
+        self.assertEqual(self.summary()["revenue"], 100)
+
+    def test_the_owner_reads_the_branch_summary(self):
+        self.bill("A", "2026-11-05", 100, branch_id=2)
+        answer = self.signed_in().get("/api/reports/branches?start=2026-11-01&end=2026-11-30")
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()["revenue"], 100)
+
+    def test_a_manager_does_not_see_every_branch_at_once(self):
+        manager = self.signed_in(4, "manager")
+        self.assertEqual(manager.get("/api/reports/branches").status_code, 403)
+
+    def test_the_owner_may_read_a_branch_they_are_not_signed_in_at(self):
+        """Asking them to sign in at each branch to read its own report is
+        asking them to work around their own system."""
+        self.bill("A", "2026-11-05", 250, branch_id=2)
+        answer = self.signed_in().get("/api/reports/sales?branch_id=2&start=2026-11-01&end=2026-11-30")
+        self.assertEqual(answer.status_code, 200, answer.text)
+        self.assertEqual(answer.json()["revenue"], 250)
+
+    def test_a_manager_reads_only_their_own_branch(self):
+        manager = self.signed_in(4, "manager")
+        self.assertEqual(manager.get("/api/reports/sales?branch_id=2").status_code, 200)
+        self.assertEqual(manager.get("/api/reports/sales?branch_id=1").status_code, 403)
