@@ -81,8 +81,8 @@
       .filter((m) => ui.category === 'ทั้งหมด' || m.category === ui.category)
       .filter((m) => !q || m.name.toLowerCase().includes(q));
     const inCart = (m) => pos().cart.filter((i) => i.id === m.id).reduce((n, i) => n + i.qty, 0);
-    return `<h1 class="gui-h1">สั่งอาหาร</h1>
-      <label class="gui-search">${icon('search')}<input type="search" data-act="query" value="${esc(ui.query)}" placeholder="ค้นหาเมนู" aria-label="ค้นหาเมนู"></label>
+    return `<h1 class="gui-h1">${W('sell', 'สั่งอาหาร')}</h1>
+      <label class="gui-search">${icon('search')}<input type="search" data-act="query" value="${esc(ui.query)}" placeholder="ค้นหา${W('item', 'เมนู')}" aria-label="ค้นหา${W('item', 'เมนู')}"></label>
       <div class="gui-chips">${categories().map((c) => `<button type="button" data-act="category" data-value="${esc(c)}" class="${c === ui.category ? 'on' : ''}">${esc(c)}</button>`).join('')}</div>
       ${list.length ? `<div class="gui-products">${list.map((m) => {
         const out = m.soldOut || (typeof m.quota === 'number' && m.quota <= 0);
@@ -90,7 +90,7 @@
         return `<button type="button" class="gui-product ${out ? 'out' : ''}" data-act="add" data-value="${m.id}" ${out ? 'disabled' : ''}>
           <span class="gui-shot"><img src="${esc(photo(m))}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${placeholder}'">${out ? '<em>หมด</em>' : ''}${n ? `<b class="gui-count">${n}</b>` : ''}</span>
           <span class="gui-pbody"><strong>${esc(m.name)}</strong>${m.description ? `<small>${esc(m.description)}</small>` : ''}<span class="gui-prow"><b>${baht(m.price)}</b><span class="gui-plus">${icon('plus')}</span></span></span></button>`;
-      }).join('')}</div>` : empty(menu().length ? 'ไม่พบเมนู' : 'กำลังโหลดเมนู…', menu().length ? 'ลองค้นด้วยคำอื่น' : 'รอสักครู่')}`;
+      }).join('')}</div>` : empty(menu().length ? `ไม่พบ${W('item', 'เมนู')}` : `กำลังโหลด${W('item', 'เมนู')}…`, menu().length ? 'ลองค้นด้วยคำอื่น' : 'รอสักครู่')}`;
   };
 
   /* ----------------------------------------------------------- the pager
@@ -133,14 +133,14 @@
     try { navigator.vibrate?.([400, 180, 400, 180, 600]); } catch (_) { /* a phone that cannot buzz still chimes */ }
     if (window.Notification && Notification.permission === 'granted') {
       try {
-        new Notification('อาหารพร้อมแล้ว', {
+        new Notification(W('ready', 'อาหารพร้อมแล้ว'), {
           body: `${calledAs(order)} · รับได้ที่เคาน์เตอร์`,
           icon: '/assets/brand-icon.webp', tag: String(order.orderId), renotify: true});
       } catch (_) { /* notifications are a nicety, the card is the promise */ }
     }
     const card = slot('ready');
     card.innerHTML = `<div class="gui-ready-card">${icon('bell')}
-      <strong>อาหารพร้อมแล้ว</strong>
+      <strong>${W('ready', 'อาหารพร้อมแล้ว')}</strong>
       <small>${esc(calledAs(order))} · รับได้ที่เคาน์เตอร์</small>
       <button type="button" data-act="seen">รับทราบ</button></div>`;
     card.hidden = false;
@@ -180,7 +180,7 @@
           ${pp ? `<button type="button" class="gui-btn primary" data-act="pay">${icon('qr', 'gui-i-xs')} จ่ายด้วยพร้อมเพย์</button>` : ''}
         </div>
         <small class="gui-hint">พนักงานจะยืนยันการชำระเงินที่เคาน์เตอร์</small></section>`
-      : empty('ยังไม่ได้สั่งอาหาร', 'เลือกเมนูในแท็บ เมนู แล้วกดส่งออเดอร์')}
+      : empty('ยังไม่ได้สั่งอะไร', `เลือก${W('item', 'เมนู')}แล้วกดส่งออเดอร์`)}
       <div class="gui-quick">
         <button type="button" class="gui-btn" data-act="call" data-value="เรียกพนักงานที่โต๊ะ">${icon('bell', 'gui-i-xs')} เรียกพนักงาน</button>
         <button type="button" class="gui-btn" data-act="call" data-value="ขอน้ำเปล่า/น้ำแข็ง">${icon('water', 'gui-i-xs')} ขอน้ำ/น้ำแข็ง</button>
@@ -195,7 +195,7 @@
         <img src="/assets/mascot-pos.webp" alt="" class="gui-mascot">
         ${member ? `<div><strong>${esc(member.display_name || 'สมาชิก')}</strong>
           <span class="gui-points">${icon('star', 'gui-i-xs')} ${Number(member.points || 0).toLocaleString('th-TH')} แต้ม</span>
-          <small>ยอดสะสมจากการสั่งอาหารที่ร้านนี้</small></div>`
+          <small>ยอดสะสมจากการซื้อที่ร้านนี้</small></div>`
         : `<div><strong>สมัครสมาชิกฟรี</strong><small>สะสมแต้มทุกครั้งที่สั่ง ใช้เป็นส่วนลดครั้งต่อไป</small></div>`}
       </section>
       <div class="gui-menu">
@@ -226,7 +226,7 @@
         return `<div class="gui-line"><span class="gui-grow"><b>${esc(l.name)}</b><small>${esc(extra)}${extra ? ' · ' : ''}${baht(l.price)}</small></span>
           <span class="gui-qty"><button type="button" data-act="qty" data-index="${i}" data-value="-1" aria-label="ลดจำนวน">${icon(l.qty > 1 ? 'minus' : 'trash')}</button><b>${l.qty}</b><button type="button" data-act="qty" data-index="${i}" data-value="1" aria-label="เพิ่มจำนวน">${icon('plus')}</button></span></div>`;
       }).join('')}</div>
-      <label class="gui-field">ถึงครัว (ไม่บังคับ)<input type="text" data-act="note" maxlength="200" placeholder="เช่น ไม่ใส่ผัก" value="${esc(document.getElementById('orderNoteInput')?.value || '')}"></label>
+      <label class="gui-field">${W('note_to', 'ถึงครัว')} (ไม่บังคับ)<input type="text" data-act="note" maxlength="200" placeholder="เช่น ไม่ใส่ผัก" value="${esc(document.getElementById('orderNoteInput')?.value || '')}"></label>
       <div class="gui-sum"><span>ยอดรวม</span><strong>${baht(cartTotal())}</strong></div>
       <button type="button" class="gui-btn primary wide" data-act="send">ส่งออเดอร์ ${icon('arrow', 'gui-i-xs')}</button>`
       : empty('ตะกร้าว่าง', 'แตะเมนูเพื่อเพิ่มรายการ')}`);
@@ -241,11 +241,16 @@
     catch (error) { toast(error.message); }
   };
 
+  /* คำเรียกของร้านนี้ — ร้านค้าไม่ได้ขาย "อาหาร" และไม่มี "ครัว"
+     หน้านี้คือหน้าที่ลูกค้าเห็น ผิดคำที่นี่คือผิดต่อหน้าลูกค้าโดยตรง
+     ไม่มีค่ามา = ได้คำร้านอาหารเหมือนเดิม */
+  const W = (key, fallback) => window.POSWAI_BUSINESS?.words?.[key] || fallback;
+
   // ----------------------------------------------------------------- paint
   const paint = () => {
     const shop = auth().shop || {};
-    slot('shop').textContent = shop.name || 'ร้านอาหาร';
-    slot('table').textContent = `โต๊ะ ${table()}`;
+    slot('shop').textContent = shop.name || W('workspace', 'ร้านอาหาร');
+    slot('table').textContent = `${W('seat', 'โต๊ะ')} ${table()}`;
     slot('nav').innerHTML = TABS.map(([id, label, ic]) => `<button type="button" data-act="tab" data-value="${id}" class="${ui.tab === id ? 'on' : ''}" ${ui.tab === id ? 'aria-current="page"' : ''}>${icon(ic)}<span>${label}</span></button>`).join('');
     const main = slot('main');
     const focused = document.activeElement?.dataset?.act === 'query';

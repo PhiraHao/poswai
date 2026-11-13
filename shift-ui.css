@@ -182,3 +182,10 @@
 .po-sent { border-color: #fcd34d; background: #fffbeb; }
 .po-received { opacity: 0.75; }
 .po-cancelled { opacity: 0.6; }
+
+/* ---- โอนของข้ามสาขา ---- */
+
+.tr-line { grid-template-columns: minmax(0, 1.6fr) 110px auto; }
+
+/* A shop with one branch has nothing to transfer to. */
+.transfer-panel.tr-single { display: none; }

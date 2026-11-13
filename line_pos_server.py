@@ -78,6 +78,7 @@ import poswai_shifts as shifts
 import poswai_reports as reports
 import poswai_tax_invoice as tax_invoice
 import poswai_purchasing as purchasing
+import poswai_transfers as transfers
 
 async def _line_outbox_worker():
     while True:
@@ -558,6 +559,7 @@ def init_db() -> None:
     shifts.init_shifts(conn)
     tax_invoice.init_tax_invoices(conn)
     purchasing.init_purchasing(conn)
+    transfers.init_transfers(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
         staff_id INTEGER PRIMARY KEY, failures INTEGER NOT NULL, first_failed_at INTEGER NOT NULL)""")
     cur.execute("""CREATE TABLE IF NOT EXISTS order_cancellations (
@@ -1677,6 +1679,85 @@ def cancel_purchase_order(order_id: int, req: PurchaseOrderCancel, request: Requ
         conn, order_id, req.reason), roles=("owner", "manager"))
 
 
+class TransferSend(BaseModel):
+    from_branch_id: int = 1
+    to_branch_id: int
+    lines: list[dict]
+    note: str = ""
+
+
+class TransferReceive(BaseModel):
+    branch_id: int = 1
+    received: dict = {}
+
+
+class TransferCancel(BaseModel):
+    branch_id: int = 1
+    reason: str
+
+
+def _transfers(request: Request, branch_id: int | None, work,
+               roles=("owner", "manager", "kitchen")):
+    """An owner owns every branch, so they act on any of them; everyone else
+    is tied to the branch they work at."""
+    staff = require_staff(request, roles=roles)
+    if branch_id is not None and staff["role"] != "owner" and staff["branch_id"] != branch_id:
+        raise HTTPException(403, "คุณไม่ได้อยู่สาขานี้")
+    try:
+        with closing(connect_db()) as conn, conn:
+            return work(conn, staff)
+    except transfers.TransferError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except InventoryError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/transfers")
+def read_transfers(request: Request, branch_id: int = 1, limit: int = 50):
+    """Both directions: what this branch sent, and what is coming to it."""
+    return _transfers(request, branch_id, lambda conn, staff: {
+        "branch_id": branch_id,
+        "transfers": transfers.listing(conn, branch_id, limit),
+        "in_transit": transfers.in_transit(conn, branch_id)})
+
+
+@app.post("/api/transfers")
+def send_transfer(req: TransferSend, request: Request):
+    """Write the note that goes in the box. Stock moves when the far branch
+    confirms what arrived."""
+    require_paid_subscription()
+    return _transfers(request, req.from_branch_id, lambda conn, staff: transfers.send(
+        conn, from_branch_id=req.from_branch_id, to_branch_id=req.to_branch_id,
+        staff_id=staff["id"], lines=req.lines, note=req.note))
+
+
+@app.post("/api/transfers/{transfer_id}/receive")
+def receive_transfer(transfer_id: int, req: TransferReceive, request: Request):
+    """The receiving branch's own staff confirm it, which is the point: the
+    branch that sent it cannot sign for its own delivery."""
+    require_paid_subscription()
+    staff = require_staff(request, roles=("owner", "manager", "kitchen"))
+    try:
+        with closing(connect_db()) as conn, conn:
+            note = transfers.transfer(conn, transfer_id)
+            if staff["role"] != "owner" and staff["branch_id"] != note["to_branch_id"]:
+                raise HTTPException(403, "ใบนี้ต้องให้สาขาปลายทางเป็นคนยืนยันรับ")
+            return transfers.receive(conn, transfer_id, staff["id"], req.received,
+                                     apply_movement=apply_inventory_movement)
+    except transfers.TransferError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    except InventoryError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/transfers/{transfer_id}/cancel")
+def cancel_transfer(transfer_id: int, req: TransferCancel, request: Request):
+    require_paid_subscription()
+    return _transfers(request, req.branch_id,
+                      lambda conn, staff: transfers.cancel(conn, transfer_id, req.reason),
+                      roles=("owner", "manager"))
+
+
 class TaxInvoiceRequest(BaseModel):
     branch_id: int = 1
     order_no: str
@@ -2010,7 +2091,11 @@ def serve_menu_photo(shop: str, name: str):
 
 @app.get("/api/inventory")
 def get_inventory(request: Request, branch_id: int = 1):
-    require_staff(request, roles=("owner", "manager", "kitchen"), branch_id=branch_id)
+    """An owner reads any branch's shelf, because they own all of them and a
+    transfer is worth nothing if they cannot see both ends of it."""
+    staff = require_staff(request, roles=("owner", "manager", "kitchen"))
+    if staff["role"] != "owner" and staff["branch_id"] != branch_id:
+        raise HTTPException(403, "คุณไม่ได้อยู่สาขานี้")
     with closing(connect_db()) as conn:
         rows = conn.execute("SELECT ingredient_id,stock,unit,reorder_point FROM inventory"
                             " WHERE branch_id=? ORDER BY ingredient_id", (branch_id,)).fetchall()
@@ -4342,7 +4427,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

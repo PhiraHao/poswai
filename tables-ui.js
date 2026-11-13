@@ -112,7 +112,7 @@
   panel.className = 'tbl-panel';
   panel.hidden = true;
   panel.innerHTML = `<h3>โต๊ะและ QR สำหรับติดโต๊ะ</h3>
-    <p>พิมพ์ QR ไปติดโต๊ะครั้งเดียว ลูกค้าสแกนแล้วสั่งอาหารและจ่ายเงินเองได้ · QR ไม่มีวันหมดอายุ แต่ยกเลิกรายโต๊ะได้ทุกเมื่อ</p>
+    <p>พิมพ์ QR ไปติดครั้งเดียว ลูกค้าสแกนแล้วสั่งและจ่ายเงินเองได้ · QR ไม่มีวันหมดอายุ แต่ยกเลิกรายโต๊ะได้ทุกเมื่อ</p>
     <form id="tblAddForm">
       <label>ชื่อหรือเลขโต๊ะ <input name="table_no" required maxlength="24" placeholder="เช่น 1, A3, ระเบียง"></label>
       <label>จำนวนที่นั่ง <input name="seats" type="number" min="0" max="999" value="0"></label>
@@ -125,6 +125,11 @@
     <div class="tbl-grid" id="tblGrid"></div>
     <p class="tbl-note">ถ้ามีคนถ่ายรูป QR ของโต๊ะไหนไป ให้กด <strong>ออกรหัสใหม่</strong> เฉพาะโต๊ะนั้น แผ่นที่ติดโต๊ะอื่นยังใช้ได้ตามปกติ · การ <strong>ยกเลิก</strong> จะปิด QR ไว้ชั่วคราวโดยไม่เปลี่ยนรหัส กดคืนสิทธิ์แล้วแผ่นเดิมกลับมาใช้ได้</p>
     <p id="tblStatus" role="status"></p>`;
+
+  /* คำเรียกของร้านนี้ ร้านค้าไม่มี "โต๊ะ" แต่มี QR ที่ต้องติดอยู่ดี
+     ไม่มีค่ามา = ได้คำร้านอาหารเหมือนเดิม */
+  const W = (key, fallback) => window.POSWAI_BUSINESS?.words?.[key] || fallback;
+  const seat = () => W('seat', 'โต๊ะ');
 
   const status = message => { panel.querySelector('#tblStatus').textContent = message; };
   let tables = [];
@@ -240,7 +245,7 @@
       catch (error) { status(error.message); canvas.remove(); return; }
       canvas.remove();
       const name = String(table.table_no).replace(/[&<>"]/g, '');
-      cards.push(`<article><h2>โต๊ะ ${name}</h2><img src="${image}" alt=""><p>สแกนเพื่อดูเมนู สั่งอาหาร และจ่ายเงิน</p><small>${shopName}</small></article>`);
+      cards.push(`<article><h2>${seat()} ${name}</h2><img src="${image}" alt=""><p>${W('seat_card', 'สแกนเพื่อดูเมนู สั่งอาหาร และจ่ายเงิน')}</p><small>${shopName}</small></article>`);
     }
     const sheet = window.open('', '_blank');
     if (!sheet) { status('เบราว์เซอร์บล็อกหน้าต่างพิมพ์ไว้ กรุณาอนุญาตป๊อปอัปแล้วลองใหม่'); return; }
