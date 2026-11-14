@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.db
+.claude/
+localtest/
+print-agent.ini
+print-app/node_modules/
+mobile/node_modules/
+mobile/www/
+mobile/android/
+design-mockups/
+line-oa-assets/

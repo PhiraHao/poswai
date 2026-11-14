@@ -1,0 +1,11 @@
+{
+  "name": "poswai-tcp-printer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ส่งใบเสร็จ/ใบครัวเข้าเครื่องพิมพ์ในวง LAN (ESC/POS พอร์ต 9100) — ปลั๊กอินของแอป POS WAI เอง",
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  }
+}

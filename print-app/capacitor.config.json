@@ -1,0 +1,18 @@
+{
+  "appId": "com.zzaxstudio.poswai.print",
+  "appName": "POS WAI ตัวพิมพ์",
+  "webDir": "www",
+  "plugins": {
+    "BluetoothLe": {
+      "displayStrings": {
+        "scanning": "กำลังค้นหาเครื่องพิมพ์",
+        "cancel": "ยกเลิก",
+        "availableDevices": "เครื่องพิมพ์ที่เจอ",
+        "noDeviceFound": "ไม่เจอเครื่องพิมพ์"
+      }
+    }
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}
