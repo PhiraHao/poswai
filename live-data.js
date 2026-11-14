@@ -989,6 +989,17 @@
   };
   window.poswaiLiveData = {refresh};
   const crmNav = document.querySelector('.role-tab[onclick*="\'crm\'"]');
+  /* โต๊ะจริงของร้าน อ่านได้เฉพาะผู้จัดการกับเจ้าของ คนอื่นใช้เลขโต๊ะเปล่าไปก่อน
+     ดีกว่าโชว์โซนที่แต่งขึ้น */
+  const loadRealTables = async () => {
+    try {
+      const data = await request(`/api/tables?branch_id=${branch()}`);
+      const tables = (data.tables || []).filter(table => table.active !== false);
+      if (!tables.length) return;
+      state.tablesList = tables.map(table => ({no: String(table.table_no), zone: table.note || ''}));
+      window.syncCustomerTableDropdown?.();
+    } catch (_) { /* ไม่ใช่ผู้จัดการ หรือยังไม่ได้ตั้งโต๊ะ */ }
+  };
   const hideUnsupported = () => {
     if (crmNav) crmNav.hidden = false;
     document.getElementById('view-crm')?.removeAttribute('hidden');
@@ -996,6 +1007,9 @@
       button.disabled = true; button.title = 'ตั้งเมนูผ่านหน้าสต็อกของผู้จัดการ';
     });
     document.querySelector('#view-customer details.settings-panel')?.setAttribute('hidden', 'hidden');
+    /* บัตรคิวหน้าร้านเป็นของสาธิตเท่านั้น คิวจริงคือเลขที่เซิร์ฟเวอร์ออกตอนสั่ง
+       แล้วพิมพ์บนใบเสร็จ ร้านจริงจึงไม่ต้องเห็นปุ่มนี้ */
+    document.querySelector('button[onclick="issueSmartQueue()"]')?.remove();
     // The strip is rebuilt from the shop's own categories once data arrives.
     state.currentCategory = 'ทั้งหมด';
   };
@@ -1007,6 +1021,12 @@
     window.poswaiKdsTickets = [];
     state.staffStats = []; state.leaveRequests = []; state.stockLogs = [];
     state.reservedTables = {}; state.slips = {};
+    /* สามก้อนนี้เคยหลุดจากรายการข้างบน ร้านจริงเลยเห็นประวัติของ "กานดา"
+       ออเดอร์ GrabFood ที่ไม่มีจริง และโต๊ะ VIP ที่ร้านไม่มี */
+    state.auditLogs = []; state.deliveryLogs = [];
+    state.tablesList = Array.from({length: 12}, (_, index) => ({no: String(index + 1), zone: ''}));
+    window.syncCustomerTableDropdown?.();
+    loadRealTables();
     const branchSelect = document.getElementById('branchSelect');
     if (branchSelect) {
       /* ชื่อสาขาในหน้าเป็นของร้านตัวอย่าง ("สาขา 1: เชียงใหม่ (นิมมาน)") ร้านจริง

@@ -89,7 +89,6 @@ function foodIconFor(id) { return `/assets/${[8,9,10,12].includes(Number(id)) ? 
     const bill = $('#customerActiveOrdersList')?.closest('.card');
     disclosure(bill, 'ดูบิลของโต๊ะ');
     label('#customerCheckoutSection > button', 'ชำระด้วยพร้อมเพย์');
-    label('button[onclick="issueSmartQueue()"]', 'รับบัตรคิว');
   }
   const cashier = $('#view-cashier');
   if (cashier) {

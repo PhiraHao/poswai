@@ -1030,9 +1030,6 @@
             </div>
           </div>
           <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn btn-sm btn-outline" disabled title="ต้องมีฟอร์มจำนวนเงินและผู้ทำรายการ">นำเงินเข้าลิ้นชัก (ยังไม่พร้อม)</button>
-            <button class="btn btn-sm btn-outline" disabled title="ต้องมีฟอร์มจำนวนเงินและผู้ทำรายการ">นำเงินออกลิ้นชัก (ยังไม่พร้อม)</button>
-            <button class="btn btn-sm btn-primary" disabled title="ต้องนับเงินสดจริงก่อนกระทบยอด">ปิดกะ (ยังไม่พร้อม)</button>
           </div>
         </div>
       </div>
@@ -1044,8 +1041,6 @@
             <div class="card-header">
               <div class="card-title">🪑 ผังโต๊ะอาหาร (เพิ่ม-ลดโต๊ะเองได้ / ย้ายโต๊ะ / รวมโต๊ะ)</div>
               <div style="display:flex; gap:5px; flex-wrap:wrap;">
-                <button class="btn btn-sm btn-outline" disabled title="ต้องเลือกโต๊ะต้นทางและปลายทางก่อน">ย้ายโต๊ะ (ยังไม่พร้อม)</button>
-                <button class="btn btn-sm btn-outline" disabled title="ต้องเลือกโต๊ะต้นทางและปลายทางก่อน">รวมโต๊ะ (ยังไม่พร้อม)</button>
                 <button class="btn btn-sm btn-purple" onclick="toggleReserveTable()">📅 จองโต๊ะ</button>
               </div>
             </div>
@@ -1083,7 +1078,6 @@
               <div class="card-title">💰 คิดเงิน & ออกใบเสร็จ: <span id="selectedTableHeader">โต๊ะ 1</span></div>
               <div style="display:flex; gap:6px;">
                 <span id="selectedTableStatusBadge" class="badge badge-empty">ว่าง</span>
-                <button class="btn btn-sm btn-danger" disabled title="ต้องมีระบบยืนยันสิทธิ์ผู้จัดการก่อน">ยกเลิกบิล (ยังไม่พร้อม)</button>
               </div>
             </div>
 
@@ -1101,8 +1095,6 @@
                   <input type="number" id="splitBillCount" class="input" value="1" min="1" max="20" style="width:60px;" onchange="renderSelectedTableBill()" />
                   <span id="splitBillPerPersonLabel" style="font-weight:700; color:var(--purple);">คนละ ฿0.00</span>
                 </div>
-                <button class="btn btn-sm btn-outline" disabled title="ยังไม่มีหน้าจอเลือกรายการที่จะแยก">แยกบิลตามเมนู (ยังไม่พร้อม)</button>
-                <button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE ลูกค้า">ส่งใบเสร็จเข้า LINE (ยังไม่พร้อม)</button>
               </div>
               <div style="margin-top:8px;">
                 <input type="text" id="taxInvoiceCustomerInfo" class="input" placeholder="ชื่อบริษัท / เลขผู้เสียภาษี 13 หลัก (กรณีขอใบกำกับภาษีเต็มรูป)" />
@@ -1183,7 +1175,7 @@
                 <div class="card-title">สต็อกวัตถุดิบและจุดสั่งซื้อซ้ำ</div>
                 <div style="font-size:0.76rem; color:var(--text-muted);">ตัดสต็อกอัตโนมัติตามสูตรอาหาร (BOM) ทันทีที่ขายหน้าร้านหรือเดลิเวอรี</div>
               </div>
-              <div style="display:flex; gap:6px;"><button class="btn btn-sm btn-primary" onclick="generatePurchaseOrder()">📝 ดูใบสั่งซื้อจำลอง</button><button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE ซัพพลายเออร์">ส่งใบ PO เข้า LINE (ยังไม่พร้อม)</button></div>
+              <div style="display:flex; gap:6px;"><button class="btn btn-sm btn-primary" onclick="generatePurchaseOrder()">📝 ดูใบสั่งซื้อจำลอง</button></div>
             </div>
             <table class="data-table">
               <thead>
@@ -1208,7 +1200,6 @@
                 <div class="card-title">🧪 สูตรตัดวัตถุดิบอัตโนมัติ (Hybrid BOM: ระบบตั้งให้อัตโนมัติ + ร้านค้าแก้ไขต่อได้)</div>
                 <div style="font-size:0.74rem; color:var(--text-muted);">มีสูตรมาตรฐานเริ่มต้นให้ทุกเมนู และร้านค้าสามารถปรับปริมาณกรัม/มล. ตามช้อนตวงจริงของร้านได้ทันที</div>
               </div>
-              <button class="btn btn-sm btn-purple" disabled title="ยังไม่มีระบบรีเซ็ตสูตรจริง">คืนค่าสูตรมาตรฐาน (ยังไม่พร้อม)</button>
             </div>
 
             <div style="background:#f8fafc; padding:10px; border-radius:8px; border:1px solid var(--border-color); margin-bottom:8px;">
@@ -1285,7 +1276,6 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title">🎁 ระบบสะสมแต้มและระดับสมาชิก (CRM & Tier Membership)</div>
-              <button class="btn btn-sm btn-line" disabled title="ยังไม่ได้เชื่อมต่อ LINE และการยินยอมรับข้อความ">บรอดแคสต์ LINE (ยังไม่พร้อม)</button>
             </div>
             <table class="data-table">
               <thead>
@@ -1314,7 +1304,6 @@
             </div>
             <div style="display:grid; grid-template-columns:1fr auto; gap:6px; margin-bottom:10px;">
               <input type="password" id="deliveryApiKeyInput" class="input" placeholder="การเชื่อมต่อจริงตั้งค่าผ่านเซิร์ฟเวอร์" disabled />
-              <button class="btn btn-sm btn-outline" disabled title="ยังไม่ได้เชื่อมต่อ API ของผู้ให้บริการ">เชื่อมต่อช่องทาง (ยังไม่พร้อม)</button>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
               <button class="btn btn-line" onclick="simulateDeliveryOrder('GrabFood', 30)">🛵 รับออเดอร์ GrabFood (GP 30%)</button>
@@ -1521,12 +1510,6 @@
               <option value="WOW" selected>📅 เทียบวันพุธสัปดาห์ก่อน (WoW Benchmark)</option>
               <option value="DOD">📆 เทียบช่วงเวลาเดียวกันของเมื่อวาน (DoD Benchmark)</option>
             </select>
-            <button class="btn btn-line btn-sm" disabled title="รายงานนี้ยังเป็นข้อมูลตัวอย่าง">
-              ส่งรายงานเข้า LINE (ยังไม่พร้อม)
-            </button>
-            <button class="btn btn-warning btn-sm" disabled title="รายงานนี้ยังเป็นข้อมูลตัวอย่าง">
-              ส่งสรุปปิดร้าน (ยังไม่พร้อม)
-            </button>
           </div>
         </div>
       </div>
@@ -2536,7 +2519,9 @@
     function issueSmartQueue() {
       state.queueCounter += 1;
       const qCode = "Q-0" + state.queueCounter;
-      document.getElementById("queueStatusBadge").textContent = "คิวหน้าร้านปัจจุบัน: " + qCode;
+      /* ป้ายนี้ถูกถอดออกจากหน้าไปแล้ว เขียนทับตรง ๆ จึง throw และบรรทัดล่างไม่เคยรัน */
+      const badge = document.getElementById("queueStatusBadge");
+      if (badge) badge.textContent = "คิวหน้าร้านปัจจุบัน: " + qCode;
       addAuditLog(`🎫 จำลองบัตรคิวหน้าร้าน ${qCode}`);
       showToast(`ตัวอย่างบัตรคิว ${qCode} — ยังไม่ได้ส่งเข้า LINE`);
     }
@@ -3781,6 +3766,20 @@
               scBp: Number(receipt.service_charge_bp) || 0};
     }
 
+    /* ร้านที่ยังไม่ได้จด VAT พิมพ์คำว่า "ใบกำกับภาษี" บนใบเสร็จไม่ได้ ผิดกฎหมาย
+       และลูกค้าแพ็กเล็กส่วนใหญ่รายได้ไม่ถึง 1.8 ล้าน จึงยังไม่ได้จด
+       จด VAT = กรอกเลขผู้เสียภาษีแล้ว และตั้งอัตรา VAT ไว้ด้วย */
+    function shopIssuesTaxReceipt() {
+      const receipt = window.POSWAI_RECEIPT || {};
+      return Boolean(String(receipt.tax_id || "").trim()) && Number(receipt.vat_rate_bp) > 0;
+    }
+
+    function receiptDocTitle(method) {
+      return shopIssuesTaxReceipt()
+        ? `ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ (${method})`
+        : `ใบเสร็จรับเงิน (${method})`;
+    }
+
     function getTableGrandTotalWithTax(tStr) {
       const orders = getTableOrders(tStr);
       /* บิลที่มาจากเซิร์ฟเวอร์คิดมาแล้วทุกอย่าง รวมของจริงให้ตรงกัน
@@ -4367,7 +4366,7 @@
         if (state.productionMode && window.poswaiLiveData) await window.poswaiLiveData.refresh().catch(() => {});
         showToast(`⚠️ ปิดบิลไม่สำเร็จ: ${error.message}`); return;
       }
-      printReceiptForTable(tStr, `ใบเสร็จรับเงิน/ใบกำกับภาษีอย่างย่อ (${method})`, false);
+      printReceiptForTable(tStr, receiptDocTitle(method), false);
 
       if (method.includes("เงินสด")) state.shift.cashSales += calc.grand;
       state.shift.totalSalesToday += calc.grand;
@@ -4414,7 +4413,7 @@
       }
       const calc = getTableGrandTotalWithTax(tStr);
       const splitCount = Math.max(1, Number(document.getElementById("splitBillCount").value) || 1);
-      const custTaxInfo = document.getElementById("taxInvoiceCustomerInfo").value.trim() || "ลูกค้าทั่วไป (ออกใบกำกับภาษีอย่างย่อ)";
+      const custTaxInfo = document.getElementById("taxInvoiceCustomerInfo").value.trim() || "ลูกค้าทั่วไป";
       const line = "--------------------------------";
 
       const shop = window.POSWAI_RECEIPT || {};
@@ -4594,7 +4593,8 @@
       const sel = document.getElementById("customerTableSelect");
       if (!sel) return;
       const currentVal = sel.value || state.customerTable;
-      sel.innerHTML = state.tablesList.map(t => `<option value="${t.no}">โต๊ะ ${t.no} (${t.zone})</option>`).join("");
+      sel.innerHTML = state.tablesList.map(t =>
+        `<option value="${t.no}">โต๊ะ ${t.no}${t.zone ? ` (${t.zone})` : ""}</option>`).join("");
       if (state.tablesList.some(t => t.no === currentVal)) sel.value = currentVal;
     }
 
@@ -5371,7 +5371,7 @@
     renderAll();
   </script>
   <script src="/workspace.js?v=46"></script>
-  <script src="/sales-redesign.js?v=49"></script>
+  <script src="/sales-redesign.js?v=50"></script>
   <script src="/ops-redesign.js?v=19"></script>
   <script src="/people-redesign.js?v=38"></script>
   <script src="/staff-admin.js?v=65"></script>
@@ -5387,7 +5387,7 @@
   <script src="/payment-ui.js?v=24"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=86"></script>
+  <script src="/live-data.js?v=87"></script>
   <script src="/business-type.js?v=4"></script>
   <script src="/shift-ui.js?v=1"></script>
   <script src="/range-report.js?v=1"></script>
