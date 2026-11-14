@@ -1,5 +1,5 @@
 {
-  "name": "POS WAI - ระบบจัดการร้านอาหารครบวงจรผ่าน LINE",
+  "name": "POS WAI - ระบบขายหน้าร้านครบวงจร ใช้ได้แม้เน็ตหลุด",
   "short_name": "POS WAI",
   "start_url": "/index.html",
   "display": "standalone",

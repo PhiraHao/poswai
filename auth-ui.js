@@ -265,9 +265,9 @@
   landing.innerHTML = `<section class="poswai-landing-card">
     <img src="/assets/brand-logo.webp" alt="POS WAI" class="poswai-landing-logo" width="96" height="96">
     <h1>POS WAI</h1>
-    <p class="poswai-landing-lead">ระบบจัดการร้านอาหารและคาเฟ่</p>
+    <p class="poswai-landing-lead" data-biz="tagline">ระบบจัดการร้านอาหารและคาเฟ่</p>
     <button type="button" class="poswai-auth-primary" id="poswaiLandingLogin">เข้าสู่ระบบพนักงาน</button>
-    <p class="poswai-landing-note">ลูกค้า: สแกน QR ที่โต๊ะเพื่อดูเมนูและสั่งอาหารได้เลย ไม่ต้องเข้าสู่ระบบ</p>
+    <p class="poswai-landing-note" data-biz="guest_note">ลูกค้า: สแกน QR ที่โต๊ะเพื่อดูเมนูและสั่งอาหารได้เลย ไม่ต้องเข้าสู่ระบบ</p>
     <button type="button" class="poswai-landing-preview" id="poswaiLandingPreview" hidden>ดูตัวอย่างระบบโดยไม่เข้าสู่ระบบ</button>
   </section>`;
   document.body.append(landing);

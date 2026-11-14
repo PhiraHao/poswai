@@ -46,6 +46,9 @@
     if (!business) return;
     window.POSWAI_BUSINESS = business;
     document.body.dataset.businessType = business.type || RESTAURANT;
+    /* The browser tab, which is what an owner sees in a row of pinned tabs
+       and the name their phone gives the shortcut they saved. */
+    if (business.words?.title) document.title = business.words.title;
     applyWords(business.words || {});
     applyHiddenTabs(business.tabs_hidden || []);
   };

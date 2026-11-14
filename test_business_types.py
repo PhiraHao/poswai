@@ -228,3 +228,36 @@ class ProfileDefaults(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheLastOfTheRestaurantWording(BusinessCase):
+    """ชื่อแท็บเบราว์เซอร์ การ์ดเข้าระบบ และหน้าแรกการตลาด เคยบอกว่าเป็นระบบ
+    ร้านอาหารไม่ว่าร้านนั้นจะขายอะไร"""
+
+    def words(self, kind):
+        self.signed_in().put("/api/shop/settings", json={"business_type": kind})
+        with TestClient(server.app) as anyone:
+            return anyone.get("/api/config").json()["business"]["words"]
+
+    def test_every_type_names_its_own_browser_tab(self):
+        self.assertEqual(self.words("restaurant")["title"], "POS WAI — ระบบจัดการร้านอาหาร")
+        self.assertEqual(self.words("retail")["title"], "POS WAI — ระบบขายหน้าร้าน")
+        self.assertEqual(self.words("service")["title"], "POS WAI — ระบบเปิดบิลรับงาน")
+
+    def test_the_sign_in_card_tells_a_shop_what_it_is(self):
+        retail = self.words("retail")
+        self.assertIn("สินค้า", retail["guest_note"])
+        self.assertNotIn("อาหาร", retail["guest_note"])
+
+    def test_the_marketing_page_no_longer_says_restaurants_only(self):
+        """It is POS WAI's own pitch, shown before any shop is chosen."""
+        landing = (Path(server.__file__).parent / "landing.js").read_text(encoding="utf-8")
+        self.assertNotIn("สำหรับร้านอาหาร", landing)
+        self.assertIn("ร้านค้า", landing)
+
+    def test_the_installed_app_is_named_for_what_it_does(self):
+        """One manifest serves every shop on the site, so it cannot follow one."""
+        import json
+        manifest = json.loads((Path(server.__file__).parent / "manifest.json")
+                              .read_text(encoding="utf-8"))
+        self.assertNotIn("ร้านอาหาร", manifest["name"])
