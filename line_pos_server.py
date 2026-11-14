@@ -505,6 +505,13 @@ def init_db() -> None:
     # ลูกค้าขาจรที่สแกน QR เฉย ๆ ไม่มีใครให้ส่งถึง จึงเป็น NULL ตามปกติ
     if "customer_id" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
         cur.execute("ALTER TABLE order_events ADD COLUMN customer_id INTEGER")
+    # ทำไมถึงลดราคาบิลนี้ บังคับกรอกตอนลด เก็บไว้กับบิลไม่ใช่ในหมายเหตุครัว
+    # เพราะเป็นตัวเลขที่เจ้าของร้านต้องไล่ดูได้ว่าใครลดอะไรบ่อย
+    if "discount_reason" not in {row[1] for row in cur.execute("PRAGMA table_info(order_events)")}:
+        cur.execute("ALTER TABLE order_events ADD COLUMN discount_reason TEXT NOT NULL DEFAULT ''")
+    # ส่วนลดที่ลงเฉพาะรายการนั้น เก็บเป็นสตางค์เหมือนทุกยอดในระบบ
+    if "discount_cents" not in {row[1] for row in cur.execute("PRAGMA table_info(order_items)")}:
+        cur.execute("ALTER TABLE order_items ADD COLUMN discount_cents INTEGER NOT NULL DEFAULT 0")
     cur.execute("""CREATE TABLE IF NOT EXISTS kds_station_tickets (
         order_no TEXT NOT NULL REFERENCES order_events(order_no),
         station TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('held','queued','ready')),
@@ -1455,6 +1462,10 @@ class OrderItem(BaseModel):
     # Priced and deducted from the shop's own topping list, never from these.
     addons: list[str] = []
     level: str = ""
+    # Off this line only: baht, a percentage of the line, or both. For the dish
+    # that came out wrong, or the one item that is on offer today.
+    discount: float = 0
+    discount_percent: float = 0
 
 
 class OrderCreate(BaseModel):
@@ -1471,6 +1482,12 @@ class OrderCreate(BaseModel):
     # A discount the till gave on the whole bill, in baht. Staff only: a guest
     # ordering from the table QR cannot discount their own food.
     discount: float = 0
+    # The same discount as a percentage of the bill. Both may be given; the
+    # percentage is taken first and the baht comes off after it.
+    discount_percent: float = 0
+    # Why. Required the moment any discount is given, on a line or on the bill:
+    # a till that takes money off and records no reason is how a shop bleeds.
+    discount_reason: str = ""
 
 
 class ServiceCallCreate(BaseModel):
@@ -3163,9 +3180,32 @@ def create_order(req: OrderCreate, request: Request):
         # actually owed. A shop with no VAT, no service charge and no discount
         # gets back exactly its subtotal, which is what every till sent before
         # any of this existed.
-        discount_cents = max(0, round(float(req.discount or 0) * 100))
-        if discount_cents and ordered_by != "staff":
+        try:
+            # Per line first: each line's own discount is worked out from that
+            # line's price, which the menu decided, not from anything the till
+            # sent. quote["items"] is in the order it was submitted.
+            for line, asked in zip(quote["items"], req.items):
+                line["discount_cents"] = profile.discount_cents_for(
+                    line["cents"], baht=asked.discount, percent=asked.discount_percent)
+            after_lines = sum(line["cents"] - line["discount_cents"] for line in quote["items"])
+            discount_cents = profile.discount_cents_for(
+                after_lines, baht=req.discount, percent=req.discount_percent)
+        except profile.ProfileError as exc:
+            raise HTTPException(exc.status_code, str(exc)) from exc
+        given = discount_cents + sum(line["discount_cents"] for line in quote["items"])
+        if given and ordered_by != "staff":
             raise HTTPException(403, "ลูกค้าลดราคาเองไม่ได้")
+        discount_reason = " ".join(str(req.discount_reason or "").split())[:200]
+        # A reason is required for everything the new till can do. The bare
+        # `discount` field is left alone on purpose: the Android app already on
+        # shop counters carries its own copy of the pages and sends that field
+        # with no reason, and a till that cannot close a bill is worse than a
+        # discount with no reason written against it. The till's own screen
+        # asks for one before it will send anything.
+        asked_new_way = bool(req.discount_percent) or any(
+            line["discount_cents"] for line in quote["items"])
+        if given and asked_new_way and not discount_reason:
+            raise HTTPException(400, "ลดราคาต้องบอกเหตุผลด้วย")
         try:
             charge = profile.bill(quote["items"], profile=profile.read(conn),
                                   discount_cents=discount_cents)
@@ -3186,18 +3226,20 @@ def create_order(req: OrderCreate, request: Request):
             "SELECT COALESCE(MAX(queue_no),0)+1 FROM order_events"
             " WHERE branch_id=? AND date(created_at)=date('now')", (req.branch_id,)).fetchone()[0]
         cur.execute("INSERT INTO order_events (event_id, order_no, branch_id, table_no, total_amount, note, queue_no,"
-                    " customer_id, subtotal_cents, discount_cents, service_charge_cents, vat_cents)"
-                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    " customer_id, subtotal_cents, discount_cents, service_charge_cents, vat_cents,"
+                    " discount_reason)"
+                    " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (req.event_id, req.order_no, req.branch_id, req.table_no, quote["total_amount"], note,
                      queue_no, _member_if_signed_in(request), charge["subtotal_cents"],
-                     charge["discount_cents"], charge["service_charge_cents"], charge["vat_cents"]))
+                     charge["discount_cents"], charge["service_charge_cents"], charge["vat_cents"],
+                     discount_reason))
         for item in quote["items"]:
             options = ", ".join(part for part in [item.get("level", ""), *item.get("addons", [])] if part)
-            cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options,unit_cost)"
-                        " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options,unit_cost,discount_cents)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                         (req.order_no, item["id"], item["name"], item["qty"], item["price"],
                          json.dumps(item["bom"]), item["station"], item["course_mode"], options,
-                         item.get("cost", 0)))
+                         item.get("cost", 0), item.get("discount_cents", 0)))
         for station in {item["station"] for item in quote["items"]}:
             status = "held" if any(item["station"] == station and item["course_mode"] == "HOLD" for item in quote["items"]) else "queued"
             cur.execute("INSERT INTO kds_station_tickets (order_no,station,status) VALUES (?,?,?)",
@@ -3238,7 +3280,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
                  "SELECT 1 FROM kds_station_tickets k WHERE k.order_no=order_events.order_no"
                  " AND k.status!='ready')))")
     query = ("SELECT order_no,table_no,total_amount,status,created_at,note,queue_no,"
-             "subtotal_cents,discount_cents,service_charge_cents,vat_cents"
+             "subtotal_cents,discount_cents,service_charge_cents,vat_cents,discount_reason"
              f" FROM order_events WHERE branch_id=? AND {where}")
     params: list = [branch_id]
     if table_no:
@@ -3248,7 +3290,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
     with closing(connect_db()) as conn:
         orders = []
         for row in conn.execute(query, params).fetchall():
-            items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode,options FROM order_items WHERE order_no=?", (row[0],)).fetchall()
+            items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode,options,discount_cents FROM order_items WHERE order_no=?", (row[0],)).fetchall()
             # What the kitchen has done with it, so a guest at the table can see
             # whether the food is still waiting, cooking, or on its way.
             tickets = [t[0] for t in conn.execute(
@@ -3266,10 +3308,12 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
                            "queue_no": row[6], "paid": row[3] == "paid",
                            # แยกไว้ให้หน้าแคชเชียร์กับใบเสร็จแสดงยอดชุดเดียวกับที่เซิร์ฟเวอร์คิด
                            "totals": {"subtotal": row[7] / 100, "discount": row[8] / 100,
-                                      "service_charge": row[9] / 100, "vat": row[10] / 100},
+                                      "service_charge": row[9] / 100, "vat": row[10] / 100,
+                                      "discount_reason": row[11] or ""},
                            "items": [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3],
                                       "bom": json.loads(item[4]), "station": item[5],
-                                      "courseMode": item[6], "options": item[7]} for item in items]})
+                                      "courseMode": item[6], "options": item[7],
+                                      "discount": (item[8] or 0) / 100} for item in items]})
     return {"branch_id": branch_id, "orders": orders}
 
 

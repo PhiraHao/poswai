@@ -153,12 +153,45 @@ def sales_report(conn: sqlite3.Connection, branch_id: int, *,
                        f" WHERE {line_where}", scope)[0]
     priced_revenue, priced_cost, unpriced_revenue = (round(value or 0, 2) for value in cost_known)
 
+    # ส่วนลด: ใครลด ลดไปเท่าไหร่ และบอกเหตุผลว่าอะไร
+    # เป็นตัวเลขที่เจ้าของร้านดูเพื่อจับว่าของหายไปทางไหน ไม่ใช่แค่ยอดขาย
+    discount_where = (f"p.branch_id=? AND p.status='paid'"
+                      f" AND date(p.closed_at, '{BANGKOK_SHIFT}') BETWEEN ? AND ?"
+                      f" AND e.discount_cents > 0")
+    discount_by_staff = [
+        {"staff_id": row[0], "name": row[1] or "ไม่ระบุ", "bills": row[2],
+         "discount": round((row[3] or 0) / 100, 2)}
+        for row in _rows(conn,
+                         f"SELECT p.closed_by_staff_id, s.name, COUNT(*),"
+                         f" COALESCE(SUM(e.discount_cents),0)"
+                         f" FROM pos_orders p JOIN order_events e ON e.order_no=p.order_no"
+                         f" LEFT JOIN staffs s ON s.id=p.closed_by_staff_id"
+                         f" WHERE {discount_where}"
+                         f" GROUP BY p.closed_by_staff_id, s.name ORDER BY 4 DESC", scope)]
+    discounted_bills = [
+        {"order_no": row[0], "closed_at": row[1], "staff": row[2] or "ไม่ระบุ",
+         "discount": round((row[3] or 0) / 100, 2), "total": round(row[4] or 0, 2),
+         "reason": row[5] or ""}
+        for row in _rows(conn,
+                         f"SELECT p.order_no, p.closed_at, s.name, e.discount_cents,"
+                         f" p.net_amount, e.discount_reason"
+                         f" FROM pos_orders p JOIN order_events e ON e.order_no=p.order_no"
+                         f" LEFT JOIN staffs s ON s.id=p.closed_by_staff_id"
+                         f" WHERE {discount_where}"
+                         f" ORDER BY p.closed_at DESC LIMIT 200", scope)]
+
     return {
         "branch_id": branch_id, "start": start_day, "end": end_day,
         "bills": bills, "revenue": revenue,
         "average_bill": round(revenue / bills, 2) if bills else 0,
         "by_day": by_day, "by_method": by_method, "by_staff": by_staff,
         "by_item": by_item, "by_category": by_category,
+        "discounts": {
+            "total": round(sum(row["discount"] for row in discount_by_staff), 2),
+            "bills": sum(row["bills"] for row in discount_by_staff),
+            "by_staff": discount_by_staff,
+            "recent": discounted_bills,
+        },
         "profit": {
             # Only the part of the range whose cost the shop actually knows.
             "revenue_with_cost": priced_revenue,

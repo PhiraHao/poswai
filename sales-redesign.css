@@ -114,3 +114,7 @@
 #customerMenuGrid .dish-photo { aspect-ratio: 8/5!important; object-fit:contain; }
 /* Line icons sit inside their box; a real photo fills the whole card top. */
 #customerMenuGrid .dish-photo.is-dish-photo { aspect-ratio:4/3!important; object-fit:cover!important; background:#f4f5f7; }
+.sales-cart-discount{display:flex;align-items:center;gap:6px;margin-top:4px}
+.sales-cart-discount span{font-size:.72rem;color:#6b7280}
+.sales-cart-discount input{width:96px;padding:3px 7px;font-size:.74rem;border:1px solid #e5e7eb;border-radius:7px}
+.sales-cart-end s{color:#9ca3af;font-weight:500;font-size:.78rem}

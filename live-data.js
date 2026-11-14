@@ -1032,7 +1032,11 @@
       /* ชื่อสาขาในหน้าเป็นของร้านตัวอย่าง ("สาขา 1: เชียงใหม่ (นิมมาน)") ร้านจริง
          เห็นค้างอยู่หัวทุกหน้าแล้วงงว่าสาขาใคร กดก็ไม่ได้เพราะระบบปิดไว้ — ใส่ชื่อร้านจริงแทน
          ยังคง element ไว้ เพราะหน้าอื่นอ่านเลขสาขาจากตัวนี้ */
-      const shopName = String(window.poswaiShopName || '').trim();
+      /* เบราว์เซอร์ตั้ง window.<id> ให้ทุก element ที่มี id และหน้านี้มี
+         <input id="poswaiShopName"> อยู่ในฟอร์มเปิดร้าน ถ้าอ่านก่อน config มาถึง
+         จะได้ตัว input มาแทนชื่อร้าน แล้วหัวจอขึ้นว่า "[object HTMLInputElement]" */
+      const shopName = typeof window.poswaiShopName === 'string'
+        ? window.poswaiShopName.trim() : '';
       if (shopName) {
         branchSelect.replaceChildren(new Option(shopName, shopName));
         branchSelect.classList.add('branch-select-single');
@@ -1065,7 +1069,8 @@
     if (!config.preview_only) enterLive();
     // enterLive อาจถูกเรียกไปแล้วก่อน config มา จึงเติมชื่อร้านซ้ําอีกครั้ง
     const topBranch = document.getElementById('branchSelect');
-    if (topBranch && window.poswaiShopName && !config.preview_only) {
+    if (topBranch && typeof window.poswaiShopName === 'string'
+        && window.poswaiShopName && !config.preview_only) {
       topBranch.replaceChildren(new Option(window.poswaiShopName, window.poswaiShopName));
       topBranch.classList.add('branch-select-single');
       topBranch.disabled = true;

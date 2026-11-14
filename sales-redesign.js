@@ -179,7 +179,26 @@ function foodIconFor(id) { return `/assets/${[8,9,10,12].includes(Number(id)) ? 
       controls.append(button('+',`เพิ่ม ${title.textContent}`,()=>change(1)));
       detail.append(title); if(modifiers) detail.append(description); detail.append(controls);
       const end=document.createElement('div'); end.className='sales-cart-end';
-      const price=document.createElement('strong'); price.textContent=`฿${(item.price*item.qty).toLocaleString('th-TH',{maximumFractionDigits:2})}`;
+      const price=document.createElement('strong');
+      const money=value=>`฿${value.toLocaleString('th-TH',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+      const showPrice=()=>{
+        const gross=item.price*item.qty, off=lineDiscountOf(item);
+        price.innerHTML = off>0
+          ? `<s>${money(gross)}</s><br>${money(gross-off)}`
+          : money(gross);
+      };
+      showPrice();
+      // ลดเฉพาะรายการนี้ พนักงานเท่านั้นที่เห็น ลูกค้าที่สแกน QR ลดเองไม่ได้
+      if (window.poswaiAuth?.current) {
+        const row=document.createElement('div'); row.className='sales-cart-discount';
+        const tag=document.createElement('span'); tag.textContent='ลด';
+        const field=document.createElement('input');
+        field.type='text'; field.value=item.discountInput||''; field.maxLength=8;
+        field.placeholder='20 หรือ 20%';
+        field.title='ใส่ตัวเลขคือบาท ใส่ % คือเปอร์เซ็นต์ของรายการนี้';
+        field.addEventListener('input',()=>{ setLineDiscount(index,field.value); showPrice(); });
+        row.append(tag,field); detail.append(row);
+      }
       const remove=button('×',`ลบ ${title.textContent}`,()=>{state.cart.splice(index,1);renderCart();}); remove.className='sales-remove';
       end.append(price,remove); row.append(photo,detail,end);container.append(row);
     });

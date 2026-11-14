@@ -659,7 +659,7 @@
   <link rel="stylesheet" href="/ui.css">
   <link rel="stylesheet" href="/assets/fonts.css">
   <link rel="stylesheet" href="/workspace.css?v=45">
-  <link rel="stylesheet" href="/sales-redesign.css?v=49">
+  <link rel="stylesheet" href="/sales-redesign.css?v=50">
   <link rel="stylesheet" href="/ops-redesign.css?v=19">
   <link rel="stylesheet" href="/people-redesign.css?v=19">
   <link rel="stylesheet" href="/staff-admin.css?v=40">
@@ -942,10 +942,18 @@
             <input type="text" id="orderNoteInput" class="input" placeholder="เช่น ขอช้อนกลาง, แยกน้ำจิ้ม..." />
 
             <!-- ส่วนลดท้ายบิลที่พนักงานกดเอง ลูกค้าที่สแกน QR สั่งเองจะไม่เห็นช่องนี้ -->
-            <div id="cartDiscountRow" hidden style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-              <label class="label" for="billDiscountInput" style="margin:0;">ส่วนลดท้ายบิล (บาท)</label>
-              <input type="number" id="billDiscountInput" class="input" value="0" min="0" step="1"
-                     style="width:100px;" oninput="renderCart()" />
+            <div id="cartDiscountRow" hidden style="margin-top:10px;">
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <label class="label" for="billDiscountInput" style="margin:0;">ส่วนลดท้ายบิล</label>
+                <input type="number" id="billDiscountInput" class="input" value="0" min="0" step="1"
+                       title="ลดเป็นจำนวนบาท" style="width:92px;" oninput="renderCart()" />
+                <span style="font-size:0.8rem; color:var(--text-muted);">บาท</span>
+                <input type="number" id="billDiscountPercent" class="input" value="0" min="0" max="100" step="1"
+                       title="ลดเป็นเปอร์เซ็นต์ของยอดบิล" style="width:76px;" oninput="renderCart()" />
+                <span style="font-size:0.8rem; color:var(--text-muted);">%</span>
+              </div>
+              <input type="text" id="billDiscountReason" class="input" maxlength="200"
+                     placeholder="เหตุผลที่ลด (บังคับกรอกเมื่อมีส่วนลด)" style="margin-top:6px;" />
             </div>
             <div id="cartBreakdown" style="margin-top:10px; padding-top:8px; border-top:1px solid var(--border-color); font-size:0.8rem; color:var(--text-muted);"></div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">
@@ -3601,10 +3609,43 @@
       return autoDiscount;
     }
 
-    /* ส่วนลดท้ายบิลรวม = โปรอัตโนมัติ + ที่พนักงานกดเอง แต่ไม่เกินยอดบิล */
+    /* คิดเป็นสตางค์จำนวนเต็มและปัดครึ่งขึ้น ให้ตรงกับ poswai_profile.discount_cents_for
+       เป๊ะ ๆ เพราะเซิร์ฟเวอร์คิดบิลใหม่จากราคาเมนูของตัวเองแล้วปฏิเสธถ้ายอดไม่ตรง */
+    function satang(baht) { return Math.round(Number(baht) || 0); }
+    function discountOff(amountBaht, {baht = 0, percent = 0} = {}) {
+      const amountCents = Math.round(Math.max(0, Number(amountBaht) || 0) * 100);
+      const bp = Math.max(0, Math.min(10000, Math.round((Number(percent) || 0) * 100)));
+      const flat = Math.max(0, Math.round((Number(baht) || 0) * 100));
+      const off = Math.floor((amountCents * bp + 5000) / 10000) + flat;
+      return Math.min(off, amountCents) / 100;
+    }
+
+    /* "20" คือยี่สิบบาท "20%" คือยี่สิบเปอร์เซ็นต์ของรายการนั้น */
+    function lineDiscountOf(item) {
+      const raw = String(item.discountInput || "").trim();
+      if (!raw) return 0;
+      const amount = item.price * item.qty;
+      return raw.endsWith("%")
+        ? discountOff(amount, {percent: parseFloat(raw) || 0})
+        : discountOff(amount, {baht: parseFloat(raw) || 0});
+    }
+
+    /* ส่วนลดท้ายบิล: บาทที่พนักงานกด + โปรอัตโนมัติ เป็นก้อนบาท ส่วน % แยกไว้
+       รวมร่างเดียวกับ profile.discount_cents_for ฝั่งเซิร์ฟเวอร์ คือคิด % ของยอด
+       ที่หักรายรายการแล้วก่อน แล้วค่อยบวกบาท */
+    function billDiscountAsked(subtotal) {
+      const lineOff = state.cart.reduce((sum, item) => sum + lineDiscountOf(item), 0);
+      const after = Math.max(0, subtotal - lineOff);
+      return {
+        lineOff, after,
+        baht: Math.max(0, Number(document.getElementById("billDiscountInput")?.value) || 0)
+              + Math.max(0, getCartDiscount(subtotal)),
+        percent: Math.max(0, Number(document.getElementById("billDiscountPercent")?.value) || 0)};
+    }
+
     function cartDiscountTotal(subtotal) {
-      const manual = Math.max(0, Number(document.getElementById("billDiscountInput")?.value) || 0);
-      return Math.min(subtotal, getCartDiscount(subtotal) + manual);
+      const asked = billDiscountAsked(subtotal);
+      return asked.lineOff + discountOff(asked.after, {baht: asked.baht, percent: asked.percent});
     }
 
     /* คิดยอดด้วยกติกาเดียวกับ poswai_profile.bill ฝั่งเซิร์ฟเวอร์
@@ -3648,18 +3689,43 @@
         container.innerHTML = `<p style="color:var(--text-muted); font-size:0.8rem; text-align:center; padding:8px 0;">ยังไม่ได้เลือกรายการอาหาร</p>`;
         return;
       }
-      container.innerHTML = state.cart.map(i => `
+      const staffHere = Boolean(window.poswaiAuth?.current);
+      container.innerHTML = state.cart.map((i, index) => {
+        const off = lineDiscountOf(i);
+        return `
         <div style="display:flex; justify-content:space-between; font-size:0.8rem; padding:5px 0; border-bottom:1px dashed var(--border-color);">
           <div>
             <span>${escapeUi((() => { const m = DEFAULT_MENU.find(x => x.id === i.id); if (!m) return i.name; return state.lang === "EN" ? (m.nameEn || i.name) : state.lang === "CN" ? (m.nameCn || i.name) : i.name; })())} <strong>x${i.qty}</strong></span>
             <div style="font-size:0.7rem; color:var(--text-muted);">
               [${i.station || 'ครัวร้อน'}] • ${i.courseMode === 'HOLD' ? '<span style="color:#b45309; font-weight:700;">⏸️ พักไว้ก่อน (Hold)</span>' : '<span style="color:#15803d;">🔥 ทำทันที (Fire)</span>'}
             </div>
+            ${staffHere ? `<div style="margin-top:4px; display:flex; align-items:center; gap:5px;">
+              <span style="font-size:0.7rem; color:var(--text-muted);">ลดรายการนี้</span>
+              <input type="text" class="input" value="${escapeUi(i.discountInput || "")}" maxlength="8"
+                     placeholder="20 หรือ 20%" title="ใส่ตัวเลขคือบาท ใส่ % คือเปอร์เซ็นต์ของรายการนี้"
+                     style="width:92px; padding:3px 6px; font-size:0.72rem;"
+                     oninput="setLineDiscount(${index}, this.value)" />
+            </div>` : ""}
           </div>
-          <span style="font-weight:700;">฿${(i.price * i.qty).toFixed(2)}</span>
+          <span style="font-weight:700; text-align:right;">
+            ${off > 0 ? `<s style="color:var(--text-muted); font-weight:500;">฿${(i.price * i.qty).toFixed(2)}</s><br />` : ""}
+            ฿${(i.price * i.qty - off).toFixed(2)}
+          </span>
         </div>
-      `).join("");
+      `; }).join("");
     }
+
+    /* เก็บไว้กับรายการในตะกร้า ไม่ใช่ใน DOM เพราะ renderCart วาดใหม่ทั้งก้อน */
+    function setLineDiscount(index, value) {
+      const item = state.cart[index];
+      if (!item) return;
+      item.discountInput = String(value || "").slice(0, 8);
+      const subtotal = state.cart.reduce((s, i) => s + i.price * i.qty, 0);
+      const calc = billFromSubtotal(subtotal, cartDiscountTotal(subtotal));
+      document.getElementById("cartTotalLabel").textContent = `฿${calc.grand.toFixed(2)}`;
+      document.getElementById("mobileCartTotal").textContent = `฿${calc.grand.toFixed(2)}`;
+    }
+    window.setLineDiscount = setLineDiscount;
 
     /* The order number is a uuid so two tills never collide. Nobody can read
        one out across a room, so screens show its last few characters. */
@@ -3685,16 +3751,33 @@
       const orderId = "ORD-" + crypto.randomUUID();
       const now = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
-      const apiItems = state.cart.map(i => ({
-        id: state.productionMode ? i.serverId : i.id, name: i.name, price: i.price, qty: i.qty,
-        course_mode: i.courseMode || "FIRE", bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || []),
-        addons: i.chosenAddons || [], level: i.chosenLevel || ""
-      }));
+      const reason = document.getElementById("billDiscountReason")?.value.trim() || "";
+      if (discount > 0 && !reason) {
+        showToast("⚠️ ลดราคาต้องบอกเหตุผลด้วยครับ");
+        document.getElementById("billDiscountReason")?.focus();
+        return;
+      }
+      const apiItems = state.cart.map(i => {
+        const raw = String(i.discountInput || "").trim();
+        const percent = raw.endsWith("%");
+        return {
+          id: state.productionMode ? i.serverId : i.id, name: i.name, price: i.price, qty: i.qty,
+          course_mode: i.courseMode || "FIRE", bom: (DEFAULT_MENU.find(m => m.id === i.id)?.bom || []),
+          addons: i.chosenAddons || [], level: i.chosenLevel || "",
+          discount: raw && !percent ? parseFloat(raw) || 0 : 0,
+          discount_percent: percent ? parseFloat(raw) || 0 : 0
+        };
+      });
+      // ส่งสิ่งที่ "ขอลด" ไป ไม่ใช่ผลลัพธ์ที่คิดเอง เซิร์ฟเวอร์คิดใหม่จากราคาเมนู
+      // ของตัวเองเสมอ และเปอร์เซ็นต์ต้องไปถึงเซิร์ฟเวอร์ ไม่งั้นรายงานไม่รู้ว่า
+      // ที่ลดไปคือกี่เปอร์เซ็นต์ และกฎ "ลดต้องมีเหตุผล" ก็ไม่ทำงาน
+      const asked = billDiscountAsked(subtotal);
       try {
         await apiMutation("/api/orders", {
           event_id: crypto.randomUUID(), order_no: orderId, branch_id: state.productionMode ? (window.poswaiAuth?.branchId || 1) : 1,
           table_no: table, total_amount: Number(billFromSubtotal(subtotal, discount).grand.toFixed(2)),
-          discount, items: apiItems,
+          discount: Number(asked.baht.toFixed(2)), discount_percent: asked.percent,
+          discount_reason: reason, items: apiItems,
           note: note === "-" ? "" : note
         });
       } catch (error) { showToast(`⚠️ ส่งออเดอร์ไม่สำเร็จ: ${error.message}`); return; }
@@ -4417,6 +4500,10 @@
       const line = "--------------------------------";
 
       const shop = window.POSWAI_RECEIPT || {};
+      // เหตุผลที่ลดของบิลในโต๊ะนี้ ไม่ซ้ำกัน เรียงตามที่เกิด
+      const discountReasons = [...new Set(getTableOrders(tStr)
+        .map(order => (order.totals || {}).discount_reason)
+        .filter(Boolean))];
       const rate = (bp) => (bp / 100).toFixed(bp % 100 ? 2 : 0);
       /* ที่อยู่กับท้ายใบเสร็จเป็นช่องหลายบรรทัด เจ้าของร้านขึ้นบรรทัดเองได้
          กระดาษใบเสร็จกว้างคงที่ จึงต้องแยกตามที่เขาพิมพ์ ไม่ใช่ต่อกันยาว */
@@ -4439,6 +4526,9 @@
         ...orders.flatMap(o => o.items.map(i => `${i.name.slice(0,18).padEnd(18," ")} x${i.qty}  ฿${(i.price*i.qty).toFixed(2)}`)),
         line,
         `ยอดรวม (Subtotal): ฿${calc.sub.toFixed(2)}`,
+        ...(calc.discount > 0 ? [`ส่วนลด (Discount): -฿${calc.discount.toFixed(2)}`] : []),
+        ...(calc.discount > 0 && discountReasons.length
+            ? discountReasons.map(reason => `   (${reason})`) : []),
         ...(calc.sc > 0 ? [`ค่าบริการ ${rate(calc.scBp)}%:${" ".repeat(8)}฿${calc.sc.toFixed(2)}`] : []),
         ...(calc.vat > 0 ? [`VAT ${rate(calc.vatBp)}%${calc.inclusive ? " (รวมในราคา)" : ""}: ฿${calc.vat.toFixed(2)}`] : []),
         `ยอดสุทธิ (GRAND TOTAL): ฿${calc.grand.toFixed(2)}`,
@@ -5371,7 +5461,7 @@
     renderAll();
   </script>
   <script src="/workspace.js?v=46"></script>
-  <script src="/sales-redesign.js?v=50"></script>
+  <script src="/sales-redesign.js?v=51"></script>
   <script src="/ops-redesign.js?v=19"></script>
   <script src="/people-redesign.js?v=38"></script>
   <script src="/staff-admin.js?v=65"></script>
@@ -5387,7 +5477,7 @@
   <script src="/payment-ui.js?v=24"></script>
   <script src="/billing-ui.js?v=50"></script>
   <script src="/qr.js?v=72"></script>
-  <script src="/live-data.js?v=87"></script>
+  <script src="/live-data.js?v=88"></script>
   <script src="/business-type.js?v=4"></script>
   <script src="/shift-ui.js?v=1"></script>
   <script src="/range-report.js?v=1"></script>

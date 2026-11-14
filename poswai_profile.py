@@ -198,6 +198,26 @@ def valid_tax_id(digits: str) -> bool:
     return (11 - total % 11) % 10 == int(digits[12])
 
 
+def discount_cents_for(amount_cents: int, *, baht: float = 0,
+                       percent: float = 0) -> int:
+    """What comes off, in satang: a flat amount, a percentage, or both.
+
+    One place decides this so the till, the kitchen copy and the report cannot
+    disagree about what "ลด 10%" came to. The percentage is of the amount
+    before anything else is taken off, rounded up at half a satang, and the
+    answer can never exceed the amount it is taken from.
+    """
+    amount_cents = max(0, int(amount_cents))
+    bp = round(float(percent or 0) * 100)
+    if bp < 0 or bp > 10000:
+        raise ProfileError("ส่วนลดเป็นเปอร์เซ็นต์ต้องอยู่ระหว่าง 0 ถึง 100")
+    flat = round(float(baht or 0) * 100)
+    if flat < 0:
+        raise ProfileError("ส่วนลดติดลบไม่ได้")
+    off = (amount_cents * bp + 5000) // 10000 + flat
+    return int(min(off, amount_cents))
+
+
 def split_discount(line_cents: list[int], discount_cents: int) -> list[int]:
     """Spread a bill-wide discount over the lines, to the exact satang.
 
@@ -238,9 +258,19 @@ def bill(lines: Iterable[dict], *, profile: dict, discount_cents: int = 0) -> di
     if any(cents < 0 for cents in line_cents):
         raise ProfileError("ยอดต่อรายการติดลบไม่ได้")
     subtotal = sum(line_cents)
-    discount_cents = max(0, min(int(discount_cents), subtotal))
-    shares = split_discount(line_cents, discount_cents)
-    net = [cents - share for cents, share in zip(line_cents, shares)]
+    # A discount on one line comes off that line before anything else, so the
+    # service charge and the VAT are worked out from what is actually owed for
+    # it. A line can be taken to zero and no further.
+    line_off = [min(max(0, int(line.get("discount_cents") or 0)), cents)
+                for line, cents in zip(lines, line_cents)]
+    after_line = [cents - off for cents, off in zip(line_cents, line_off)]
+    # The bill-wide discount then spreads over what is left, not over the
+    # original prices: two discounts must never add up to more than the bill.
+    remaining = sum(after_line)
+    discount_cents = max(0, min(int(discount_cents), remaining))
+    shares = split_discount(after_line, discount_cents)
+    net = [cents - share for cents, share in zip(after_line, shares)]
+    discount_total = sum(line_off) + discount_cents
 
     sc_bp = int(profile.get("service_charge_bp") or 0)
     service_cents = 0
@@ -266,8 +296,8 @@ def bill(lines: Iterable[dict], *, profile: dict, discount_cents: int = 0) -> di
             vat_cents += share
             added_cents += share
 
-    total = subtotal - discount_cents + service_cents + added_cents
-    return {"subtotal_cents": subtotal, "discount_cents": discount_cents,
+    total = subtotal - discount_total + service_cents + added_cents
+    return {"subtotal_cents": subtotal, "discount_cents": discount_total,
             "service_charge_cents": service_cents, "vat_cents": vat_cents,
             "vat_inclusive": inclusive, "vat_rate_bp": vat_bp,
             "service_charge_bp": sc_bp, "total_cents": total}
