@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-wai-offline-v115';
+const CACHE_NAME = 'pos-wai-offline-v116';
 const ASSETS = [
   "/",
   "/index.html",

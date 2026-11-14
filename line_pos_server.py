@@ -812,6 +812,36 @@ async def protect_preview(request: Request, call_next):
     return response
 
 
+def _satang(amount: object) -> int:
+    """Whole satang, so two amounts can be compared exactly.
+
+    Bills are stored as REAL, and floats rarely land on a clean two decimals,
+    so the comparison has to happen after rounding rather than inside a
+    tolerance that would quietly let a payment come up short.
+    """
+    return round(float(amount) * 100)
+
+
+def _same_money(left: object, right: object) -> bool:
+    return _satang(left) == _satang(right)
+
+
+def _client_address(request: Request) -> str:
+    """The address our own proxy saw, for counting attempts against.
+
+    X-Forwarded-For is appended to, not overwritten, so the caller controls
+    everything to the left of the entry the proxy added. Only the rightmost
+    entry was written by something we run; reading the leftmost let anyone
+    spend an unlimited number of attempts by sending a different number each
+    time. With no proxy in front there is no header and the socket answers.
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    hops = [hop.strip() for hop in forwarded.split(",") if hop.strip()]
+    if hops:
+        return hops[-1]
+    return request.client.host if request.client else "unknown"
+
+
 def require_staff(request: Request, roles: tuple[str, ...] = (), branch_id: int | None = None) -> dict:
     token = mobile.staff_token(request)
     if len(token) != 64 or not re.fullmatch(r"[0-9a-f]{64}", token):
@@ -1471,13 +1501,31 @@ class MenuUpsert(BaseModel):
     barcode: str = ""
 
 
+# What a dish costs the shop and what goes in it are the shop's margin and its
+# know-how. The menu itself has to answer without a session, because a customer
+# at a table reads it before anyone signs in, so these two are taken out again
+# for anyone who is not staff.
+STAFF_ONLY_MENU_FIELDS = ("cost", "bom")
+
+
+def _menu_out(request: Request, items: list[dict]) -> list[dict]:
+    # One session lookup for the whole menu, not one per dish.
+    try:
+        require_staff(request)
+    except HTTPException:
+        return [{key: value for key, value in item.items()
+                 if key not in STAFF_ONLY_MENU_FIELDS} for item in items]
+    return items
+
+
 @app.get("/api/menu")
 def get_menu(request: Request, branch_id: int = 1, include_inactive: bool = False):
     try:
         if include_inactive:
             require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
         with closing(connect_db()) as conn:
-            return {"branch_id": branch_id, "items": list_menu_items(conn, branch_id, active_only=not include_inactive)}
+            items = list_menu_items(conn, branch_id, active_only=not include_inactive)
+        return {"branch_id": branch_id, "items": _menu_out(request, items)}
     except CatalogError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
@@ -1659,7 +1707,8 @@ def create_purchase_order(req: PurchaseOrderCreate, request: Request):
 def send_purchase_order(order_id: int, request: Request, branch_id: int = 1):
     require_paid_subscription()
     return _purchasing(request, branch_id,
-                       lambda conn, staff: purchasing.send_order(conn, order_id))
+                       lambda conn, staff: purchasing.send_order(
+                           conn, order_id, branch_id=staff["branch_id"]))
 
 
 @app.post("/api/purchase-orders/{order_id}/receive")
@@ -1668,7 +1717,8 @@ def receive_purchase_order(order_id: int, req: PurchaseOrderReceive, request: Re
     """Book in what turned up. This is the step that moves stock."""
     require_paid_subscription()
     return _purchasing(request, branch_id, lambda conn, staff: purchasing.receive_order(
-        conn, order_id, staff["id"], req.received, apply_movement=apply_inventory_movement))
+        conn, order_id, staff["id"], req.received, apply_movement=apply_inventory_movement,
+        branch_id=staff["branch_id"]))
 
 
 @app.post("/api/purchase-orders/{order_id}/cancel")
@@ -1676,7 +1726,7 @@ def cancel_purchase_order(order_id: int, req: PurchaseOrderCancel, request: Requ
                           branch_id: int = 1):
     require_paid_subscription()
     return _purchasing(request, branch_id, lambda conn, staff: purchasing.cancel_order(
-        conn, order_id, req.reason), roles=("owner", "manager"))
+        conn, order_id, req.reason, branch_id=staff["branch_id"]), roles=("owner", "manager"))
 
 
 class TransferSend(BaseModel):
@@ -1694,6 +1744,21 @@ class TransferReceive(BaseModel):
 class TransferCancel(BaseModel):
     branch_id: int = 1
     reason: str
+
+
+def _own_branch(staff: dict) -> int | None:
+    """Which branch's documents this person may touch, or None for all of them.
+
+    An owner owns every branch. Everyone else is tied to the one they work at,
+    and the branch number the request carried is not evidence of anything.
+    """
+    return None if staff["role"] == "owner" else staff["branch_id"]
+
+
+def _own_branches(staff: dict) -> set[int] | None:
+    """The same answer, for documents that have two branches on them."""
+    own = _own_branch(staff)
+    return None if own is None else {own}
 
 
 def _transfers(request: Request, branch_id: int | None, work,
@@ -1739,7 +1804,7 @@ def receive_transfer(transfer_id: int, req: TransferReceive, request: Request):
     staff = require_staff(request, roles=("owner", "manager", "kitchen"))
     try:
         with closing(connect_db()) as conn, conn:
-            note = transfers.transfer(conn, transfer_id)
+            note = transfers.transfer(conn, transfer_id, branches=_own_branches(staff))
             if staff["role"] != "owner" and staff["branch_id"] != note["to_branch_id"]:
                 raise HTTPException(403, "ใบนี้ต้องให้สาขาปลายทางเป็นคนยืนยันรับ")
             return transfers.receive(conn, transfer_id, staff["id"], req.received,
@@ -1754,7 +1819,8 @@ def receive_transfer(transfer_id: int, req: TransferReceive, request: Request):
 def cancel_transfer(transfer_id: int, req: TransferCancel, request: Request):
     require_paid_subscription()
     return _transfers(request, req.branch_id,
-                      lambda conn, staff: transfers.cancel(conn, transfer_id, req.reason),
+                      lambda conn, staff: transfers.cancel(conn, transfer_id, req.reason,
+                                                           branches=_own_branches(staff)),
                       roles=("owner", "manager"))
 
 
@@ -1811,10 +1877,10 @@ def list_tax_invoices(request: Request, branch_id: int = 1, limit: int = 50):
 @app.get("/api/tax-invoices/{number}")
 def read_tax_invoice(number: str, request: Request):
     """Reprinting hands back what was issued, never a freshly computed one."""
-    require_staff(request, roles=("owner", "manager", "cashier"))
+    staff = require_staff(request, roles=("owner", "manager", "cashier"))
     try:
         with closing(connect_db()) as conn:
-            return tax_invoice.by_number(conn, number)
+            return tax_invoice.by_number(conn, number, branch_id=_own_branch(staff))
     except tax_invoice.InvoiceError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
@@ -1823,10 +1889,11 @@ def read_tax_invoice(number: str, request: Request):
 def cancel_tax_invoice(number: str, req: TaxInvoiceCancel, request: Request):
     """Void it. The row and its number stay used: two documents sharing one
     number is exactly what an audit looks for."""
-    require_staff(request, roles=("owner", "manager"))
+    staff = require_staff(request, roles=("owner", "manager"))
     try:
         with closing(connect_db()) as conn, conn:
-            return tax_invoice.cancel(conn, number, req.reason)
+            return tax_invoice.cancel(conn, number, req.reason,
+                                      branch_id=_own_branch(staff))
     except tax_invoice.InvoiceError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
@@ -2106,17 +2173,29 @@ def get_inventory(request: Request, branch_id: int = 1):
 
 @app.put("/api/inventory/{ingredient_id}")
 def put_inventory(ingredient_id: str, item: InventorySet, request: Request):
-    require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
+    staff = require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
     if not ingredient_id or len(ingredient_id) > 80 or not math.isfinite(item.stock) or item.stock < 0:
         raise HTTPException(400, "Invalid stock")
     unit, reorder_point = _ingredient_unit(item.unit), _reorder_point(item.reorder_point)
     with closing(connect_db()) as conn, conn:
         try:
             conn.execute("INSERT INTO inventory(branch_id,ingredient_id,stock,unit,reorder_point)"
-                         " VALUES(?,?,?,?,?)",
-                         (item.branch_id, ingredient_id, item.stock, unit, reorder_point))
+                         " VALUES(?,?,0,?,?)",
+                         (item.branch_id, ingredient_id, unit, reorder_point))
         except sqlite3.IntegrityError as exc:
             raise HTTPException(409, "มีวัตถุดิบรหัสนี้แล้ว ถ้าจะเพิ่มของให้บันทึกรับเข้าแทน") from exc
+        # The opening count is a delivery like any other, so it goes through the
+        # ledger instead of straight into the shelf. The event id is fixed by
+        # branch and ingredient, so a retry books it once.
+        if item.stock > 0:
+            try:
+                apply_inventory_movement(
+                    conn, event_id=f"opening:{item.branch_id}:{ingredient_id}",
+                    branch_id=item.branch_id, ingredient_id=ingredient_id,
+                    action="restock", quantity=item.stock,
+                    actor_staff_id=staff["id"], note="ยอดตั้งต้นตอนเพิ่มวัตถุดิบ")
+            except InventoryError as exc:
+                raise HTTPException(exc.status_code, str(exc)) from exc
     return {"branch_id": item.branch_id, "id": ingredient_id, "stock": item.stock,
             "unit": unit, "reorder_point": reorder_point}
 
@@ -2716,8 +2795,7 @@ def _songwai_menu_items(data: dict) -> list[dict]:
 
 def _songwai_token_throttle(request: Request) -> None:
     """นับครั้งที่เดารหัสร้านต่อหนึ่งที่อยู่ไอพี เก็บในทะเบียนกลาง ไม่ใช่ในร้านใดร้านหนึ่ง"""
-    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
-        request.client.host if request.client else "unknown")
+    client = _client_address(request)
     with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn, conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS songwai_token_tries (
             client TEXT NOT NULL, tried_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
@@ -3406,7 +3484,7 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
     with closing(connect_db()) as conn:
         prior = conn.execute("SELECT order_nos_json,amount,branch_id,table_no FROM table_payment_events WHERE event_id=?", (req.event_id,)).fetchone()
         if prior:
-            if (json.loads(prior[0]) != order_nos or abs(float(prior[1]) - req.amount) > 0.01 or
+            if (json.loads(prior[0]) != order_nos or not _same_money(prior[1], req.amount) or
                     prior[2] != req.branch_id or prior[3] != req.table_no.strip()):
                 raise HTTPException(409, "Payment event has different orders or amount")
             return {"status": "paid", "order_nos": order_nos, "existing": True}
@@ -3424,7 +3502,7 @@ def close_table_with_verified_slip(req: VerifiedTablePaymentCreate, request: Req
         conn.execute("BEGIN IMMEDIATE")
         prior = conn.execute("SELECT order_nos_json,amount,branch_id,table_no FROM table_payment_events WHERE event_id=?", (req.event_id,)).fetchone()
         if prior:
-            if (json.loads(prior[0]) != order_nos or abs(float(prior[1]) - req.amount) > 0.01 or
+            if (json.loads(prior[0]) != order_nos or not _same_money(prior[1], req.amount) or
                     prior[2] != req.branch_id or prior[3] != req.table_no.strip()):
                 raise HTTPException(409, "Payment event has different orders or amount")
             return {"status": "paid", "order_nos": order_nos, "existing": True}
@@ -3483,7 +3561,7 @@ def close_payment(req: PaymentCreate, request: Request):
             return {"status": "paid", "order_no": existing[0], "commission": {"status": "already_processed"}}
         if order[1] != "open":
             raise HTTPException(409, "Order already closed")
-        if abs(req.amount - order[2]) > 0.01:
+        if not _same_money(req.amount, order[2]):
             raise HTTPException(409, "Payment does not match order total")
         closed_by = cashier["id"]
         offline_at = _offline_stamp(req.offline_at)
@@ -4483,8 +4561,7 @@ def request_account_deletion(req: DeletionRequest, request: Request):
         raise HTTPException(400, "กรอกประเภทบัญชีและช่องทางติดต่อกลับให้ครบ")
     shop = " ".join(req.shop.split())[:80]
     note = req.note.strip()[:500]
-    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
-        request.client.host if request.client else "unknown")
+    client = _client_address(request)
     with closing(sqlite3.connect(DB_PATH, timeout=10)) as conn, conn:
         conn.execute("""CREATE TABLE IF NOT EXISTS account_deletion_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, shop TEXT NOT NULL DEFAULT '',
@@ -4622,8 +4699,7 @@ def open_shop_from_songwai(req: SongwaiShopSignup, request: Request, response: R
     phone = re.sub(r"[\s-]", "", str(data.get("phone") or ""))
     if not re.fullmatch(r"\+?\d{9,15}", phone):
         phone = ""          # ส่งไวไม่ได้บังคับเบอร์ ร้านมาเติมในโปรไฟล์ทีหลังได้
-    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
-        request.client.host if request.client else "unknown")
+    client = _client_address(request)
     try:
         shop = shops.reserve_shop(DB_PATH, slug=slug, name=shop_name, owner_name=shop_name,
                                   phone=phone, client_key=client, max_shops=MAX_SHOPS)
@@ -4715,8 +4791,7 @@ def open_shop(req: ShopSignup, request: Request, response: Response):
     if not shops.valid_slug(slug):
         raise HTTPException(400, "ชื่อร้านในลิงก์ใช้ a-z ตัวเลข และขีดกลาง ยาว 3–30 ตัว")
     pin_hash = hash_pin(req.pin)
-    client = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (
-        request.client.host if request.client else "unknown")
+    client = _client_address(request)
     try:
         shop = shops.reserve_shop(DB_PATH, slug=slug, name=shop_name, owner_name=owner_name,
                                   phone=phone, client_key=client, max_shops=MAX_SHOPS)

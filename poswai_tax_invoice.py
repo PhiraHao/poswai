@@ -180,14 +180,27 @@ def detail(conn: sqlite3.Connection, invoice_id: int) -> dict:
     }
 
 
-def by_number(conn: sqlite3.Connection, number: str) -> dict:
-    row = conn.execute("SELECT id FROM tax_invoices WHERE number=?", (number,)).fetchone()
+def by_number(conn: sqlite3.Connection, number: str, *,
+              branch_id: int | None = None) -> dict:
+    """``branch_id`` limits this to one branch's own invoices.
+
+    The numbers run 2611-0001 upward, so anyone holding one can guess the
+    rest; without this a cashier at one branch could walk the whole shop's
+    invoices and read every buyer's name, address and tax number.
+    """
+    sql = "SELECT id FROM tax_invoices WHERE number=?"
+    params: list = [number]
+    if branch_id is not None:
+        sql += " AND branch_id=?"
+        params.append(branch_id)
+    row = conn.execute(sql, params).fetchone()
     if row is None:
         raise InvoiceError("ไม่พบใบกำกับภาษีเลขนี้", 404)
     return detail(conn, row[0])
 
 
-def cancel(conn: sqlite3.Connection, number: str, reason: str) -> dict:
+def cancel(conn: sqlite3.Connection, number: str, reason: str, *,
+           branch_id: int | None = None) -> dict:
     """Mark it void. The row stays and the number stays used.
 
     Deleting it would free the number to be issued again, and two documents
@@ -196,7 +209,7 @@ def cancel(conn: sqlite3.Connection, number: str, reason: str) -> dict:
     reason = _text(reason, "เหตุผล", 200)
     if not reason:
         raise InvoiceError("ต้องบอกเหตุผลที่ยกเลิก")
-    invoice = by_number(conn, number)
+    invoice = by_number(conn, number, branch_id=branch_id)
     if invoice["cancelled_at"]:
         raise InvoiceError("ใบนี้ถูกยกเลิกไปแล้ว", 409)
     conn.execute("UPDATE tax_invoices SET cancelled_at=strftime('%Y-%m-%d %H:%M:%f','now'),"

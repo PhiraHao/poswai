@@ -180,13 +180,14 @@ def receive(conn: sqlite3.Connection, transfer_id: int, staff_id: int,
     return transfer(conn, transfer_id)
 
 
-def cancel(conn: sqlite3.Connection, transfer_id: int, reason: str) -> dict:
+def cancel(conn: sqlite3.Connection, transfer_id: int, reason: str, *,
+           branches: set[int] | None = None) -> dict:
     """Call off a transfer nobody has confirmed. Nothing moved, so nothing
     needs undoing."""
     reason = _text(reason, "เหตุผล", 200)
     if not reason:
         raise TransferError("ต้องบอกเหตุผลที่ยกเลิก")
-    current = transfer(conn, transfer_id)
+    current = transfer(conn, transfer_id, branches=branches)
     if current["status"] == RECEIVED:
         raise TransferError("ใบที่รับของแล้วยกเลิกไม่ได้ ให้โอนกลับแทน", 409)
     if current["status"] == CANCELLED:
@@ -196,12 +197,18 @@ def cancel(conn: sqlite3.Connection, transfer_id: int, reason: str) -> dict:
     return transfer(conn, transfer_id)
 
 
-def transfer(conn: sqlite3.Connection, transfer_id: int) -> dict:
+def transfer(conn: sqlite3.Connection, transfer_id: int, *,
+             branches: set[int] | None = None) -> dict:
+    """``branches`` limits this to transfers one of those branches is part of.
+
+    A transfer has two sides and either may look at it; somebody who is on
+    neither has no business knowing it exists, so it answers 404.
+    """
     row = conn.execute(
         "SELECT id,number,from_branch_id,to_branch_id,status,sent_by,sent_at,"
         "received_by,received_at,note,cancel_reason FROM stock_transfers WHERE id=?",
         (transfer_id,)).fetchone()
-    if row is None:
+    if row is None or (branches is not None and not {row[2], row[3]} & branches):
         raise TransferError("ไม่พบใบโอนนี้", 404)
     lines = [{"id": line[0], "ingredient_id": line[1], "quantity": line[2],
               "received_quantity": line[3],

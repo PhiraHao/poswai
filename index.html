@@ -3488,7 +3488,7 @@
         station: menu.station || "ครัวร้อน",
         courseMode,
         price: menu.price + extraPrice + sizePrice,
-        cost: menu.cost,
+        cost: menu.cost || 0,
         qty: 1,
         extraBom,
         // The server prices toppings from its own list, so send what was
@@ -3540,7 +3540,7 @@
       }
       const ex = state.cart.find(c => c.id === menuId && !c.courseMode);
       if (ex) ex.qty += 1;
-      else state.cart.push({ id: menu.id, serverId: menu.serverId, name: menu.name, baseCategory: menu.category, station: menu.station || "ครัวร้อน", courseMode: "FIRE", price: menu.price, cost: menu.cost, qty: 1 });
+      else state.cart.push({ id: menu.id, serverId: menu.serverId, name: menu.name, baseCategory: menu.category, station: menu.station || "ครัวร้อน", courseMode: "FIRE", price: menu.price, cost: menu.cost || 0, qty: 1 });
       renderCustomerMenu();
       renderCart();
     }
@@ -4133,7 +4133,7 @@
       const menu = DEFAULT_MENU.find(m => m.id === menuId);
       if (!menu) return;
       const tStr = state.selectedCashierTable;
-      const itemObj = [{ id: menu.id, name: menu.name, price: menu.price, cost: menu.cost, qty }];
+      const itemObj = [{ id: menu.id, name: menu.name, price: menu.price, cost: menu.cost || 0, qty }];
       deductBomInventory(itemObj);
       state.orders.unshift({
         orderId: "POS-" + Math.floor(1000 + Math.random() * 9000),
@@ -4567,7 +4567,7 @@
       const menu = DEFAULT_MENU[Math.floor(Math.random() * 4)];
       const ordId = platform.slice(0,2).toUpperCase() + "-" + Math.floor(100 + Math.random() * 900);
       const markupPrice = Math.round(menu.price * (1 + gpPercent / 100));
-      const itemObj = [{ id: menu.id, name: menu.name, price: markupPrice, cost: menu.cost, qty: 1 }];
+      const itemObj = [{ id: menu.id, name: menu.name, price: markupPrice, cost: menu.cost || 0, qty: 1 }];
       deductBomInventory(itemObj);
 
       state.orders.unshift({
@@ -4581,7 +4581,7 @@
         source: platform
       });
       state.shift.totalSalesToday += markupPrice;
-      state.shift.totalCostToday += menu.cost;
+      state.shift.totalCostToday += menu.cost || 0;
       state.deliveryLogs.unshift(`🛵 [${platform} #${ordId}] สั่ง "${menu.name}" ยอดขาย ฿${markupPrice} -> ส่งเข้าครัวและตัดสต็อก BOM อัตโนมัติแล้ว`);
       addAuditLog(`🛵 รับออเดอร์อัตโนมัติจาก ${platform} (#${ordId}) ยอด ฿${markupPrice}`);
       renderAll();

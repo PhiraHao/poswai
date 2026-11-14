@@ -192,9 +192,10 @@ def create_order(conn: sqlite3.Connection, *, branch_id: int, supplier_id: int,
     return order(conn, order_id)
 
 
-def send_order(conn: sqlite3.Connection, order_id: int) -> dict:
+def send_order(conn: sqlite3.Connection, order_id: int, *,
+               branch_id: int | None = None) -> dict:
     """Mark it as placed with the supplier. Nothing moves yet."""
-    current = order(conn, order_id)
+    current = order(conn, order_id, branch_id=branch_id)
     if current["status"] != DRAFT:
         raise PurchaseError("ใบนี้ส่งไปแล้วหรือปิดไปแล้ว", 409)
     conn.execute("UPDATE purchase_orders SET status=?,"
@@ -202,11 +203,12 @@ def send_order(conn: sqlite3.Connection, order_id: int) -> dict:
     return order(conn, order_id)
 
 
-def cancel_order(conn: sqlite3.Connection, order_id: int, reason: str) -> dict:
+def cancel_order(conn: sqlite3.Connection, order_id: int, reason: str, *,
+                 branch_id: int | None = None) -> dict:
     reason = _text(reason, "เหตุผล", 200)
     if not reason:
         raise PurchaseError("ต้องบอกเหตุผลที่ยกเลิก")
-    current = order(conn, order_id)
+    current = order(conn, order_id, branch_id=branch_id)
     if current["status"] == RECEIVED:
         raise PurchaseError("ใบที่รับของแล้วยกเลิกไม่ได้ ถ้าของผิดให้บันทึกเป็นของเสียแทน", 409)
     if current["status"] == CANCELLED:
@@ -217,7 +219,8 @@ def cancel_order(conn: sqlite3.Connection, order_id: int, reason: str) -> dict:
 
 
 def receive_order(conn: sqlite3.Connection, order_id: int, staff_id: int,
-                  received: dict[str, Any] | None = None, *, apply_movement) -> dict:
+                  received: dict[str, Any] | None = None, *, apply_movement,
+                  branch_id: int | None = None) -> dict:
     """Book in what turned up, and move the stock through the audit ledger.
 
     ``received`` maps ingredient id to the quantity that actually arrived.
@@ -226,7 +229,7 @@ def receive_order(conn: sqlite3.Connection, order_id: int, staff_id: int,
     as nothing is recorded as zero and moves no stock — the order still says
     it was expected, which is the record a shop argues an invoice with.
     """
-    current = order(conn, order_id)
+    current = order(conn, order_id, branch_id=branch_id)
     if current["status"] == RECEIVED:
         raise PurchaseError("ใบนี้รับของแล้ว", 409)
     if current["status"] == CANCELLED:
@@ -271,12 +274,18 @@ def _received_quantity(value: Any) -> float:
     return round(amount, 4)
 
 
-def order(conn: sqlite3.Connection, order_id: int) -> dict:
+def order(conn: sqlite3.Connection, order_id: int, *, branch_id: int | None = None) -> dict:
+    """``branch_id`` limits this to one branch's own orders.
+
+    Left out, any order is readable, which is what the branch listing and the
+    tests want. Passed, an order belonging to another branch is simply not
+    found: saying "ไม่ใช่สาขาคุณ" would confirm that the number exists.
+    """
     row = conn.execute(
         "SELECT id,number,branch_id,supplier_id,status,created_by,created_at,sent_at,"
         "received_by,received_at,note,cancel_reason FROM purchase_orders WHERE id=?",
         (order_id,)).fetchone()
-    if row is None:
+    if row is None or (branch_id is not None and row[2] != branch_id):
         raise PurchaseError("ไม่พบใบสั่งซื้อนี้", 404)
     lines = [{"id": line[0], "ingredient_id": line[1], "quantity": line[2],
               "unit_cost": line[3] / 100, "received_quantity": line[4],
