@@ -62,34 +62,41 @@ def _share(weights: list[int], amount: int) -> list[int]:
     return shares
 
 
-def _order(conn: sqlite3.Connection, order_no: str, branch_id: int) -> dict:
+def order_of(conn: sqlite3.Connection, order_no: str, branch_id: int, *,
+             status: str = "open") -> dict:
+    """บิลหนึ่งใบพร้อมรายละเอียดยอดที่ตรวจแล้วว่าประกอบกันเป็นยอดรวมจริง
+
+    ``status`` คือสถานะที่ยอมรับ — การแยกบิลต้องการบิลที่ยังเปิด การคืนเงิน
+    ต้องการบิลที่จ่ายแล้ว ทั้งคู่ต้องการการตรวจชุดเดียวกันก่อนแตะยอด
+    """
     row = conn.execute(f"SELECT {','.join(ORDER_FIELDS)} FROM order_events WHERE order_no=?",
                        (order_no,)).fetchone()
     # สาขาที่ไม่ตรงตอบ 404 เหมือนไม่มีบิลนี้ ไม่ใช่ 403 — 403 เท่ากับยืนยันว่าบิลมีจริง
     if row is None or row[1] != branch_id:
         raise SplitError("ไม่พบบิลนี้", 404)
     order = dict(zip(ORDER_FIELDS, row))
-    if order["status"] != "open":
-        raise SplitError("บิลนี้ปิดแล้ว แยกหรือย้ายไม่ได้", 409)
+    if order["status"] != status:
+        raise SplitError("บิลนี้ปิดแล้ว แยกหรือย้ายไม่ได้" if status == "open"
+                         else "บิลนี้ยังไม่ได้รับเงิน คืนเงินไม่ได้", 409)
     if conn.execute("SELECT 1 FROM online_orders WHERE order_no=?", (order_no,)).fetchone():
         raise SplitError("บิลสั่งออนไลน์ไม่ใช่บิลโต๊ะ แยกหรือรวมไม่ได้", 409)
     if conn.execute("SELECT 1 FROM offline_sales WHERE order_no=?", (order_no,)).fetchone():
         # บิลที่ขายตอนเน็ตล่มเก็บ "เงินที่รับมาจริง" ไม่ใช่ยอดที่กฎร้านคิดได้
         # รายละเอียดยอดจึงไม่ประกอบกันเป็นยอดรวม แบ่งแล้วจะได้เลขที่ไม่มีใครตรวจได้
-        raise SplitError("บิลที่ขายตอนออฟไลน์ต้องให้ผู้จัดการตรวจก่อน แยกบิลไม่ได้", 409)
+        raise SplitError("บิลที่ขายตอนออฟไลน์ต้องให้ผู้จัดการตรวจก่อน แยกหรือคืนเงินบางส่วนไม่ได้", 409)
     total_cents = round(float(order["total_amount"]) * 100)
     parts = (order["subtotal_cents"] - order["discount_cents"]
              + order["service_charge_cents"] + order["vat_cents"])
     if order["subtotal_cents"] <= 0 or parts != total_cents:
         # บิลเก่าก่อนระบบเก็บรายละเอียดยอด มีแต่ยอดรวม แบ่งแล้วจะไม่รู้ว่า VAT
         # ของแต่ละใบเท่าไร ซึ่งเป็นเลขที่ต้องพิมพ์ลงใบเสร็จ
-        raise SplitError("บิลนี้ไม่มีรายละเอียดยอดครบ แยกบิลไม่ได้ "
-                         "ให้เก็บเงินรวมแล้วออกใบเสร็จแยกหน้าเคาน์เตอร์", 409)
+        raise SplitError("บิลนี้ไม่มีรายละเอียดยอดครบ แยกบิลหรือคืนเงินบางส่วนไม่ได้ "
+                         "ให้ทำที่หน้าเคาน์เตอร์แล้วจดไว้แทน", 409)
     order["total_cents"] = total_cents
     return order
 
 
-def _items(conn: sqlite3.Connection, order_no: str) -> list[dict]:
+def items_of(conn: sqlite3.Connection, order_no: str) -> list[dict]:
     rows = conn.execute(f"SELECT rowid,{','.join(ITEM_FIELDS[1:])} FROM order_items"
                         " WHERE order_no=? ORDER BY rowid", (order_no,)).fetchall()
     if not rows:
@@ -140,42 +147,17 @@ def _summary(order_no: str, table_no: str, money: dict) -> dict:
                        "vat": money["vat_cents"] / 100}}
 
 
-def split_order(conn: sqlite3.Connection, *, order_no: str, branch_id: int,
-                picks: dict[int, int], new_order_no: str, event_id: str,
-                staff: dict | None) -> dict:
-    """ย้ายจำนวนที่เลือกของบางรายการออกไปเป็นบิลใหม่บนโต๊ะเดิม
+def parts_of(conn: sqlite3.Connection, order: dict, items: list[dict],
+             picks: dict[int, int]) -> tuple[dict, dict, list[tuple[dict, int, int, int]]]:
+    """แบ่งยอดของบิลหนึ่งออกเป็นสองก้อน: ที่เหลือ กับที่เลือกไว้
 
-    ``picks`` คือ {rowid ของรายการ: จำนวนที่ย้ายออก} — ย้ายได้ทีละบางส่วนของรายการ
-    เพราะ "ข้าวผัด 3 จาน" บนโต๊ะเดียวคือคนละคนจ่าย
+    ทั้งการแยกบิลและการคืนเงินบางส่วนถามคำถามเดียวกัน — "ของชุดนี้คิดเป็นเงิน
+    เท่าไรของบิลนี้" — จึงต้องตอบด้วยเลขชุดเดียวกัน ไม่งั้นแยกบิลแล้วคืนเงินใบ
+    ที่แยกออกมา จะได้ยอดคนละตัวกับคืนรายการเดียวกันจากบิลเดิม
 
-    ย้ายออกทั้งบิลไม่ได้: นั่นคือการย้ายโต๊ะหรือเปลี่ยนเลขบิล ไม่ใช่การแยก
+    คืน (ยอดที่เหลือ, ยอดที่เลือก, รายการที่ถูกเลือกพร้อมส่วนลดที่แบ่งแล้ว)
     """
-    if not new_order_no or len(new_order_no) > 60 or not event_id or len(event_id) > 80:
-        raise SplitError("เลขบิลใหม่หรือรหัสรายการไม่ถูกต้อง")
-    done = conn.execute("SELECT order_no FROM order_events WHERE event_id=?", (event_id,)).fetchone()
-    if done:
-        # กดซ้ำเพราะเน็ตช้า ไม่ใช่ขอแยกอีกครั้ง
-        return {"status": "existing", "new_order_no": done[0]}
-    if conn.execute("SELECT 1 FROM order_events WHERE order_no=?", (new_order_no,)).fetchone():
-        raise SplitError("เลขบิลใหม่นี้มีอยู่แล้ว", 409)
-
-    order = _order(conn, order_no, branch_id)
-    items = _items(conn, order_no)
-    by_line = {item["line_id"]: item for item in items}
-    if not picks:
-        raise SplitError("ยังไม่ได้เลือกรายการที่จะแยกออก")
-    moved_any = 0
-    for line_id, qty in picks.items():
-        item = by_line.get(int(line_id))
-        if item is None:
-            raise SplitError("รายการที่เลือกไม่อยู่ในบิลนี้", 409)
-        qty = int(qty)
-        if qty < 1 or qty > int(item["quantity"]):
-            raise SplitError(f"จำนวนที่แยกของ {item['name']} ไม่ถูกต้อง")
-        moved_any += qty
-    if moved_any >= sum(int(item["quantity"]) for item in items):
-        raise SplitError("แยกออกทั้งบิลไม่ได้ ถ้าจะเปลี่ยนโต๊ะให้ใช้ย้ายโต๊ะ")
-
+    branch_id = order["branch_id"]
     bearing = _bearing(conn, branch_id, items)
     # สองก้อน: [0] อยู่กับบิลเดิม [1] ไปบิลใหม่
     gross = [0, 0]
@@ -223,6 +205,48 @@ def split_order(conn: sqlite3.Connection, *, order_no: str, branch_id: int,
     # ผลรวมต้องเท่าใบเดิมทุกสตางค์ ถ้าไม่เท่าคือคิดผิด ห้ามเขียนลงฐานข้อมูล
     if sum(part["total_cents"] for part in money) != order["total_cents"]:
         raise SplitError("แบ่งยอดบิลนี้ไม่ลงตัว ยังไม่แยกให้", 409)
+
+    return money[0], money[1], moves
+
+
+def split_order(conn: sqlite3.Connection, *, order_no: str, branch_id: int,
+                picks: dict[int, int], new_order_no: str, event_id: str,
+                staff: dict | None) -> dict:
+    """ย้ายจำนวนที่เลือกของบางรายการออกไปเป็นบิลใหม่บนโต๊ะเดิม
+
+    ``picks`` คือ {rowid ของรายการ: จำนวนที่ย้ายออก} — ย้ายได้ทีละบางส่วนของรายการ
+    เพราะ "ข้าวผัด 3 จาน" บนโต๊ะเดียวคือคนละคนจ่าย
+
+    ย้ายออกทั้งบิลไม่ได้: นั่นคือการย้ายโต๊ะหรือเปลี่ยนเลขบิล ไม่ใช่การแยก
+    """
+    if not new_order_no or len(new_order_no) > 60 or not event_id or len(event_id) > 80:
+        raise SplitError("เลขบิลใหม่หรือรหัสรายการไม่ถูกต้อง")
+    done = conn.execute("SELECT order_no FROM order_events WHERE event_id=?", (event_id,)).fetchone()
+    if done:
+        # กดซ้ำเพราะเน็ตช้า ไม่ใช่ขอแยกอีกครั้ง
+        return {"status": "existing", "new_order_no": done[0]}
+    if conn.execute("SELECT 1 FROM order_events WHERE order_no=?", (new_order_no,)).fetchone():
+        raise SplitError("เลขบิลใหม่นี้มีอยู่แล้ว", 409)
+
+    order = order_of(conn, order_no, branch_id)
+    items = items_of(conn, order_no)
+    by_line = {item["line_id"]: item for item in items}
+    if not picks:
+        raise SplitError("ยังไม่ได้เลือกรายการที่จะแยกออก")
+    moved_any = 0
+    for line_id, qty in picks.items():
+        item = by_line.get(int(line_id))
+        if item is None:
+            raise SplitError("รายการที่เลือกไม่อยู่ในบิลนี้", 409)
+        qty = int(qty)
+        if qty < 1 or qty > int(item["quantity"]):
+            raise SplitError(f"จำนวนที่แยกของ {item['name']} ไม่ถูกต้อง")
+        moved_any += qty
+    if moved_any >= sum(int(item["quantity"]) for item in items):
+        raise SplitError("แยกออกทั้งบิลไม่ได้ ถ้าจะเปลี่ยนโต๊ะให้ใช้ย้ายโต๊ะ")
+
+    kept, created, moves = parts_of(conn, order, items, picks)
+    money = [kept, created]
 
     for item, move_qty, move_off, stay_off in moves:
         stay_qty = int(item["quantity"]) - move_qty
@@ -286,7 +310,7 @@ def move_order(conn: sqlite3.Connection, *, order_no: str, branch_id: int,
     table_no = " ".join(str(table_no or "").split())
     if not table_no or len(table_no) > 24:
         raise SplitError("เลขโต๊ะไม่ถูกต้อง")
-    order = _order(conn, order_no, branch_id)
+    order = order_of(conn, order_no, branch_id)
     if order["table_no"] == table_no:
         raise SplitError("บิลนี้อยู่โต๊ะนี้แล้ว", 409)
     seat = conn.execute("SELECT active FROM shop_tables WHERE branch_id=? AND table_no=?",
@@ -313,10 +337,10 @@ def merge_orders(conn: sqlite3.Connection, *, order_no: str, into_order_no: str,
     """
     if order_no == into_order_no:
         raise SplitError("รวมบิลเข้าตัวเองไม่ได้")
-    source = _order(conn, order_no, branch_id)
-    target = _order(conn, into_order_no, branch_id)
-    items = _items(conn, order_no)
-    _items(conn, into_order_no)   # ปลายทางต้องเป็นบิลจริงที่มีของ ไม่ใช่บิลเปล่า
+    source = order_of(conn, order_no, branch_id)
+    target = order_of(conn, into_order_no, branch_id)
+    items = items_of(conn, order_no)
+    items_of(conn, into_order_no)   # ปลายทางต้องเป็นบิลจริงที่มีของ ไม่ใช่บิลเปล่า
 
     money = {field: source[field] + target[field] for field in
              ("subtotal_cents", "discount_cents", "service_charge_cents", "vat_cents")}

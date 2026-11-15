@@ -75,6 +75,7 @@ from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
 import poswai_billing as billing
 import poswai_activity as activity
 import poswai_split as split_bills
+import poswai_refunds as refunds
 import poswai_profile as profile
 import poswai_shifts as shifts
 import poswai_reports as reports
@@ -567,6 +568,9 @@ def init_db() -> None:
     profile.ensure_schema(conn)
     shifts.init_shifts(conn)
     tax_invoice.init_tax_invoices(conn)
+    # ใบลดหนี้ ม.86/10 และการคืนเงินบางส่วนที่มันอ้างถึง
+    tax_invoice.init_credit_notes(conn)
+    refunds.init(conn)
     purchasing.init_purchasing(conn)
     transfers.init_transfers(conn)
     cur.execute("""CREATE TABLE IF NOT EXISTS auth_login_attempts (
@@ -4019,6 +4023,107 @@ def refund_paid_order(order_no: str, req: OrderCancellation, request: Request):
             "refunded_by": manager["id"], "commission_entries_reversed": reversed_rows}
 
 
+class PartialRefund(BaseModel):
+    branch_id: int = 1
+    event_id: str
+    reason: str
+    # เลือกรายการ หรือบอกจำนวนเงิน อย่างใดอย่างหนึ่ง
+    picks: list[SplitPick] = []
+    amount: Optional[float] = None
+    # ใบอนุมัติของผู้จัดการ สำหรับตอนที่แคชเชียร์เป็นคนกด
+    override: str = ""
+
+
+@app.get("/api/orders/{order_no}/refundable")
+def read_refundable(order_no: str, request: Request, branch_id: int = 1):
+    """บิลนี้เหลือให้คืนได้เท่าไร และรายการไหนยังไม่ได้คืน"""
+    require_staff(request, roles=("owner", "manager", "cashier"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn:
+            answer = refunds.refundable(conn, order_no=order_no, branch_id=branch_id)
+            answer["refunds"] = refunds.listing(conn, order_no=order_no)
+            return answer
+    except (refunds.RefundError, split_bills.SplitError) as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/orders/{order_no}/refund-partial")
+def refund_part_of_order(order_no: str, req: PartialRefund, request: Request):
+    """คืนเงินบางส่วนของบิลที่จ่ายแล้ว ตามรายการหรือตามจำนวนเงิน"""
+    staff = require_staff(request, roles=("owner", "manager", "cashier"),
+                          branch_id=req.branch_id)
+    picks = {pick.line_id: pick.qty for pick in req.picks}
+    if len(picks) != len(req.picks):
+        raise HTTPException(400, "เลือกรายการเดียวกันซ้ำ")
+    try:
+        with closing(connect_db()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            approver = None
+            if staff["role"] == "cashier":
+                approver = _use_override(conn, req.override, action="refund",
+                                         branch_id=req.branch_id)
+                if not approver:
+                    raise HTTPException(403, "การคืนเงินต้องให้ผู้จัดการอนุมัติ")
+            return refunds.refund(conn, order_no=order_no, branch_id=req.branch_id,
+                                  picks=picks, amount=req.amount, reason=req.reason,
+                                  event_id=req.event_id, staff=staff, approver=approver)
+    except (refunds.RefundError, split_bills.SplitError) as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+class CreditNoteRequest(BaseModel):
+    branch_id: int = 1
+    refund_id: int
+
+
+@app.post("/api/tax-invoices/{number}/credit-note")
+def issue_credit_note(number: str, req: CreditNoteRequest, request: Request):
+    """ออกใบลดหนี้ตามมาตรา 86/10 สำหรับการคืนเงินหนึ่งครั้ง
+
+    ร้านที่ออกใบกำกับภาษีไปแล้วแล้วคืนเงิน ถ้าไม่ออกใบลดหนี้ ร้านต้องนำส่ง VAT
+    ของเงินที่คืนไปแล้ว และผู้ซื้อก็ยังขอคืนภาษีได้เต็มจำนวนทั้งที่จ่ายน้อยกว่า
+    """
+    staff = require_staff(request, roles=("owner", "manager", "cashier"),
+                          branch_id=req.branch_id)
+    require_paid_subscription()
+    try:
+        with closing(connect_db()) as conn, conn:
+            found = [row for row in refunds.listing(conn, branch_id=req.branch_id, limit=200)
+                     if row["id"] == req.refund_id]
+            if not found:
+                raise HTTPException(404, "ไม่พบรายการคืนเงินนี้")
+            note = tax_invoice.issue_credit_note(
+                conn, invoice_number=number, branch_id=req.branch_id,
+                staff_id=staff["id"], refund=found[0])
+            activity.record(conn, branch_id=req.branch_id, staff=staff,
+                            action="credit_note", subject=f"ใบลดหนี้ {note['number']}",
+                            detail=f"ลดใบกำกับ {number} · {note['reason']}",
+                            amount_cents=round(note["difference"]["total"] * 100))
+            return note
+    except tax_invoice.InvoiceError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/credit-notes")
+def list_credit_notes(request: Request, branch_id: int = 1, limit: int = 50):
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        return {"branch_id": branch_id,
+                "credit_notes": tax_invoice.credit_note_listing(conn, branch_id, limit)}
+
+
+@app.get("/api/credit-notes/{number}")
+def read_credit_note(number: str, request: Request):
+    """พิมพ์ซ้ำได้เท่าที่ออกไป ไม่คิดเลขใหม่"""
+    staff = require_staff(request, roles=("owner", "manager", "cashier"))
+    try:
+        with closing(connect_db()) as conn:
+            return tax_invoice.credit_note_by_number(conn, number,
+                                                     branch_id=_own_branch(staff))
+    except tax_invoice.InvoiceError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
 # =====================================================================
 # แฟ้มประวัติพนักงาน: ข้อมูลการจ้าง เอกสาร ทรัพย์สินของร้าน และไทม์ไลน์
 # =====================================================================
@@ -4835,7 +4940,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "activity-ui", "split-bill", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "activity-ui", "split-bill", "refund-partial", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

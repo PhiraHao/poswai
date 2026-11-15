@@ -39,6 +39,8 @@ ACTIONS: dict[str, str] = {
     "split_bill": "แยกบิล",
     "move_table": "ย้ายโต๊ะ",
     "merge_bill": "รวมบิล",
+    "refund_partial": "คืนเงินบางส่วน",
+    "credit_note": "ออกใบลดหนี้",
 }
 
 

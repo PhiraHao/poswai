@@ -226,3 +226,150 @@ def listing(conn: sqlite3.Connection, branch_id: int | None = None, limit: int =
     sql += " ORDER BY id DESC LIMIT ?"
     params.append(max(1, min(int(limit), 200)))
     return [detail(conn, row[0]) for row in conn.execute(sql, params)]
+
+
+# =====================================================================
+# ใบลดหนี้ ตามมาตรา 86/10 — เอกสารที่ต้องออกเมื่อคืนเงินบิลที่ออกใบกำกับภาษีไปแล้ว
+# =====================================================================
+# ร้านที่ออกใบกำกับภาษีไปแล้วแล้วคืนเงินลูกค้า ถ้าไม่ออกใบลดหนี้ ร้านจะต้องนำส่ง
+# VAT ของเงินที่คืนไปแล้ว และผู้ซื้อก็ยังถือใบกำกับภาษีที่ขอคืนภาษีได้เต็มจำนวน
+# ทั้งที่จ่ายจริงน้อยกว่า — สรรพากรเจอตอนตรวจเมื่อไรคือปัญหาของทั้งสองฝ่าย
+#
+# กฎหมายกำหนดว่าใบลดหนี้ต้องอ้างเลขใบกำกับภาษีเดิม บอกมูลค่าตามใบเดิม มูลค่า
+# ที่ถูกต้อง ผลต่าง และ VAT ของผลต่าง พร้อมสาเหตุ เอกสารนี้จึงไม่คิดเลขเอง
+# แต่คัดลอกยอดจากใบกำกับภาษีเดิมกับรายการคืนเงินที่เกิดขึ้นจริง
+CREDIT_NOTE_PREFIX = "CN"
+
+
+def init_credit_notes(conn: sqlite3.Connection) -> None:
+    conn.execute("""CREATE TABLE IF NOT EXISTS credit_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        number TEXT NOT NULL UNIQUE,
+        tax_invoice_id INTEGER NOT NULL REFERENCES tax_invoices(id),
+        -- หนึ่งการคืนเงิน หนึ่งใบลดหนี้ สองใบของการคืนครั้งเดียวคือสิ่งที่สรรพากรหา
+        refund_id INTEGER NOT NULL UNIQUE,
+        order_no TEXT NOT NULL,
+        branch_id INTEGER NOT NULL,
+        issued_by INTEGER NOT NULL,
+        issued_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')),
+        reason TEXT NOT NULL,
+        -- มูลค่าตามใบกำกับภาษีเดิม และมูลค่าที่ถูกต้องหลังคืนเงิน เป็นสตางค์
+        original_total_cents INTEGER NOT NULL,
+        corrected_total_cents INTEGER NOT NULL,
+        diff_subtotal_cents INTEGER NOT NULL DEFAULT 0,
+        diff_service_charge_cents INTEGER NOT NULL DEFAULT 0,
+        diff_vat_cents INTEGER NOT NULL DEFAULT 0,
+        diff_total_cents INTEGER NOT NULL,
+        lines_json TEXT NOT NULL DEFAULT '[]',
+        cancelled_at TEXT,
+        cancel_reason TEXT NOT NULL DEFAULT '')""")
+    conn.execute("CREATE INDEX IF NOT EXISTS credit_notes_issued ON credit_notes(issued_at)")
+
+
+def next_credit_number(conn: sqlite3.Connection, today: dt.date | None = None) -> str:
+    """เลขของตัวเอง ไม่ปนกับใบกำกับภาษี: CN2611-0001
+
+    ใช้ชุดเลขเดียวกับใบกำกับภาษีไม่ได้ เพราะสรรพากรดูสองชุดนี้แยกกัน และเลขที่
+    ข้ามไปมาระหว่างสองชนิดเอกสารคือคำถามที่ร้านตอบไม่ได้ตอนตรวจ
+    """
+    today = today or dt.datetime.now(BANGKOK).date()
+    prefix = f"{CREDIT_NOTE_PREFIX}{today.year % 100:02d}{today.month:02d}"
+    highest = conn.execute(
+        "SELECT number FROM credit_notes WHERE number LIKE ? ORDER BY number DESC LIMIT 1",
+        (f"{prefix}-%",)).fetchone()
+    count = int(highest[0].split("-")[1]) if highest else 0
+    return f"{prefix}-{count + 1:04d}"
+
+
+def issue_credit_note(conn: sqlite3.Connection, *, invoice_number: str, branch_id: int,
+                      staff_id: int, refund: dict, today: dt.date | None = None) -> dict:
+    """ออกใบลดหนี้หนึ่งใบ สำหรับการคืนเงินหนึ่งครั้ง
+
+    ``refund`` คือแถวการคืนเงินที่เกิดขึ้นจริงแล้ว ไม่ใช่สิ่งที่หน้าจอขอมา —
+    เอกสารภาษีต้องตรงกับเงินที่ออกจากลิ้นชัก ไม่ใช่ตรงกับสิ่งที่ตั้งใจจะทำ
+    """
+    invoice = by_number(conn, invoice_number, branch_id=branch_id)
+    if invoice["cancelled_at"]:
+        raise InvoiceError("ใบกำกับภาษีใบนี้ถูกยกเลิกไปแล้ว ออกใบลดหนี้ไม่ได้", 409)
+    if invoice["order_no"] != refund["order_no"]:
+        raise InvoiceError("ใบกำกับภาษีใบนี้ไม่ใช่ของบิลที่คืนเงิน", 409)
+    existing = conn.execute("SELECT id FROM credit_notes WHERE refund_id=?",
+                            (refund["id"],)).fetchone()
+    if existing:
+        # ขอซ้ำคืออยากได้เอกสาร ไม่ใช่อยากได้ใบที่สอง
+        return credit_note(conn, existing[0])
+
+    reason = _text(refund.get("reason"), "สาเหตุ", 200)
+    if not reason:
+        raise InvoiceError("ใบลดหนี้ต้องบอกสาเหตุที่ลดหนี้")
+    diff_total = int(refund["amount_cents"])
+    original = int(round(invoice["total"] * 100))
+    # ใบลดหนี้ก่อนหน้าของใบกำกับภาษีเดียวกัน ลดมูลค่าไปแล้วเท่าไร
+    before = conn.execute("SELECT COALESCE(SUM(diff_total_cents),0) FROM credit_notes"
+                          " WHERE tax_invoice_id=? AND cancelled_at IS NULL",
+                          (invoice["id"],)).fetchone()[0]
+    corrected = original - before - diff_total
+    if diff_total < 1 or corrected < 0:
+        raise InvoiceError("ยอดที่ลดหนี้เกินมูลค่าตามใบกำกับภาษีเดิม", 409)
+
+    number = next_credit_number(conn, today)
+    cursor = conn.execute(
+        "INSERT INTO credit_notes (number,tax_invoice_id,refund_id,order_no,branch_id,"
+        "issued_by,reason,original_total_cents,corrected_total_cents,diff_subtotal_cents,"
+        "diff_service_charge_cents,diff_vat_cents,diff_total_cents,lines_json)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (number, invoice["id"], refund["id"], refund["order_no"], branch_id, staff_id, reason,
+         original, corrected, round(refund["subtotal"] * 100) - round(refund["discount"] * 100),
+         round(refund["service_charge"] * 100), int(refund["vat_cents"]), diff_total,
+         json.dumps(refund.get("lines") or [], ensure_ascii=False)))
+    return credit_note(conn, cursor.lastrowid)
+
+
+def credit_note(conn: sqlite3.Connection, note_id: int) -> dict:
+    row = conn.execute(
+        "SELECT id,number,tax_invoice_id,refund_id,order_no,branch_id,issued_by,issued_at,"
+        "reason,original_total_cents,corrected_total_cents,diff_subtotal_cents,"
+        "diff_service_charge_cents,diff_vat_cents,diff_total_cents,lines_json,"
+        "cancelled_at,cancel_reason FROM credit_notes WHERE id=?", (note_id,)).fetchone()
+    if row is None:
+        raise InvoiceError("ไม่พบใบลดหนี้นี้", 404)
+    invoice = detail(conn, row[2])
+    return {
+        "id": row[0], "number": row[1], "order_no": row[4], "branch_id": row[5],
+        "issued_by": row[6], "issued_at": row[7], "reason": row[8],
+        # ทุกอย่างที่มาตรา 86/10 บังคับให้มีบนหน้าเอกสาร อยู่ในก้อนเดียว
+        # หน้าจอกับเครื่องพิมพ์จึงไม่ต้องไปประกอบเองให้ขาดบางช่อง
+        "original_invoice": {"number": invoice["number"], "issued_at": invoice["issued_at"],
+                             "total": row[9] / 100},
+        "seller": invoice["seller"], "buyer": invoice["buyer"],
+        "corrected_total": row[10] / 100,
+        "difference": {"subtotal": row[11] / 100, "service_charge": row[12] / 100,
+                       "vat": row[13] / 100, "total": row[14] / 100},
+        "lines": json.loads(row[15]),
+        "cancelled_at": row[16], "cancel_reason": row[17],
+    }
+
+
+def credit_note_by_number(conn: sqlite3.Connection, number: str, *,
+                          branch_id: int | None = None) -> dict:
+    sql = "SELECT id FROM credit_notes WHERE number=?"
+    params: list = [number]
+    if branch_id is not None:
+        sql += " AND branch_id=?"
+        params.append(branch_id)
+    row = conn.execute(sql, params).fetchone()
+    if row is None:
+        raise InvoiceError("ไม่พบใบลดหนี้เลขนี้", 404)
+    return credit_note(conn, row[0])
+
+
+def credit_note_listing(conn: sqlite3.Connection, branch_id: int | None = None,
+                        limit: int = 50) -> list[dict]:
+    sql = "SELECT id FROM credit_notes"
+    params: list = []
+    if branch_id is not None:
+        sql += " WHERE branch_id=?"
+        params.append(branch_id)
+    sql += " ORDER BY id DESC LIMIT ?"
+    params.append(max(1, min(int(limit), 200)))
+    return [credit_note(conn, row[0]) for row in conn.execute(sql, params)]
