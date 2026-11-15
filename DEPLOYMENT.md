@@ -1,30 +1,45 @@
 # POS WAI deployment notes
 
-The intended live hostname is `https://poswai.zzaxstudio.com/`. The FastAPI
-service serves the PWA and API from one HTTPS origin. Use that root URL as the
-**Endpoint URL** in LINE LIFF Console after HTTPS and the app have been verified.
+> **เอกสารนี้เป็นบันทึกตามวันที่ ส่วนที่อยู่ล่างกว่าใหม่กว่าเสมอ**
+> ถ้าหัวข้อเก่ากับหัวข้อใหม่ขัดกัน ให้เชื่อหัวข้อที่ลงวันที่ใหม่กว่า
+> หัวข้อภาษาอังกฤษด้านล่างคือบันทึกช่วงตุลาคม 2569 ซึ่งหลายข้อถูกแก้ไปแล้ว
+> ย่อหน้าข้างล่างนี้คือ "สถานะตอนนี้" ที่อัปเดตล่าสุด
 
-The user's existing Hostinger VPS runs Docker Manager and Traefik. The
-`docker-compose.hostinger.yml` file uses its own Compose network, lets Traefik
-route the hostname to port 8000, and stores SQLite on a named volume.
-It currently builds the PR branch and sets `POSWAI_PREVIEW_ONLY=1`. This mode
-shows the interface but rejects API writes. Keep it enabled while the
-production gaps below are unresolved. After the PR is merged, change the
-build ref to `main`; do not disable preview mode until authentication and
-payment verification are complete.
-On the Hostinger VPS, Docker's Git build context needs a full 40-character
-commit SHA when pinned to a commit. After editing the Compose YAML, rebuild
-the `poswai` image and recreate only that service; applying new environment
-values alone can leave the old source files in the existing image. Verify the
-served `service-worker.js` cache version and `/api/config` after deployment.
-The Cloudflare DNS `A` record named `poswai` now points to `187.127.109.204`
-with DNS-only proxy mode. Before production deployment, merge the reviewed PR
-into `main` and set the environment secrets in Hostinger Docker Manager. DNS for
-`zzaxstudio.com` is authoritative at Cloudflare, so editing Hostinger DNS alone
-will not activate the subdomain.
+## สถานะตอนนี้ (15 พฤศจิกายน 2569)
 
-The old `render.yaml` remains an alternative deployment configuration. It is
-not the target for this hostname.
+ของจริงอยู่ที่ `https://poswai.zzaxstudio.com/` เซิร์ฟเวอร์ FastAPI ตัวเดียวเสิร์ฟทั้ง
+PWA และ API จาก origin เดียวกัน ใช้ URL นี้เป็น **Endpoint URL** ใน LINE LIFF Console
+
+- **โหมดตัวอย่างปิดแล้ว** ตั้งแต่ 16 ตุลาคม 2569 — `POSWAI_PREVIEW_ONLY=0`
+  ที่เขียนไว้ด้านล่างว่า "ให้เปิดโหมดตัวอย่างไว้ก่อน" คือบันทึกเก่า ไม่ใช่คำสั่งปัจจุบัน
+- **สาขาที่ขึ้นจริงคือ `codex/pwa-api-offline-deploy` ไม่ใช่ `main`** ตรึงด้วย SHA เต็ม
+  40 ตัวใน `context:` ของ compose (Docker ต้องการ SHA เต็ม ย่อไม่ได้)
+- **ไฟล์ compose จริงอยู่ที่ `/docker/poswai/docker-compose.yml` บน VPS**
+  ไม่ใช่ `docker-compose.hostinger.yml` ในรีโป ไฟล์ในรีโปเป็นของเก่าที่ไม่ได้ใช้แล้ว
+- **deploy ผ่าน Web console หรือ ssh อย่างเดียว ห้ามแตะปุ่มปรับใช้ใน Docker Manager**
+  ปุ่มนั้นไม่ build ใหม่ และล้างไฟล์ `.env` ทุกครั้ง — รายละเอียดอยู่ในหัวข้อ
+  "ตั้งค่าจริงบน VPS แล้ว 17 ตุลาคม 2569" ซึ่งยังใช้ได้อยู่ทุกบรรทัด
+- ต้นฉบับของค่าสภาพแวดล้อมอยู่ที่ `/docker/poswai/billing.env` (สิทธิ์ 600)
+  และเติมกลับเข้า `.env` ด้วย `./apply-billing-env.sh` เสมอหลัง deploy
+- DNS: เรคอร์ด `A` ชื่อ `poswai` ที่ Cloudflare ชี้ไป `187.127.109.204` แบบ DNS-only
+  โดเมน `zzaxstudio.com` authoritative อยู่ที่ Cloudflare แก้ DNS ฝั่ง Hostinger ไม่มีผล
+- `render.yaml` ในรีโปไม่ได้ใช้กับโฮสต์นี้
+
+ขั้นตอน deploy หนึ่งรอบ: เข้า ssh ไปที่เครื่อง สำรอง compose เดิมไว้ก่อน แก้ SHA 40 ตัว
+ใน `context:` กับ tag ใน `image:` ให้เป็น commit ใหม่ แล้ว
+
+```
+cd /docker/poswai && docker compose build --no-cache && ./apply-billing-env.sh
+```
+
+`apply-billing-env.sh` เติมค่าที่หายกลับเข้า `.env` แล้วสร้างคอนเทนเนอร์ใหม่ให้เอง
+ตรวจหลัง deploy ทุกครั้ง: รุ่นของอิมเมจที่รันอยู่ (`docker ps`), เวอร์ชันแคชใน
+`service-worker.js` ที่เสิร์ฟออกมา, และ `/api/config` ตอบ 200
+
+**ฐานข้อมูลของแต่ละร้านย้ายโครงสร้างแบบขี้เกียจ** — ตารางใหม่ถูกสร้างต่อเมื่อมีคน
+เรียก `/api/config?shop=<slug>` พร้อมคุกกี้ของร้านนั้น หลัง deploy ที่มีตารางใหม่
+ต้องไล่ยิงให้ครบทุกร้าน (รวม `demo`) แล้วตรวจว่าตารางมาจริง ไม่งั้นร้านที่ยังไม่มีคน
+เข้าจะพังตอนมีคนเข้าครั้งแรก
 
 Set `DATABASE_URL` to a persistent SQLite file, for example
 `sqlite:////var/data/poswai.db` on a mounted persistent disk. The default
@@ -547,3 +562,43 @@ deploy แล้วถ้าอยากย้อนจริง ๆ ก็แ�
 และ `/docker/poswai/backups/compose-20261016-1826.yml` (compose ตัวเดิม)
 
 ยังค้าง: ยังไม่เคยทดสอบโอนเงินจริงผ่านระบบสักครั้ง ต้องทำก่อนบอกร้านว่าชำระผ่านแอปได้
+
+## สำรองข้อมูลอัตโนมัติ (15 พฤศจิกายน 2569)
+
+ก่อนหน้านี้ไม่มีการสำรองข้อมูลเลย ทั้งที่นโยบายความเป็นส่วนตัวเขียนว่าสำรองรายสัปดาห์
+ตอนนี้ `/docker/poswai/backup-nightly.sh` (มีสำเนาในรีโปด้วย) ทำงานทุกวันตี 3:40
+เวลาไทยผ่าน cron เก็บย้อนหลัง 14 วันที่ `/docker/poswai/backups/`
+
+```
+40 20 * * * /docker/poswai/backup-nightly.sh >> /docker/poswai/backup.log 2>&1
+```
+
+สองกับดักที่เจอตอนเขียนสคริปต์นี้ และทำให้มันเงียบ ๆ ไม่ทำอะไรอยู่พักหนึ่ง:
+
+- `docker exec` ต้องมี `-i` ไม่งั้น python ไม่ได้รับสคริปต์ทาง stdin แล้วจบเงียบ ๆ
+  โดยไม่มี error
+- tar เปล่ามีขนาดราว 45 ไบต์ ซึ่งผ่านการตรวจ `-s` ไปได้ สคริปต์จึงต้องเปิดดูว่ามีไฟล์
+  `.db` อยู่ข้างในจริงก่อนจะนับว่าสำเร็จ
+
+ใช้ `sqlite3 .backup` ไม่ใช่ `cp` เพราะคัดลอกไฟล์ที่กำลังถูกเขียนอยู่ได้ไฟล์ที่เปิดไม่ขึ้น
+
+## รุ่นที่ขึ้นเว็บจริง 15 พฤศจิกายน 2569
+
+ตรวจทั้งระบบแล้วปิดช่องว่างห้าข้อที่แอป POS มาตรฐานต้องมี ทุกคอมมิตขึ้นเว็บจริง
+และตรวจในเบราว์เซอร์จริงแล้ว เทสต์จาก 639 ขึ้นเป็น 761 ข้อ ผ่านหมด
+
+| commit | เรื่อง | ต้อง migrate ฐานร้านย่อย |
+| --- | --- | --- |
+| `4d46725` | รายงานผลตรวจทั้งระบบ `AUDIT-2026-11-15.md` | ไม่ |
+| — | ส่วนลด % และส่วนลดรายรายการ พร้อมบังคับเหตุผล | ไม่ |
+| `2f9bab3` | บันทึกกิจกรรมพนักงาน + ผู้จัดการอนุมัติด้วยรหัส | ใช่ (`staff_activity`, `manager_overrides`) |
+| `4c1c7ab` | แยกบิล ย้ายโต๊ะ รวมบิล | ไม่ |
+| `499e763` | คืนเงินบางส่วน + ใบลดหนี้ ม.86/10 | ใช่ (`order_refunds`, `credit_notes`) |
+| `ce42484` | รายงานภาษีขาย ภ.พ.30 + ไฟล์ CSV ส่งบัญชี | ไม่ |
+
+แคชของ service worker เดินจาก `pos-wai-offline-v120` ถึง `v123` ตามลำดับคอมมิต
+ทุกครั้งที่เพิ่มไฟล์ `.js` ใหม่ ต้องทำสามอย่างพร้อมกัน ไม่งั้นไฟล์ 404 หรือได้ของเก่า:
+เพิ่มชื่อใน allowlist ของ `serve_workspace_js`, ใส่ `?v=` ใน `index.html`,
+และใส่รายการเดียวกันใน `service-worker.js` พร้อมขยับ `CACHE_NAME`
+
+ฐานข้อมูลทั้งแปดร้าน (รวม `demo`) ย้ายโครงสร้างครบและตรวจยืนยันแล้ว
