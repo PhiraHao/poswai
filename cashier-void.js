@@ -10,7 +10,7 @@
   const auth = () => window.poswaiAuth || {};
   const branch = () => auth().branchId || 1;
   const role = () => auth().current?.role || '';
-  const canRefund = () => ['manager', 'owner'].includes(role());
+  const canRefund = () => ['manager', 'owner', 'cashier'].includes(role());
   const preview = () => typeof state !== 'undefined' && !!state.previewOnly;
   const shortNo = no => (window.shortOrderNo ? window.shortOrderNo(no) : no);
   const money = value => `฿${Number(value || 0).toLocaleString('th-TH', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
@@ -44,7 +44,17 @@
   .void-empty{color:#6b7280;font-size:.84rem;padding:7px 2px}
   .void-note{margin:12px 0 0;font-size:.84rem;min-height:1.2em}
   .void-note.bad{color:#c0372b}
-  .void-note.good{color:#128a52}`;
+  .void-note.good{color:#128a52}
+  .void-ask{position:fixed;inset:0;background:rgba(17,24,39,.55);display:grid;place-items:center;z-index:9000;padding:16px}
+  .void-ask-card{background:#fff;border-radius:16px;padding:20px;width:min(360px,100%);display:grid;gap:10px}
+  .void-ask-card h4{margin:0;font-size:1rem;color:#141b24}
+  .void-ask-card p{margin:0;font-size:.82rem;color:#6b7280;line-height:1.6}
+  .void-ask-card input{padding:9px 11px;border:1px solid #e0e3e7;border-radius:10px;font:inherit}
+  .void-ask-row{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+  .void-ask-row button{padding:8px 15px;border:0;border-radius:10px;font:inherit;font-weight:700;cursor:pointer}
+  .void-ask-row button.go{background:#111827;color:#fff}
+  .void-ask-row button.off{background:#eef0f3;color:#374151}
+  .void-ask-bad{color:#c0372b;font-size:.8rem;min-height:1.1em}`;
   document.head.append(style);
 
   const panel = document.createElement('section');
@@ -93,6 +103,54 @@
     try { sessionStorage.removeItem(`poswai-${kind}:${orderNo}`); } catch (_) { /* private browsing */ }
   };
 
+  /* ขอใบอนุมัติจากผู้จัดการที่ยืนอยู่ตรงนั้น คืนโทเคนหรือ null ถ้ายกเลิก
+     ไม่เก็บรหัสไว้ที่ไหนเลย ส่งไปแล้วทิ้งทันที */
+  const askManager = (action, what) => new Promise(resolve => {
+    const back = document.createElement('div');
+    back.className = 'void-ask';
+    const card = document.createElement('div');
+    card.className = 'void-ask-card';
+    const title = document.createElement('h4');
+    title.textContent = 'ให้ผู้จัดการอนุมัติ';
+    const lead = document.createElement('p');
+    lead.textContent = `${what} รายการนี้เกินสิทธิ์ของคุณ ให้ผู้จัดการใส่รหัสของตัวเองเพื่ออนุมัติครั้งนี้`;
+    const who = document.createElement('input');
+    who.type = 'number'; who.min = '1'; who.placeholder = 'รหัสพนักงานของผู้จัดการ';
+    const pin = document.createElement('input');
+    pin.type = 'password'; pin.placeholder = 'PIN ของผู้จัดการ'; pin.autocomplete = 'off';
+    const bad = document.createElement('div');
+    bad.className = 'void-ask-bad';
+    const row = document.createElement('div');
+    row.className = 'void-ask-row';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'off'; cancel.textContent = 'ยกเลิก';
+    const go = document.createElement('button');
+    go.type = 'button'; go.className = 'go'; go.textContent = 'อนุมัติ';
+    row.append(cancel, go);
+    card.append(title, lead, who, pin, bad, row);
+    back.append(card);
+    document.body.append(back);
+    who.focus();
+
+    const close = value => { back.remove(); resolve(value); };
+    cancel.addEventListener('click', () => close(null));
+    back.addEventListener('click', event => { if (event.target === back) close(null); });
+    go.addEventListener('click', async () => {
+      go.disabled = true; bad.textContent = '';
+      try {
+        const answer = await api('/api/auth/override', {method: 'POST', body: JSON.stringify({
+          branch_id: branch(), action, staff_id: Number(who.value) || 0, pin: pin.value})});
+        close(answer.token);
+      } catch (error) {
+        bad.textContent = error.message;
+        go.disabled = false;
+        pin.value = '';
+        pin.focus();
+      }
+    });
+    pin.addEventListener('keydown', event => { if (event.key === 'Enter') go.click(); });
+  });
+
   const act = async (kind, order, button) => {
     const isVoid = kind === 'void';
     const what = isVoid ? 'ยกเลิกบิล' : 'คืนเงิน';
@@ -104,15 +162,37 @@
     note(`กำลัง${what}…`);
     const path = isVoid ? `/api/orders/${encodeURIComponent(order.order_no)}/void`
                         : `/api/payments/${encodeURIComponent(order.order_no)}/refund`;
-    try {
-      await api(path, {method: 'POST', body: JSON.stringify({event_id: eventId(kind, order.order_no), reason: reason.trim()})});
+    const send = (override = '') => api(path, {method: 'POST', body: JSON.stringify({
+      event_id: eventId(kind, order.order_no), reason: reason.trim(), override})});
+    const done = () => {
       clearEventId(kind, order.order_no);
       note(`${what} ${shortNo(order.order_no)} เรียบร้อย · แจ้งผู้จัดการทาง LINE แล้ว`, 'good');
       window.poswaiLiveData?.refresh?.().catch(() => {});
-      await load();
+      return load();
+    };
+    try {
+      await send();
+      await done();
     } catch (error) {
-      note(error.message, 'bad');
-      button.disabled = false;
+      // เซิร์ฟเวอร์เป็นคนบอกว่าต้องให้ผู้จัดการอนุมัติ หน้าจอไม่เดาเอง
+      if (!/อนุมัติ/.test(error.message || '')) {
+        note(error.message, 'bad');
+        button.disabled = false;
+        return;
+      }
+      const token = await askManager(isVoid ? 'void' : 'refund', what);
+      if (!token) {
+        note(`ยังไม่ได้${what} ${shortNo(order.order_no)} — ไม่มีผู้จัดการอนุมัติ`, 'bad');
+        button.disabled = false;
+        return;
+      }
+      try {
+        await send(token);
+        await done();
+      } catch (retry) {
+        note(retry.message, 'bad');
+        button.disabled = false;
+      }
     }
   };
 

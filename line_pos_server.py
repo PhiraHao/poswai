@@ -73,6 +73,7 @@ import poswai_shops as shops
 import poswai_owner_auth as owner_auth
 from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
 import poswai_billing as billing
+import poswai_activity as activity
 import poswai_profile as profile
 import poswai_shifts as shifts
 import poswai_reports as reports
@@ -580,6 +581,19 @@ def init_db() -> None:
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)""")
     cur.execute("CREATE INDEX IF NOT EXISTS order_cancellations_by_staff "
                 "ON order_cancellations(staff_id,created_at)")
+    # บันทึกกิจกรรมของพนักงาน: ที่เดียวที่ตอบได้ว่าใครทำอะไรกับเงินและของ
+    activity.init(conn)
+    # ใบอนุมัติของผู้จัดการ ใช้ได้ครั้งเดียว ผูกกับการกระทำและสาขา
+    cur.execute("""CREATE TABLE IF NOT EXISTS manager_overrides (
+        token TEXT PRIMARY KEY,
+        branch_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        approver_id INTEGER NOT NULL REFERENCES staffs(id),
+        approver_name TEXT NOT NULL DEFAULT '',
+        asked_by INTEGER,
+        expires_at INTEGER NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f','now')))""")
     cur.execute("""CREATE TABLE IF NOT EXISTS staff_leave_quotas (
         staff_id INTEGER PRIMARY KEY REFERENCES staffs(id),
         sick INTEGER NOT NULL DEFAULT 30,
@@ -909,6 +923,86 @@ def _open_session(request: Request, response: Response, conn: sqlite3.Connection
     response.set_cookie("poswai_session", token, max_age=SESSION_LIFETIME, httponly=True,
                         secure=_secure(request), samesite=samesite, path="/")
     return token, expires
+
+
+# การกระทำที่ผู้จัดการอนุมัติแทนการสลับบัญชีได้ ไม่ใช่ทุกอย่าง — การตั้งค่าร้าน
+# กับการจัดการพนักงานยังต้องเป็นเจ้าของตัวจริงเข้ามาทำเอง
+OVERRIDE_ACTIONS = ("void", "refund")
+OVERRIDE_SECONDS = 120
+
+
+class ManagerOverride(BaseModel):
+    branch_id: int = 1
+    action: str
+    staff_id: int
+    pin: str
+
+
+@app.post("/api/auth/override")
+def request_manager_override(req: ManagerOverride, request: Request, response: Response):
+    """ผู้จัดการใส่รหัสของตัวเองที่หน้าจอของแคชเชียร์ ได้ใบอนุมัติใบเดียวกลับไป"""
+    asked_by = require_staff(request, branch_id=req.branch_id)
+    if req.action not in OVERRIDE_ACTIONS:
+        raise HTTPException(400, "การกระทำนี้ไม่ได้เปิดให้อนุมัติด้วยรหัสผู้จัดการ")
+    if req.staff_id < 1 or len(req.pin) > 128:
+        raise HTTPException(401, "รหัสพนักงานหรือ PIN ไม่ถูกต้อง")
+    now = int(time.time())
+    with closing(connect_db()) as conn, conn:
+        conn.row_factory = sqlite3.Row
+        # ใช้ตัวนับความพยายามชุดเดียวกับการเข้าสู่ระบบ ไม่งั้นหน้าจอนี้กลายเป็น
+        # ช่องเดาพินที่ไม่มีเพดาน
+        attempt = conn.execute("SELECT failures,first_failed_at FROM auth_login_attempts"
+                               " WHERE staff_id=?", (req.staff_id,)).fetchone()
+        if attempt and attempt["failures"] >= 5 and now - attempt["first_failed_at"] < 900:
+            raise HTTPException(429, "ใส่ PIN ผิดหลายครั้ง กรุณารอ 15 นาทีแล้วลองใหม่")
+        row = conn.execute("SELECT id,branch_id,name,role,is_active,pin_code_hash"
+                           " FROM staffs WHERE id=?", (req.staff_id,)).fetchone()
+        valid = verify_pin(req.pin, row["pin_code_hash"] if row else hash_pin("invalid-credentials"))
+        allowed = bool(row) and row["is_active"] and row["role"] in ("manager", "owner")
+        # เจ้าของข้ามสาขาได้ ผู้จัดการอนุมัติได้เฉพาะสาขาตัวเอง
+        same_branch = bool(row) and (row["role"] == "owner" or row["branch_id"] == req.branch_id)
+        if not valid or not allowed or not same_branch:
+            if not attempt or now - attempt["first_failed_at"] >= 900:
+                conn.execute("INSERT INTO auth_login_attempts (staff_id,failures,first_failed_at)"
+                             " VALUES (?,?,?) ON CONFLICT(staff_id) DO UPDATE SET"
+                             " failures=1,first_failed_at=excluded.first_failed_at",
+                             (req.staff_id, 1, now))
+            else:
+                conn.execute("UPDATE auth_login_attempts SET failures=failures+1 WHERE staff_id=?",
+                             (req.staff_id,))
+            raise HTTPException(401, "รหัสพนักงานหรือ PIN ไม่ถูกต้อง หรือไม่มีสิทธิ์อนุมัติ")
+        conn.execute("DELETE FROM auth_login_attempts WHERE staff_id=?", (req.staff_id,))
+        token = secrets.token_urlsafe(24)
+        conn.execute("INSERT INTO manager_overrides (token,branch_id,action,approver_id,"
+                     "approver_name,asked_by,expires_at) VALUES (?,?,?,?,?,?,?)",
+                     (token, req.branch_id, req.action, row["id"], row["name"],
+                      asked_by["id"], now + OVERRIDE_SECONDS))
+        activity.record(conn, branch_id=req.branch_id, staff=dict(row),
+                        action="manager_override",
+                        subject=activity.ACTIONS.get(req.action, req.action),
+                        detail=f"อนุมัติให้ {asked_by['name']}")
+    return {"token": token, "action": req.action, "expires_in": OVERRIDE_SECONDS,
+            "approved_by": row["name"]}
+
+
+def _use_override(conn: sqlite3.Connection, token: str, *, action: str,
+                  branch_id: int) -> dict | None:
+    """ใช้ใบอนุมัติหนึ่งใบ ครั้งเดียว ในทรานแซกชันเดียวกับการกระทำที่มันอนุมัติ
+
+    ถ้าการกระทำล้มทีหลัง ใบก็กลับมาเป็นยังไม่ถูกใช้ตามทรานแซกชัน ซึ่งถูกต้อง:
+    ผู้จัดการอนุมัติสิ่งที่ยังไม่ได้เกิดขึ้น
+    """
+    token = str(token or "").strip()
+    if not token:
+        return None
+    row = conn.execute("SELECT approver_id,approver_name,expires_at,used_at"
+                       " FROM manager_overrides WHERE token=? AND action=? AND branch_id=?",
+                       (token, action, branch_id)).fetchone()
+    if row is None or row[3] or row[2] < int(time.time()):
+        return None
+    conn.execute("UPDATE manager_overrides SET used_at=strftime('%Y-%m-%d %H:%M:%f','now')"
+                 " WHERE token=?", (token,))
+    return {"id": row[0], "name": row[1]}
 
 
 @app.post("/api/auth/login")
@@ -1525,6 +1619,17 @@ class MenuUpsert(BaseModel):
 STAFF_ONLY_MENU_FIELDS = ("cost", "bom")
 
 
+def _staff_or_none(request: Request) -> dict | None:
+    """ใครเป็นคนทำ ถ้าเป็นลูกค้าที่โต๊ะก็ไม่มีใคร
+
+    ใช้ตรงจุดที่การกระทำอนุญาตทั้งพนักงานและลูกค้า แต่บันทึกอยากรู้ชื่อคนทำ
+    ถ้ามี"""
+    try:
+        return require_staff(request)
+    except HTTPException:
+        return None
+
+
 def _menu_out(request: Request, items: list[dict]) -> list[dict]:
     # One session lookup for the whole menu, not one per dish.
     try:
@@ -1547,11 +1652,26 @@ def get_menu(request: Request, branch_id: int = 1, include_inactive: bool = Fals
         raise HTTPException(exc.status_code, str(exc)) from exc
 
 
+def _record_price_change(conn, staff: dict, item, item_id: str, was) -> None:
+    """ราคาที่เปลี่ยนเท่านั้นที่ถูกจด การแก้ชื่อหรือรูปไม่ใช่เรื่องของเงิน"""
+    now_cents = round(float(item.price) * 100)
+    if was is not None and was[0] == now_cents:
+        return
+    before = "ของใหม่" if was is None else f"฿{was[0] / 100:,.2f}"
+    activity.record(conn, branch_id=item.branch_id, staff=staff, action="menu_price",
+                    subject=f"{item.name} ({item_id})",
+                    detail=f"{before} → ฿{now_cents / 100:,.2f}",
+                    amount_cents=now_cents - (was[0] if was else 0))
+
+
 @app.put("/api/menu/{item_id}")
 def put_menu_item(item_id: str, item: MenuUpsert, request: Request):
-    require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
+    staff = require_staff(request, roles=("manager", "owner"), branch_id=item.branch_id)
     try:
         with closing(connect_db()) as conn, conn:
+            was = conn.execute("SELECT price_cents FROM menu_catalog"
+                               " WHERE branch_id=? AND item_id=?",
+                               (item.branch_id, item_id)).fetchone()
             if item_id.startswith("songwai-") and item.active:
                 if not item.bom:
                     raise CatalogError("Add a BOM recipe before activating Songwai menu", 409)
@@ -1559,6 +1679,7 @@ def put_menu_item(item_id: str, item: MenuUpsert, request: Request):
                     if not conn.execute("SELECT 1 FROM inventory WHERE branch_id=? AND ingredient_id=?",
                                         (item.branch_id, part.get("ingId"))).fetchone():
                         raise CatalogError("Add ingredient stock before activating Songwai menu", 409)
+            _record_price_change(conn, staff, item, item_id, was)
             return upsert_menu_item(
                 conn, item.branch_id, item_id, item.name, item.price, item.bom,
                 item.active, item.station, category=item.category,
@@ -1742,8 +1863,14 @@ def receive_purchase_order(order_id: int, req: PurchaseOrderReceive, request: Re
 def cancel_purchase_order(order_id: int, req: PurchaseOrderCancel, request: Request,
                           branch_id: int = 1):
     require_paid_subscription()
-    return _purchasing(request, branch_id, lambda conn, staff: purchasing.cancel_order(
-        conn, order_id, req.reason, branch_id=staff["branch_id"]), roles=("owner", "manager"))
+    def work(conn, staff):
+        cancelled = purchasing.cancel_order(conn, order_id, req.reason,
+                                            branch_id=staff["branch_id"])
+        activity.record(conn, branch_id=staff["branch_id"], staff=staff, action="po_cancel",
+                        subject=f"ใบสั่งซื้อ {cancelled.get('number', order_id)}",
+                        detail=req.reason)
+        return cancelled
+    return _purchasing(request, branch_id, work, roles=("owner", "manager"))
 
 
 class TransferSend(BaseModel):
@@ -1835,10 +1962,15 @@ def receive_transfer(transfer_id: int, req: TransferReceive, request: Request):
 @app.post("/api/transfers/{transfer_id}/cancel")
 def cancel_transfer(transfer_id: int, req: TransferCancel, request: Request):
     require_paid_subscription()
-    return _transfers(request, req.branch_id,
-                      lambda conn, staff: transfers.cancel(conn, transfer_id, req.reason,
-                                                           branches=_own_branches(staff)),
-                      roles=("owner", "manager"))
+    def work(conn, staff):
+        cancelled = transfers.cancel(conn, transfer_id, req.reason,
+                                     branches=_own_branches(staff))
+        activity.record(conn, branch_id=staff["branch_id"], staff=staff,
+                        action="transfer_cancel",
+                        subject=f"ใบโอน {cancelled.get('number', transfer_id)}",
+                        detail=req.reason)
+        return cancelled
+    return _transfers(request, req.branch_id, work, roles=("owner", "manager"))
 
 
 class TaxInvoiceRequest(BaseModel):
@@ -1909,9 +2041,32 @@ def cancel_tax_invoice(number: str, req: TaxInvoiceCancel, request: Request):
     staff = require_staff(request, roles=("owner", "manager"))
     try:
         with closing(connect_db()) as conn, conn:
-            return tax_invoice.cancel(conn, number, req.reason,
-                                      branch_id=_own_branch(staff))
+            voided = tax_invoice.cancel(conn, number, req.reason,
+                                        branch_id=_own_branch(staff))
+            activity.record(conn, branch_id=voided.get("branch_id", staff["branch_id"]),
+                            staff=staff, action="tax_invoice_cancel",
+                            subject=f"ใบกำกับ {number}", detail=req.reason)
+            return voided
     except tax_invoice.InvoiceError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/reports/activity")
+def read_activity_log(request: Request, branch_id: int = 1, start: str = "", end: str = "",
+                      action: str = "", staff_id: int = 0, limit: int = 200):
+    """ใครทำอะไรกับเงินและของในร้าน ในช่วงวันที่ถาม
+
+    เจ้าของเปิดดูได้ทุกสาขา ผู้จัดการดูได้เฉพาะสาขาตัวเอง แคชเชียร์ไม่เห็นเลย
+    เพราะนี่คือหน้าที่ใช้ตรวจแคชเชียร์
+    """
+    staff = _report_reader(request, branch_id)
+    try:
+        with closing(connect_db()) as conn:
+            return activity.listing(conn, branch_id=branch_id, start=start or None,
+                                    end=end or None, action=action,
+                                    staff_id=staff_id or None, limit=limit,
+                                    today=datetime.datetime.now(BANGKOK_TZ).date())
+    except activity.ActivityError as exc:
         raise HTTPException(exc.status_code, str(exc)) from exc
 
 
@@ -2026,23 +2181,43 @@ def read_shift_history(request: Request, branch_id: int = 1, limit: int = 30):
 @app.post("/api/shifts/open")
 def open_cash_shift(req: ShiftOpen, request: Request):
     require_paid_subscription()
-    return _shift_call(request, req.branch_id, lambda conn, staff: {
-        "shift": shifts.open_shift(conn, req.branch_id, staff["id"], req.opening, req.note)})
+    def work(conn, staff):
+        opened = shifts.open_shift(conn, req.branch_id, staff["id"], req.opening, req.note)
+        activity.record(conn, branch_id=req.branch_id, staff=staff, action="shift_open",
+                        subject=f"กะ #{opened.get('id', '')}", detail=req.note,
+                        amount_cents=round(float(req.opening) * 100))
+        return {"shift": opened}
+    return _shift_call(request, req.branch_id, work)
 
 
 @app.post("/api/shifts/cash")
 def record_cash_movement(req: CashMovement, request: Request):
     require_paid_subscription()
-    return _shift_call(request, req.branch_id, lambda conn, staff: {
-        "shift": shifts.add_movement(conn, req.branch_id, staff["id"], req.kind,
-                                     req.amount, req.reason)})
+    def work(conn, staff):
+        moved = shifts.add_movement(conn, req.branch_id, staff["id"], req.kind,
+                                    req.amount, req.reason)
+        # เงินที่ออกจากลิ้นชักคือสิ่งที่เจ้าของร้านอยากเห็นที่สุดในบันทึกนี้
+        action = "cash_in" if req.kind == "in" else "cash_out"
+        # ชื่อการกระทำบอกอยู่แล้วว่าเข้าหรือออก ใส่ "out" ซ้ำอีกคือเสียงรบกวน
+        activity.record(conn, branch_id=req.branch_id, staff=staff, action=action,
+                        detail=req.reason,
+                        amount_cents=round(float(req.amount) * 100))
+        return {"shift": moved}
+    return _shift_call(request, req.branch_id, work)
 
 
 @app.post("/api/shifts/close")
 def close_cash_shift(req: ShiftClose, request: Request):
     require_paid_subscription()
-    return _shift_call(request, req.branch_id, lambda conn, staff: {
-        "shift": shifts.close_shift(conn, req.branch_id, staff["id"], req.counted, req.note)})
+    def work(conn, staff):
+        closed = shifts.close_shift(conn, req.branch_id, staff["id"], req.counted, req.note)
+        over_short = closed.get("difference_cents", closed.get("difference", 0))
+        activity.record(conn, branch_id=req.branch_id, staff=staff, action="shift_close",
+                        subject=f"กะ #{closed.get('id', '')}",
+                        detail=f"นับได้ ฿{float(req.counted):,.2f} · {req.note}".strip(" ·"),
+                        amount_cents=int(over_short or 0))
+        return {"shift": closed}
+    return _shift_call(request, req.branch_id, work)
 
 
 class InventorySet(BaseModel):
@@ -2211,6 +2386,9 @@ def put_inventory(ingredient_id: str, item: InventorySet, request: Request):
                     branch_id=item.branch_id, ingredient_id=ingredient_id,
                     action="restock", quantity=item.stock,
                     actor_staff_id=staff["id"], note="ยอดตั้งต้นตอนเพิ่มวัตถุดิบ")
+                activity.record(conn, branch_id=item.branch_id, staff=staff,
+                                action="stock_set", subject=ingredient_id,
+                                detail=f"ตั้งต้น {item.stock} {unit}")
             except InventoryError as exc:
                 raise HTTPException(exc.status_code, str(exc)) from exc
     return {"branch_id": item.branch_id, "id": ingredient_id, "stock": item.stock,
@@ -3233,6 +3411,10 @@ def create_order(req: OrderCreate, request: Request):
                      queue_no, _member_if_signed_in(request), charge["subtotal_cents"],
                      charge["discount_cents"], charge["service_charge_cents"], charge["vat_cents"],
                      discount_reason))
+        if given:
+            activity.record(conn, branch_id=req.branch_id, staff=_staff_or_none(request),
+                            action="discount", subject=f"บิล {req.order_no}",
+                            detail=discount_reason, amount_cents=charge["discount_cents"])
         for item in quote["items"]:
             options = ", ".join(part for part in [item.get("level", ""), *item.get("addons", [])] if part)
             cur.execute("INSERT INTO order_items (order_no,item_id,name,quantity,unit_price,bom_json,station,course_mode,options,unit_cost,discount_cents)"
@@ -3629,16 +3811,24 @@ def close_payment(req: PaymentCreate, request: Request):
 
 
 class OrderCancellation(BaseModel):
+    # ใบอนุมัติของผู้จัดการ สำหรับตอนที่คนที่กดอยู่ทำเองไม่ได้
+    override: str = ""
     event_id: str
     reason: str
 
 
 def _record_cancellation(conn: sqlite3.Connection, req: OrderCancellation, order_no: str,
-                         branch_id: int, kind: str, amount: float, staff: dict) -> None:
+                         branch_id: int, kind: str, amount: float, staff: dict,
+                         approver: dict | None = None) -> None:
     """Write the audit row and queue the manager's LINE alert in the same transaction."""
     conn.execute("INSERT INTO order_cancellations (event_id,order_no,branch_id,kind,amount,reason,staff_id) "
                  "VALUES (?,?,?,?,?,?,?)",
                  (req.event_id, order_no, branch_id, kind, amount, req.reason.strip(), staff["id"]))
+    approved = f" · อนุมัติโดย {approver['name']}" if approver else ""
+    activity.record(conn, branch_id=branch_id, staff=staff, action=kind,
+                    subject=f"บิล {order_no}", detail=req.reason.strip() + approved,
+                    amount_cents=round(float(amount) * 100),
+                    approved_by=approver["id"] if approver else None)
     headline = "ยกเลิกบิลก่อนรับเงิน" if kind == "void" else "คืนเงินบิลที่ชำระแล้ว"
     text = (f"⚠️ {headline}\nบิล {order_no} · {amount:,.2f} บาท\n"
             f"โดย {staff['name']} ({staff['role']})\nเหตุผล: {req.reason.strip()}")
@@ -3672,6 +3862,7 @@ def void_open_order(order_no: str, req: OrderCancellation, request: Request):
             raise HTTPException(404, "Order not found")
         branch_id, status, amount = order[0], order[1], float(order[2])
         staff = require_staff(request, roles=("manager", "owner", "cashier"), branch_id=branch_id)
+        approver = None
         done = _existing_cancellation(conn, req, order_no, "void")
         if done:
             return done
@@ -3686,14 +3877,19 @@ def void_open_order(order_no: str, req: OrderCancellation, request: Request):
             used = conn.execute("SELECT COUNT(*) FROM order_cancellations WHERE staff_id=? AND kind='void' "
                                 "AND date(created_at,?)=?",
                                 (staff["id"], BANGKOK_SQL_OFFSET, today)).fetchone()[0]
-            if amount > VOID_CASHIER_MAX_AMOUNT:
-                raise HTTPException(403, f"บิลเกิน {VOID_CASHIER_MAX_AMOUNT:,.0f} บาท ต้องให้ผู้จัดการยกเลิก")
-            if used >= VOID_CASHIER_DAILY_LIMIT:
-                raise HTTPException(403, f"ยกเลิกเองครบ {VOID_CASHIER_DAILY_LIMIT} ครั้งแล้ววันนี้ ต้องให้ผู้จัดการยกเลิก")
+            over_limit = amount > VOID_CASHIER_MAX_AMOUNT or used >= VOID_CASHIER_DAILY_LIMIT
+            approver = _use_override(conn, req.override, action="void", branch_id=branch_id) \
+                if over_limit else None
+            if over_limit and not approver:
+                if amount > VOID_CASHIER_MAX_AMOUNT:
+                    raise HTTPException(403, f"บิลเกิน {VOID_CASHIER_MAX_AMOUNT:,.0f} บาท ต้องให้ผู้จัดการอนุมัติ")
+                raise HTTPException(403, f"ยกเลิกเองครบ {VOID_CASHIER_DAILY_LIMIT} ครั้งแล้ววันนี้ ต้องให้ผู้จัดการอนุมัติ")
+
         restore_cancelled_inventory(conn, branch_id, order_no)
         conn.execute("UPDATE order_events SET status='void' WHERE order_no=?", (order_no,))
         conn.execute("DELETE FROM kds_station_tickets WHERE order_no=?", (order_no,))
-        _record_cancellation(conn, req, order_no, branch_id, "void", amount, staff)
+        _record_cancellation(conn, req, order_no, branch_id, "void", amount, staff,
+                             approver=approver)
     return {"status": "void", "order_no": order_no, "amount": amount, "voided_by": staff["id"]}
 
 
@@ -3709,7 +3905,13 @@ def refund_paid_order(order_no: str, req: OrderCancellation, request: Request):
         if not order:
             raise HTTPException(404, "Order not found")
         branch_id, status, amount = order[0], order[1], float(order[2])
-        manager = require_staff(request, roles=("manager", "owner"), branch_id=branch_id)
+        manager = require_staff(request, roles=("manager", "owner", "cashier"),
+                                branch_id=branch_id)
+        approver = None
+        if manager["role"] == "cashier":
+            approver = _use_override(conn, req.override, action="refund", branch_id=branch_id)
+            if not approver:
+                raise HTTPException(403, "การคืนเงินต้องให้ผู้จัดการอนุมัติ")
         done = _existing_cancellation(conn, req, order_no, "refund")
         if done:
             return done
@@ -3728,7 +3930,8 @@ def refund_paid_order(order_no: str, req: OrderCancellation, request: Request):
             "calculated_amount,pool_divisor) SELECT staff_id,order_id,period_date,-base_sales_amount,"
             "-calculated_amount,pool_divisor FROM commission_records WHERE order_id=? AND calculated_amount>0",
             (paid[0],)).rowcount
-        _record_cancellation(conn, req, order_no, branch_id, "refund", amount, manager)
+        _record_cancellation(conn, req, order_no, branch_id, "refund", amount, manager,
+                             approver=approver)
     return {"status": "refunded", "order_no": order_no, "amount": amount,
             "refunded_by": manager["id"], "commission_entries_reversed": reversed_rows}
 
@@ -4549,7 +4752,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "activity-ui", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
@@ -4913,7 +5116,7 @@ def read_shop_settings(request: Request):
 
 @app.put("/api/shop/settings")
 def save_shop_settings(req: ShopSettings, request: Request):
-    require_staff(request, roles=("owner",))
+    staff = require_staff(request, roles=("owner",))
     slug = CURRENT_SHOP.get()
     registered = shops.get_shop(DB_PATH, slug)
     changes = {field: getattr(req, field) for field in profile.FIELDS}
@@ -4921,6 +5124,10 @@ def save_shop_settings(req: ShopSettings, request: Request):
         try:
             with closing(connect_db()) as conn, conn:
                 profile.save(conn, changes)
+                activity.record(conn, branch_id=staff["branch_id"], staff=staff,
+                                action="shop_settings", subject="ตั้งค่าร้าน",
+                                detail=", ".join(field for field, value in changes.items()
+                                                 if value is not None))
         except profile.ProfileError as exc:
             raise HTTPException(exc.status_code, str(exc)) from exc
     if not registered:
