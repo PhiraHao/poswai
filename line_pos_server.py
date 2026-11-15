@@ -76,6 +76,7 @@ import poswai_billing as billing
 import poswai_activity as activity
 import poswai_split as split_bills
 import poswai_refunds as refunds
+import poswai_vat_report as vat_report
 import poswai_profile as profile
 import poswai_shifts as shifts
 import poswai_reports as reports
@@ -4104,6 +4105,45 @@ def issue_credit_note(number: str, req: CreditNoteRequest, request: Request):
         raise HTTPException(exc.status_code, str(exc)) from exc
 
 
+def _vat_file(text: str, name: str) -> Response:
+    """ไฟล์ที่กดแล้วโหลดลงเครื่อง ไม่ใช่ข้อความที่เปิดในหน้าเว็บ"""
+    return Response(content=vat_report.as_download(text), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.get("/api/reports/vat-sales")
+def read_vat_sales_report(request: Request, branch_id: int = 1, month: str = "",
+                          download: str = ""):
+    """รายงานภาษีขายของเดือนภาษีหนึ่งเดือน และตัวเลขที่กรอกลง ภ.พ.30
+
+    ``download=csv`` คืนไฟล์ที่ส่งให้บัญชีได้ทันที — เปิดใน Excel ภาษาไทยไม่เพี้ยน
+    """
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    try:
+        with closing(connect_db()) as conn:
+            report = vat_report.sales_vat_report(conn, branch_id,
+                                                 seller=_seller_for_invoice(), month=month)
+    except vat_report.VatReportError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    if download == "csv":
+        return _vat_file(vat_report.report_csv(report), f"sales-vat-{report['month']}.csv")
+    return report
+
+
+@app.get("/api/reports/bills-export")
+def export_bills_for_accounting(request: Request, branch_id: int = 1,
+                                start: str = "", end: str = ""):
+    """ทุกบิลที่รับเงินในช่วงนี้ หนึ่งบรรทัดต่อบิล เป็นไฟล์ CSV ส่งให้บัญชี"""
+    require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
+    try:
+        start_day, end_day = reports.date_range(start, end)
+    except reports.ReportError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+    with closing(connect_db()) as conn:
+        text = vat_report.bills_csv(conn, branch_id, start_day, end_day)
+    return _vat_file(text, f"bills-{start_day}-to-{end_day}.csv")
+
+
 @app.get("/api/credit-notes")
 def list_credit_notes(request: Request, branch_id: int = 1, limit: int = 50):
     require_staff(request, roles=("owner", "manager"), branch_id=branch_id)
@@ -4940,7 +4980,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "activity-ui", "split-bill", "refund-partial", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "activity-ui", "split-bill", "refund-partial", "vat-report", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 
