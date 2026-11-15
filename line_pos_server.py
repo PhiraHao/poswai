@@ -74,6 +74,7 @@ import poswai_owner_auth as owner_auth
 from poswai_shops import DEMO_SHOP, MAIN_SHOP, ShopError
 import poswai_billing as billing
 import poswai_activity as activity
+import poswai_split as split_bills
 import poswai_profile as profile
 import poswai_shifts as shifts
 import poswai_reports as reports
@@ -3472,7 +3473,7 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
     with closing(connect_db()) as conn:
         orders = []
         for row in conn.execute(query, params).fetchall():
-            items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode,options,discount_cents FROM order_items WHERE order_no=?", (row[0],)).fetchall()
+            items = conn.execute("SELECT item_id,name,quantity,unit_price,bom_json,station,course_mode,options,discount_cents,rowid FROM order_items WHERE order_no=?", (row[0],)).fetchall()
             # What the kitchen has done with it, so a guest at the table can see
             # whether the food is still waiting, cooking, or on its way.
             tickets = [t[0] for t in conn.execute(
@@ -3495,8 +3496,90 @@ def list_open_orders(request: Request, branch_id: int = 1, table_no: str = "",
                            "items": [{"id": item[0], "name": item[1], "qty": item[2], "price": item[3],
                                       "bom": json.loads(item[4]), "station": item[5],
                                       "courseMode": item[6], "options": item[7],
-                                      "discount": (item[8] or 0) / 100} for item in items]})
+                                      "discount": (item[8] or 0) / 100,
+                                      # ชี้รายการนี้ได้ตอนขอแยกบิล ชื่อเมนูซ้ำกันในบิลเดียวได้
+                                      "line_id": item[9]} for item in items]})
     return {"branch_id": branch_id, "orders": orders}
+
+
+class SplitPick(BaseModel):
+    line_id: int
+    qty: int
+
+
+class SplitRequest(BaseModel):
+    branch_id: int = 1
+    event_id: str
+    new_order_no: str
+    picks: list[SplitPick]
+
+
+class MoveRequest(BaseModel):
+    branch_id: int = 1
+    table_no: str
+
+
+class MergeRequest(BaseModel):
+    branch_id: int = 1
+    into_order_no: str
+
+
+# ใครแยก ย้าย หรือรวมบิลได้ — พนักงานเสิร์ฟย้ายโต๊ะได้ เพราะเป็นคนที่ยืนอยู่ตรงนั้น
+# แต่การแยกกับรวมบิลเปลี่ยนยอดที่จะเก็บ จึงเป็นเรื่องของคนที่รับเงิน
+BILL_EDIT_ROLES = ("owner", "manager", "cashier")
+TABLE_MOVE_ROLES = ("owner", "manager", "cashier", "service")
+
+
+@app.post("/api/orders/{order_no}/split")
+def split_open_order(order_no: str, req: SplitRequest, request: Request):
+    """แยกบางรายการของบิลนี้ออกเป็นบิลใหม่บนโต๊ะเดิม"""
+    staff = require_staff(request, roles=BILL_EDIT_ROLES, branch_id=req.branch_id)
+    picks = {pick.line_id: pick.qty for pick in req.picks}
+    if len(picks) != len(req.picks):
+        raise HTTPException(400, "เลือกรายการเดียวกันซ้ำ")
+    try:
+        with closing(connect_db()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            return split_bills.split_order(conn, order_no=order_no, branch_id=req.branch_id,
+                                           picks=picks, new_order_no=req.new_order_no,
+                                           event_id=req.event_id, staff=staff)
+    except split_bills.SplitError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/orders/{order_no}/move")
+def move_open_order(order_no: str, req: MoveRequest, request: Request):
+    """ย้ายบิลที่ยังไม่จ่ายไปอีกโต๊ะ"""
+    staff = require_staff(request, roles=TABLE_MOVE_ROLES, branch_id=req.branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            return split_bills.move_order(conn, order_no=order_no, branch_id=req.branch_id,
+                                          table_no=req.table_no, staff=staff)
+    except split_bills.SplitError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.post("/api/orders/{order_no}/merge")
+def merge_open_order(order_no: str, req: MergeRequest, request: Request):
+    """รวมบิลนี้เข้าอีกบิล ให้ลูกค้าจ่ายใบเดียว"""
+    staff = require_staff(request, roles=BILL_EDIT_ROLES, branch_id=req.branch_id)
+    try:
+        with closing(connect_db()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            return split_bills.merge_orders(conn, order_no=order_no,
+                                            into_order_no=req.into_order_no,
+                                            branch_id=req.branch_id, staff=staff)
+    except split_bills.SplitError as exc:
+        raise HTTPException(exc.status_code, str(exc)) from exc
+
+
+@app.get("/api/tables/board")
+def read_table_board(request: Request, branch_id: int = 1):
+    """โต๊ะทั้งหมดกับบิลที่ค้างอยู่ สำหรับหน้าจอแยก ย้าย และรวมบิล"""
+    require_staff(request, roles=TABLE_MOVE_ROLES, branch_id=branch_id)
+    with closing(connect_db()) as conn:
+        return split_bills.table_board(conn, branch_id)
 
 
 @app.get("/api/orders/settled")
@@ -4752,7 +4835,7 @@ def serve_workspace_css(asset_name: str):
 
 @app.get("/{asset_name}.js")
 def serve_workspace_js(asset_name: str):
-    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "activity-ui", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
+    if asset_name not in {"workspace", "sales-redesign", "ops-redesign", "people-redesign", "staff-admin", "staff-dossier", "reports-restore", "reports-live", "service-call", "guest-order-alert", "auth-ui", "payment-ui", "live-data", "inventory-live", "commerce-ui", "landing", "billing-ui", "cashier-void", "activity-ui", "split-bill", "tables-ui", "print-agent-ui", "print-direct", "qr", "offline-review", "guest-ui", "business-type", "shift-ui", "range-report", "tax-invoice-ui", "purchasing-ui", "transfer-ui"}:
         raise HTTPException(404, "Script not found")
     return FileResponse(Path(__file__).parent / f"{asset_name}.js", media_type="application/javascript")
 

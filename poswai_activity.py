@@ -36,6 +36,9 @@ ACTIONS: dict[str, str] = {
     "role_change": "เปลี่ยนตำแหน่งพนักงาน",
     "points_change": "แก้แต้มสมาชิก",
     "manager_override": "ผู้จัดการอนุมัติด้วยรหัส",
+    "split_bill": "แยกบิล",
+    "move_table": "ย้ายโต๊ะ",
+    "merge_bill": "รวมบิล",
 }
 
 
