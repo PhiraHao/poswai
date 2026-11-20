@@ -62,9 +62,9 @@ Two shops have used it for real trade through the closed test, one of them past 
 ### 7. Anything else / how will you keep improving? / อย่างอื่นที่อยากบอก
 
 ```
-Shop owners reach us on LINE and we ship fixes within days. Next we are adding iOS, in-app ordering chat and per-shop backups. We do not store ID card images on the server, and no shop can read another shop's data.
+Shop owners reach us on LINE and we ship fixes within days. Our iPhone version is already on the App Store; next are in-app order chat and per-shop backups. No shop can read another shop's data.
 ```
-> ไทย: เจ้าของร้านทักมาทาง LINE แล้วเราแก้ให้ภายในไม่กี่วัน · ถัดไปจะทำ iOS แชทในออเดอร์ และสำรองข้อมูลรายร้าน · เราไม่เก็บภาพบัตรประชาชนบนเซิร์ฟเวอร์ และไม่มีร้านไหนอ่านข้อมูลร้านอื่นได้
+> ไทย: เจ้าของร้านทักมาทาง LINE แล้วเราแก้ให้ภายในไม่กี่วัน · แอปไอโฟนขึ้น App Store แล้ว ถัดไปคือแชทในออเดอร์ และสำรองข้อมูลรายร้าน · ไม่มีร้านไหนอ่านข้อมูลร้านอื่นได้
 
 ---
 
