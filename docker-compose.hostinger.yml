@@ -1,0 +1,33 @@
+services:
+  poswai:
+    build:
+      context: https://github.com/PhiraHao/poswai.git#codex/pwa-api-offline-deploy
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: sqlite:////data/poswai.db
+      POSWAI_PREVIEW_ONLY: "0"
+      POSWAI_STAFF_LIVE: "1"
+      PROMPTPAY_ID: ${PROMPTPAY_ID:-}
+      LINE_LIFF_ID: ${LINE_LIFF_ID:-2012039182-4hwigCrL}
+      LINE_CHANNEL_ACCESS_TOKEN: ${LINE_CHANNEL_ACCESS_TOKEN:-}
+      LINE_CHANNEL_SECRET: ${LINE_CHANNEL_SECRET:-}
+      LINE_LOGIN_CHANNEL_ID: ${LINE_LOGIN_CHANNEL_ID:-2012039182}
+      EASYSLIP_API_KEY: ${EASYSLIP_API_KEY:-}
+      POSWAI_BOOTSTRAP_MANAGER_PIN: ${POSWAI_BOOTSTRAP_MANAGER_PIN:-}
+      POSWAI_BOOTSTRAP_MANAGER_NAME: ${POSWAI_BOOTSTRAP_MANAGER_NAME:-Manager}
+      POSWAI_TABLE_QR_SECRET: ${POSWAI_TABLE_QR_SECRET:-}
+      SONGWAI_RESTAURANT_ID: "37"
+      SONGWAI_WEBHOOK_SECRET: ${SONGWAI_WEBHOOK_SECRET:-}
+    volumes:
+      - poswai_data:/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.poswai.rule=Host(`poswai.zzaxstudio.com`)
+      - traefik.http.routers.poswai.entrypoints=websecure
+      - traefik.http.routers.poswai.tls=true
+      - traefik.http.routers.poswai.tls.certresolver=letsencrypt
+      - traefik.http.services.poswai.loadbalancer.server.port=8000
+
+volumes:
+  poswai_data:
+
