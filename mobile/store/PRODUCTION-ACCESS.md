@@ -72,3 +72,23 @@ Shop owners reach us on LINE and we ship fixes within days. Our iPhone version i
 
 ฟอร์มของ Google เปลี่ยนคำถามได้ ให้จับคู่ตามใจความ อย่าแปลไทยลงไปเด็ดขาด
 ถ้ามีช่องที่ไม่มีคำตอบเตรียมไว้ ให้เขียนอังกฤษสั้น ๆ 2 ประโยค ไม่เกิน 250 ตัวอักษร
+
+---
+
+## ✅ ส่งรอบ 2 แล้ว — 21 พ.ย. 2569 02:38 น.
+
+ฟอร์มจริงไม่ตรงกับ 7 ข้อด้านบน: มี 4 หน้า ช่องละไม่เกิน 300 ตัวอักษร
+**คำตอบข้อ 1 ด้านบน ("เจ้าของร้าน 19 คน") ไม่ตรงความจริง** — เจ้าของยืนยันว่าผู้ทดสอบคือเพื่อนและครอบครัว
+จึงคงคำตอบรอบแรกไว้ แก้เฉพาะช่องที่ล้าสมัย ที่ส่งไปจริงคือ
+
+- หน้า 1 (การทดสอบแบบปิด) คงคำตอบรอบแรก: เพื่อนและครอบครัว · ความยากในการหาผู้ทดสอบ "ไม่ยากหรือง่าย"
+- หน้า 2 กลุ่มเป้าหมาย (แก้ใหม่):
+  `Small shops in Thailand: restaurants, cafes, food stalls, grocery and clothing shops, salons and repair shops. The users are shop owners and their staff, working on the Android phones or tablets they already own.`
+  · คุณค่าของแอป คงเดิม · ยอดติดตั้งปีแรก 0 – 1 หมื่น
+- หน้า 3 สิ่งที่เปลี่ยนจากการทดสอบ (แก้ใหม่):
+  `Testers said screens were cramped on small phones, so every screen now fits phone and tablet, and Thai receipts now print correctly over Bluetooth. During the test we also added shop settings, barcode scanning, cash shifts, split bills, partial refunds and tax invoices.`
+  · ตัดสินว่าพร้อมอย่างไร คงเดิม
+- หน้า 4 ครั้งนี้ต่างจากเดิมอย่างไร (ช่องใหม่):
+  `This time the closed test ran with 12+ testers for more than 14 days. Since our first application we fixed the issues testers raised and extended the app to retail and service shops, and the same app has passed Apple App Store review for iPhone.`
+
+Google แจ้งผลทางอีเมลเจ้าของบัญชี ปกติไม่เกิน 7 วัน
